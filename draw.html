@@ -328,7 +328,6 @@
             function getCanvasPoint(event) {
                 const rect = canvas.getBoundingClientRect();
                 if (event.touches) {
-                    // Мобильное устройство
                     const touch = event.touches[0];
                     return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
                 }
@@ -390,20 +389,26 @@
                     sides_cm: sides
                 };
 
+                // ===== ОТЛАДКА =====
+                console.log('Отправка данных:', JSON.stringify(data));
+                alert('Отправка данных... (смотрите логи)');
+
                 // Отправка через Telegram Web App
                 if (WebApp) {
                     try {
                         WebApp.sendData(JSON.stringify(data));
-                        // Закрываем через 500 мс, давая время на отправку
+                        // Показываем сообщение об успехе
+                        alert('Данные отправлены! Закрываем...');
+                        // Закрываем через 800 мс для гарантии
                         setTimeout(function() {
                             WebApp.close();
-                        }, 500);
+                        }, 800);
                     } catch (e) {
                         console.error('Ошибка отправки:', e);
-                        alert('Ошибка отправки. Попробуйте ещё раз.');
+                        alert('Ошибка отправки: ' + e.message);
                     }
                 } else {
-                    alert('Данные отправлены:\n' + JSON.stringify(data, null, 2));
+                    alert('Данные отправлены (вне Telegram):\n' + JSON.stringify(data, null, 2));
                 }
             });
 
