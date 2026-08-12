@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Тест WebApp</title>
+    <style>
+        body {
+            font-family: system-ui;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: #f0f2f5;
+        }
+        button {
+            padding: 20px 40px;
+            font-size: 24px;
+            border: none;
+            border-radius: 16px;
+            background: #3390ec;
+            color: white;
+            cursor: pointer;
+        }
+        button:disabled {
+            opacity: 0.5;
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <button id="sendBtn">📤 Отправить тест</button>
+    <div id="status">Готов к отправке</div>
+
+    <script>
+        (function() {
+            const WebApp = window.Telegram?.WebApp || null;
+            if (WebApp) WebApp.expand();
+
+            const sendBtn = document.getElementById('sendBtn');
+            const statusEl = document.getElementById('status');
+
+            sendBtn.addEventListener('click', function() {
+                // Блокируем кнопку
+                sendBtn.disabled = true;
+                sendBtn.textContent = '⏳ Отправка...';
+                statusEl.textContent = 'Отправка данных...';
+
+                // Формируем тестовые данные
+                const testData = {
+                    type: 'test',
+                    timestamp: new Date().toISOString(),
+                    message: 'Привет от iPhone!'
+                };
+
+                const jsonData = JSON.stringify(testData);
+
+                try {
+                    if (WebApp) {
+                        // Отправляем данные
+                        WebApp.sendData(jsonData);
+                        statusEl.textContent = '✅ Данные отправлены! Закрываю...';
+                        // Закрываем через 1 секунду
+                        setTimeout(function() {
+                            WebApp.close();
+                        }, 1000);
+                    } else {
+                        statusEl.textContent = '❌ WebApp не инициализирован';
+                        alert('WebApp не найден');
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = '📤 Отправить тест';
+                    }
+                } catch (e) {
+                    console.error('Ошибка:', e);
+                    statusEl.textContent = '❌ Ошибка: ' + e.message;
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = '📤 Отправить тест';
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
