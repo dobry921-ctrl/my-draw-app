@@ -116,6 +116,14 @@
             display: none;
         }
         .error-msg.visible { display: block; }
+        .sending {
+            background: #ff9800 !important;
+            color: white !important;
+        }
+        #sendBtn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -167,6 +175,7 @@
             let points = [];
             let isClosed = false;
             let sideFields = [];
+            let isSending = false;
 
             // ==================== РАЗМЕР CANVAS ====================
             function resizeCanvas() {
@@ -357,7 +366,10 @@
                 draw();
             });
 
+            // ==================== ОТПРАВКА (УНИВЕРСАЛЬНАЯ) ====================
             sendBtn.addEventListener('click', function() {
+                if (isSending) return;
+
                 if (points.length < 3) {
                     alert('Нарисуйте минимум 3 точки.');
                     return;
@@ -381,6 +393,12 @@
                 }
                 errorMsg.classList.remove('visible');
 
+                // Блокируем кнопку
+                isSending = true;
+                sendBtn.disabled = true;
+                sendBtn.textContent = '⏳ Отправка...';
+                sendBtn.classList.add('sending');
+
                 // Формируем данные
                 const sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
                 const data = {
@@ -389,26 +407,40 @@
                     sides_cm: sides
                 };
 
-                // ===== ОТЛАДКА =====
-                console.log('Отправка данных:', JSON.stringify(data));
-                alert('Отправка данных... (смотрите логи)');
+                try {
+                    const jsonData = JSON.stringify(data);
 
-                // Отправка через Telegram Web App
-                if (WebApp) {
-                    try {
-                        WebApp.sendData(JSON.stringify(data));
-                        // Показываем сообщение об успехе
-                        alert('Данные отправлены! Закрываем...');
-                        // Закрываем через 800 мс для гарантии
+                    // Универсальная отправка
+                    if (WebApp) {
+                        // 1. Отправляем данные
+                        WebApp.sendData(jsonData);
+
+                        // 2. Даём время на отправку (800 мс) и закрываем
                         setTimeout(function() {
-                            WebApp.close();
+                            try {
+                                WebApp.close();
+                            } catch (e) {
+                                console.warn('Ошибка при закрытии:', e);
+                            }
                         }, 800);
-                    } catch (e) {
-                        console.error('Ошибка отправки:', e);
-                        alert('Ошибка отправки: ' + e.message);
+
+                        // 3. Сообщаем пользователю об успехе (но окно закроется)
+                        statusEl.textContent = '✅ Отправлено!';
+                    } else {
+                        // Если WebApp не инициализирован (тестовый режим)
+                        alert('Данные отправлены:\n' + jsonData);
+                        isSending = false;
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = '✅ Отправить';
+                        sendBtn.classList.remove('sending');
                     }
-                } else {
-                    alert('Данные отправлены (вне Telegram):\n' + JSON.stringify(data, null, 2));
+                } catch (error) {
+                    console.error('Ошибка отправки:', error);
+                    alert('Ошибка отправки. Попробуйте ещё раз.');
+                    isSending = false;
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = '✅ Отправить';
+                    sendBtn.classList.remove('sending');
                 }
             });
 
