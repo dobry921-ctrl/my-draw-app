@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Рисуйте чертёж</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+        body {
+            background: #f0f2f5;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+            overflow: hidden;
+            padding: 10px;
+        }
+        #canvasWrap {
+            width: 100%;
+            max-width: 700px;
+            aspect-ratio: 1/1;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            position: relative;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            touch-action: none;
+            cursor: crosshair;
+            background: white;
+        }
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 12px 0;
+            width: 100%;
+            max-width: 700px;
+        }
+        .toolbar button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 30px;
+            background: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            font-weight: 500;
+            flex: 1 1 auto;
+            min-width: 60px;
+            touch-action: manipulation;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .toolbar button:active {
+            transform: scale(0.95);
+        }
+        .toolbar .primary {
+            background: #3390ec;
+            color: white;
+        }
+        .toolbar .danger {
+            background: #f55353;
+            color: white;
+        }
+        .info {
+            font-size: 14px;
+            color: #555;
+            text-align: center;
+            padding: 4px 8px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 20px;
+            margin-bottom: 6px;
+        }
+        #status {
+            font-weight: 600;
+            color: #222;
+        }
+        #coordsDisplay {
+            font-size: 12px;
+            color: #777;
+            word-break: break-all;
+            max-width: 100%;
+        }
+        @media (max-width: 480px) {
+            .toolbar button {
+                font-size: 14px;
+                padding: 8px 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <span id="status">Нажмите на холст, чтобы поставить точки</span>
+        <br>
+        <span id="coordsDisplay">Точек: 0</span>
+    </div>
+
+    <div id="canvasWrap">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="toolbar">
+        <button class="primary" id="sendBtn">✅ Отправить в бот</button>
+        <button class="danger" id="clearBtn">🗑 Очистить</button>
+        <button id="undoBtn">↩️ Отменить</button>
+        <button id="closeBtn">✖️ Закрыть</button>
+    </div>
+
+    <script>
+        (function() {
+            const Telegram = window.Telegram?.WebApp || null;
+            if (Telegram) {
+                Telegram.expand();
+            }
+
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            const statusEl = document.getElementById('status');
+            const coordsDisplay = document.getElementById('coordsDisplay');
+
+            let points = [];
+            let currentPoint = null;
+
+            let W, H;
+
+            function resizeCanvas() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                W = rect.width * dpr;
+                H = rect.height * dpr;
+                canvas.width = W;
+                canvas.height = H;
+                canvas.style.width = rect.width + 'px';
+                canvas.style.height = rect.height + 'px';
+                draw();
+            }
+
+            function getCanvasCoords(clientX, clientY) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Сетка
+                ctx.strokeStyle = '#e9ecef';
+                ctx.lineWidth = 1;
+                for (let x = 0; x < canvas.width; x += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+                for (let y = 0; y < canvas.height; y += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+
+                if (points.length === 0) {
+                    statusEl.textContent = 'Нажмите на холст, чтобы поставить точки';
+                    coordsDisplay.textContent = 'Точек: 0';
+                    return;
+                }
+
+                // Рисуем линии
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                if (points.length > 2) {
+                    ctx.closePath();
+                }
+                ctx.strokeStyle = '#1a73e8';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                // Точки
+                for (let i = 0; i < points.length; i++) {
+                    ctx.beginPath();
+                    ctx.arc(points[i].x, points[i].y, 6, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#1a73e8';
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 14px system-ui';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(i + 1, points[i].x, points[i].y - 14);
+                }
+
+                if (currentPoint) {
+                    ctx.beginPath();
+                    ctx.arc(currentPoint.x, currentPoint.y, 6, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#fbbc04';
+                    ctx.fill();
+                }
+
+                statusEl.textContent = `Точек: ${points.length}`;
+                coordsDisplay.textContent = `Точек: ${points.length}`;
+            }
+
+            function addPoint(x, y) {
+                if (points.length > 0) {
+                    const last = points[points.length - 1];
+                    const dist = Math.hypot(x - last.x, y - last.y);
+                    if (dist < 15) return;
+                }
+                points.push({ x, y });
+                draw();
+            }
+
+            function undo() {
+                if (points.length > 0) {
+                    points.pop();
+                    draw();
+                }
+            }
+
+            function clearAll() {
+                points = [];
+                currentPoint = null;
+                draw();
+            }
+
+            // События
+            function handlePointerDown(e) {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+                const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+                const pos = getCanvasCoords(clientX, clientY);
+                if (points.length > 2) {
+                    const first = points[0];
+                    const dist = Math.hypot(pos.x - first.x, pos.y - first.y);
+                    if (dist < 30) {
+                        statusEl.textContent = 'Фигура замкнута! Отправьте в бот.';
+                        return;
+                    }
+                }
+                addPoint(pos.x, pos.y);
+                currentPoint = null;
+            }
+
+            function handlePointerMove(e) {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
+                const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+                const pos = getCanvasCoords(clientX, clientY);
+                currentPoint = pos;
+                draw();
+            }
+
+            function handlePointerUp(e) {
+                e.preventDefault();
+                currentPoint = null;
+                draw();
+            }
+
+            canvas.addEventListener('mousedown', handlePointerDown);
+            canvas.addEventListener('mousemove', handlePointerMove);
+            canvas.addEventListener('mouseup', handlePointerUp);
+            canvas.addEventListener('mouseleave', handlePointerUp);
+
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const pos = getCanvasCoords(touch.clientX, touch.clientY);
+                if (points.length > 2) {
+                    const first = points[0];
+                    const dist = Math.hypot(pos.x - first.x, pos.y - first.y);
+                    if (dist < 30) {
+                        statusEl.textContent = 'Фигура замкнута! Отправьте в бот.';
+                        return;
+                    }
+                }
+                addPoint(pos.x, pos.y);
+            }, { passive: false });
+
+            document.getElementById('clearBtn').addEventListener('click', clearAll);
+            document.getElementById('undoBtn').addEventListener('click', undo);
+            document.getElementById('closeBtn').addEventListener('click', () => {
+                if (Telegram) Telegram.close();
+                else window.close();
+            });
+
+            document.getElementById('sendBtn').addEventListener('click', function() {
+                if (points.length < 3) {
+                    alert('Нарисуйте минимум 3 точки (замкнутую фигуру).');
+                    return;
+                }
+                const data = {
+                    type: 'drawing',
+                    points: points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+                    width: canvas.width,
+                    height: canvas.height
+                };
+                const json = JSON.stringify(data);
+                if (Telegram) {
+                    Telegram.sendData(json);
+                    Telegram.close();
+                } else {
+                    alert('Данные для отправки: ' + json);
+                }
+            });
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            statusEl.textContent = 'Нажмите на холст, чтобы поставить точки';
+        })();
+    </script>
+</body>
+</html>
