@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Рисуйте чертёж</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- vConsole для отладки на iPhone -->
+    <script src="https://cdn.jsdelivr.net/npm/vconsole@latest/dist/vconsole.min.js"></script>
+    <script>
+        // Включаем vConsole
+        window.vConsole = new window.VConsole();
+        console.log('✅ vConsole загружен');
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
         body {
@@ -124,6 +131,7 @@
             opacity: 0.7;
             cursor: not-allowed;
         }
+        /* vConsole будет поверх, не мешает */
     </style>
 </head>
 <body>
@@ -152,14 +160,24 @@
     <script>
         (function() {
 
-            // ==================== Telegram Web App ====================
+            // =========================================================
+            // Telegram Web App
+            // =========================================================
             const WebApp = window.Telegram?.WebApp || null;
+            console.log('WebApp объект:', WebApp);
+
             if (WebApp) {
+                // ОБЯЗАТЕЛЬНО для iOS!
+                WebApp.ready();
                 WebApp.expand();
-                console.log('Telegram Web App initialized');
+                console.log('✅ Telegram WebApp инициализирован и готов');
+            } else {
+                console.warn('⚠️ Telegram WebApp не найден! Возможно, страница открыта не из Telegram.');
             }
 
-            // ==================== ЭЛЕМЕНТЫ ====================
+            // =========================================================
+            // ЭЛЕМЕНТЫ
+            // =========================================================
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
             const statusEl = document.getElementById('status');
@@ -171,13 +189,17 @@
             const sideInputs = document.getElementById('sideInputs');
             const errorMsg = document.getElementById('errorMsg');
 
-            // ==================== ДАННЫЕ ====================
+            // =========================================================
+            // ДАННЫЕ
+            // =========================================================
             let points = [];
             let isClosed = false;
             let sideFields = [];
             let isSending = false;
 
-            // ==================== РАЗМЕР CANVAS ====================
+            // =========================================================
+            // РАЗМЕР CANVAS
+            // =========================================================
             function resizeCanvas() {
                 const rect = canvas.parentElement.getBoundingClientRect();
                 const dpr = window.devicePixelRatio || 1;
@@ -187,7 +209,9 @@
                 draw();
             }
 
-            // ==================== ОТРИСОВКА ====================
+            // =========================================================
+            // ОТРИСОВКА
+            // =========================================================
             function draw() {
                 const rect = canvas.parentElement.getBoundingClientRect();
                 ctx.clearRect(0, 0, rect.width, rect.height);
@@ -247,7 +271,9 @@
                 }
             }
 
-            // ==================== ПОСТРОЕНИЕ ПОЛЕЙ ВВОДА ====================
+            // =========================================================
+            // ПОСТРОЕНИЕ ПОЛЕЙ ВВОДА
+            // =========================================================
             function buildSideInputs() {
                 if (sideFields.length > 0 && sideFields.length === points.length) return;
                 sideInputs.innerHTML = '';
@@ -302,7 +328,9 @@
                 return alphabet[first] + alphabet[second];
             }
 
-            // ==================== ДОБАВЛЕНИЕ ТОЧКИ ====================
+            // =========================================================
+            // ДОБАВЛЕНИЕ ТОЧКИ
+            // =========================================================
             function addPoint(x, y) {
                 if (isClosed) return;
                 if (points.length > 2) {
@@ -316,7 +344,9 @@
                 draw();
             }
 
-            // ==================== ЗАМЫКАНИЕ ====================
+            // =========================================================
+            // ЗАМЫКАНИЕ
+            // =========================================================
             function closeFigure() {
                 if (isClosed || points.length < 3) return;
                 isClosed = true;
@@ -324,7 +354,9 @@
                 draw();
             }
 
-            // ==================== ОТМЕНА ====================
+            // =========================================================
+            // ОТМЕНА
+            // =========================================================
             function undoLastPoint() {
                 if (points.length === 0) return;
                 if (isClosed) isClosed = false;
@@ -333,7 +365,9 @@
                 draw();
             }
 
-            // ==================== ОБРАБОТКА КЛИКОВ / КАСАНИЙ ====================
+            // =========================================================
+            // ОБРАБОТКА КЛИКОВ / КАСАНИЙ
+            // =========================================================
             function getCanvasPoint(event) {
                 const rect = canvas.getBoundingClientRect();
                 if (event.touches) {
@@ -353,7 +387,9 @@
             canvas.addEventListener('click', handlePointer);
             canvas.addEventListener('touchstart', handlePointer, { passive: false });
 
-            // ==================== КНОПКИ ====================
+            // =========================================================
+            // КНОПКИ
+            // =========================================================
             closeBtn.addEventListener('click', closeFigure);
             undoBtn.addEventListener('click', undoLastPoint);
 
@@ -366,18 +402,27 @@
                 draw();
             });
 
-            // ==================== ОТПРАВКА (УНИВЕРСАЛЬНАЯ) ====================
+            // =========================================================
+            // ОТПРАВКА (УНИВЕРСАЛЬНАЯ)
+            // =========================================================
             sendBtn.addEventListener('click', function() {
-                if (isSending) return;
+                console.log('🟢 Кнопка "Отправить" нажата');
+                if (isSending) {
+                    console.log('⏳ Уже отправляем, игнорируем');
+                    return;
+                }
 
                 if (points.length < 3) {
                     alert('Нарисуйте минимум 3 точки.');
+                    console.warn('❌ Меньше 3 точек');
                     return;
                 }
                 if (!isClosed) {
                     alert('Сначала замкните фигуру (нажмите «Замкнуть»).');
+                    console.warn('❌ Фигура не замкнута');
                     return;
                 }
+
                 const sides = [];
                 let allValid = true;
                 sideFields.forEach(f => {
@@ -389,6 +434,7 @@
                 });
                 if (!allValid || sides.length !== points.length) {
                     errorMsg.classList.add('visible');
+                    console.warn('❌ Не все поля заполнены корректно');
                     return;
                 }
                 errorMsg.classList.remove('visible');
@@ -398,6 +444,7 @@
                 sendBtn.disabled = true;
                 sendBtn.textContent = '⏳ Отправка...';
                 sendBtn.classList.add('sending');
+                console.log('📤 Формируем данные для отправки...');
 
                 // Формируем данные
                 const sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
@@ -407,16 +454,19 @@
                     sides_cm: sides
                 };
 
+                console.log('📦 Данные:', JSON.stringify(data, null, 2));
+
                 try {
                     const jsonData = JSON.stringify(data);
 
-                    // Универсальная отправка
                     if (WebApp) {
-                        // 1. Отправляем данные
+                        console.log('📨 Отправляем через WebApp.sendData()');
                         WebApp.sendData(jsonData);
+                        console.log('✅ Данные отправлены в Telegram');
 
-                        // 2. Даём время на отправку (800 мс) и закрываем
+                        // Закрываем через 800 мс
                         setTimeout(function() {
+                            console.log('⏳ Закрываем WebApp...');
                             try {
                                 WebApp.close();
                             } catch (e) {
@@ -424,19 +474,18 @@
                             }
                         }, 800);
 
-                        // 3. Сообщаем пользователю об успехе (но окно закроется)
                         statusEl.textContent = '✅ Отправлено!';
                     } else {
-                        // Если WebApp не инициализирован (тестовый режим)
-                        alert('Данные отправлены:\n' + jsonData);
+                        console.warn('⚠️ WebApp не найден, используем alert');
+                        alert('Данные отправлены (тестовый режим):\n' + jsonData);
                         isSending = false;
                         sendBtn.disabled = false;
                         sendBtn.textContent = '✅ Отправить';
                         sendBtn.classList.remove('sending');
                     }
                 } catch (error) {
-                    console.error('Ошибка отправки:', error);
-                    alert('Ошибка отправки. Попробуйте ещё раз.');
+                    console.error('❌ Ошибка при отправке:', error);
+                    alert('Ошибка отправки: ' + error.message);
                     isSending = false;
                     sendBtn.disabled = false;
                     sendBtn.textContent = '✅ Отправить';
@@ -444,10 +493,13 @@
                 }
             });
 
-            // ==================== RESIZE ====================
+            // =========================================================
+            // RESIZE
+            // =========================================================
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
 
+            console.log('🚀 Страница полностью загружена');
         })();
     </script>
 </body>
