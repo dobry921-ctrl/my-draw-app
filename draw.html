@@ -6,194 +6,56 @@
     <title>Рисуйте чертёж</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            touch-action: none;
-        }
-        body {
-            background: #f0f2f5;
-            font-family: system-ui, -apple-system, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            height: 100vh;
-            overflow: hidden;
-            padding: 10px;
-        }
-        #canvasWrap {
-            width: 100%;
-            max-width: 700px;
-            aspect-ratio: 1/1;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            position: relative;
-            touch-action: none;
-        }
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            border-radius: 16px;
-            touch-action: none;
-            cursor: crosshair;
-            background: white;
-        }
-        .toolbar {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            justify-content: center;
-            margin: 12px 0;
-            width: 100%;
-            max-width: 700px;
-        }
-        .toolbar button {
-            padding: 10px 20px;
-            font-size: 16px;
-            border: none;
-            border-radius: 30px;
-            background: #ffffff;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            font-weight: 500;
-            flex: 1 1 auto;
-            min-width: 60px;
-            touch-action: manipulation;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .toolbar button:active {
-            transform: scale(0.95);
-        }
-        .toolbar .primary {
-            background: #3390ec;
-            color: white;
-        }
-        .toolbar .danger {
-            background: #f55353;
-            color: white;
-        }
-        .info {
-            font-size: 14px;
-            color: #555;
-            text-align: center;
-            padding: 4px 8px;
-            background: rgba(255,255,255,0.7);
-            border-radius: 20px;
-            margin-bottom: 6px;
-        }
-        #status {
-            font-weight: 600;
-            color: #222;
-        }
-        #coordsDisplay {
-            font-size: 12px;
-            color: #777;
-            word-break: break-all;
-            max-width: 100%;
-        }
-        @media (max-width: 480px) {
-            .toolbar button {
-                font-size: 14px;
-                padding: 8px 14px;
-            }
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
+        body { background: #f0f2f5; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; padding: 10px; }
+        #canvasWrap { width: 100%; max-width: 700px; aspect-ratio: 1/1; background: white; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        canvas { width: 100%; height: 100%; border-radius: 16px; cursor: crosshair; }
+        .toolbar { display: flex; gap: 10px; margin-top: 12px; width: 100%; max-width: 700px; flex-wrap: wrap; }
+        .toolbar button { padding: 12px 16px; font-size: 16px; border: none; border-radius: 8px; flex: 1; cursor: pointer; min-width: 80px; }
+        .primary { background: #3390ec; color: white; }
+        .danger { background: #f55353; color: white; }
+        .success { background: #34a853; color: white; }
+        .disabled { opacity: 0.5; pointer-events: none; }
+        .info { margin-top: 8px; font-size: 14px; color: #333; text-align: center; }
     </style>
 </head>
 <body>
-    <div class="info">
-        <span id="status">Нажмите на холст, чтобы поставить точки</span>
-        <br>
-        <span id="coordsDisplay">Точек: 0</span>
-    </div>
-
-    <div id="canvasWrap">
-        <canvas id="canvas"></canvas>
-    </div>
-
+    <div id="canvasWrap"><canvas id="canvas"></canvas></div>
+    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
     <div class="toolbar">
-        <button class="primary" id="sendBtn">✅ Отправить в бот</button>
-        <button class="danger" id="clearBtn">🗑 Очистить</button>
-        <button id="undoBtn">↩️ Отменить</button>
-        <button id="closeBtn">✖️ Закрыть</button>
+        <button id="closeBtn" class="success" disabled>🔒 Замкнуть</button>
+        <button id="sendBtn" class="primary">✅ Отправить в бот</button>
+        <button id="clearBtn" class="danger">🗑 Очистить</button>
     </div>
 
     <script>
         (function() {
             const Telegram = window.Telegram?.WebApp || null;
-            if (Telegram) {
-                Telegram.expand();
-            }
+            if (Telegram) Telegram.expand();
 
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
             const statusEl = document.getElementById('status');
-            const coordsDisplay = document.getElementById('coordsDisplay');
+            const closeBtn = document.getElementById('closeBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const clearBtn = document.getElementById('clearBtn');
 
             let points = [];
-            let currentPoint = null;
             let isClosed = false;
-
-            let W, H;
 
             function resizeCanvas() {
                 const rect = canvas.parentElement.getBoundingClientRect();
                 const dpr = window.devicePixelRatio || 1;
-                W = rect.width * dpr;
-                H = rect.height * dpr;
-                canvas.width = W;
-                canvas.height = H;
-                canvas.style.width = rect.width + 'px';
-                canvas.style.height = rect.height + 'px';
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
                 draw();
-            }
-
-            function getCanvasCoords(clientX, clientY) {
-                const rect = canvas.getBoundingClientRect();
-                const scaleX = canvas.width / rect.width;
-                const scaleY = canvas.height / rect.height;
-                return {
-                    x: (clientX - rect.left) * scaleX,
-                    y: (clientY - rect.top) * scaleY
-                };
-            }
-
-            // Генерация букв A, B, C, ... Z, AA, AB, ...
-            function getLabel(index) {
-                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                if (index < alphabet.length) {
-                    return alphabet[index];
-                }
-                const first = Math.floor(index / alphabet.length) - 1;
-                const second = index % alphabet.length;
-                return alphabet[first] + alphabet[second];
             }
 
             function draw() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                // Сетка
-                ctx.strokeStyle = '#e9ecef';
-                ctx.lineWidth = 1;
-                for (let x = 0; x < canvas.width; x += 40) {
-                    ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(x, canvas.height);
-                    ctx.stroke();
-                }
-                for (let y = 0; y < canvas.height; y += 40) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(canvas.width, y);
-                    ctx.stroke();
-                }
-
                 if (points.length === 0) {
-                    statusEl.textContent = 'Нажмите на холст, чтобы поставить точки';
-                    coordsDisplay.textContent = 'Точек: 0';
-                    isClosed = false;
+                    statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
+                    closeBtn.disabled = true;
                     return;
                 }
 
@@ -210,155 +72,100 @@
                 ctx.lineWidth = 4;
                 ctx.stroke();
 
-                // Если фигура замкнута, заливаем
-                if (isClosed && points.length > 2) {
-                    ctx.fillStyle = 'rgba(26, 115, 232, 0.15)';
-                    ctx.fill();
-                }
-
-                // Рисуем точки и буквы (только заглавные латинские, чёрные)
-                for (let i = 0; i < points.length; i++) {
-                    const p = points[i];
-                    // Точка
+                // Рисуем точки
+                points.forEach((p, i) => {
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
                     ctx.fillStyle = '#1a73e8';
                     ctx.fill();
-                    ctx.strokeStyle = 'white';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                    // Буква (чёрная, заглавная)
-                    const label = getLabel(i);
-                    ctx.fillStyle = '#000000';      // ЧЁРНЫЙ ЦВЕТ
-                    ctx.font = 'bold 16px system-ui';
+                    // Номер точки
+                    ctx.fillStyle = '#000';
+                    ctx.font = '12px system-ui';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
-                    // Смещаем букву вверх и немного влево от точки
-                    ctx.fillText(label, p.x - 14, p.y - 10);
-                }
+                    ctx.fillText(i+1, p.x, p.y - 10);
+                });
 
-                if (currentPoint) {
-                    ctx.beginPath();
-                    ctx.arc(currentPoint.x, currentPoint.y, 6, 0, 2 * Math.PI);
-                    ctx.fillStyle = '#fbbc04';
-                    ctx.fill();
+                // Обновляем статус и кнопки
+                if (isClosed) {
+                    statusEl.textContent = '✅ Фигура замкнута! Отправьте в бот.';
+                    closeBtn.disabled = true;
+                } else {
+                    statusEl.textContent = `Точек: ${points.length}. Нажмите «Замкнуть» или кликните рядом с первой точкой.`;
+                    closeBtn.disabled = (points.length < 3);
                 }
-
-                statusEl.textContent = isClosed ? '✅ Фигура замкнута! Отправьте в бот.' : `Точек: ${points.length}`;
-                coordsDisplay.textContent = `Точек: ${points.length}`;
             }
 
+            // Добавление точки
             function addPoint(x, y) {
                 if (isClosed) return;
-                // Проверка на замыкание: если точек > 2 и клик рядом с первой точкой
+                // Проверка на замыкание (клик рядом с первой точкой)
                 if (points.length > 2) {
                     const first = points[0];
-                    const dist = Math.hypot(x - first.x, y - first.y);
-                    if (dist < 40) {
-                        isClosed = true;
-                        draw();
-                        statusEl.textContent = '✅ Фигура замкнута! Отправьте в бот.';
+                    if (Math.hypot(x - first.x, y - first.y) < 40) {
+                        closeFigure();
                         return;
                     }
-                }
-                // Отсекаем слишком близкие точки
-                if (points.length > 0) {
-                    const last = points[points.length - 1];
-                    const dist = Math.hypot(x - last.x, y - last.y);
-                    if (dist < 15) return;
                 }
                 points.push({ x, y });
                 draw();
             }
 
-            function undo() {
-                if (points.length > 0) {
-                    points.pop();
-                    isClosed = false;
-                    draw();
-                }
+            // Замыкание фигуры
+            function closeFigure() {
+                if (isClosed || points.length < 3) return;
+                isClosed = true;
+                draw();
             }
 
-            function clearAll() {
+            // Обработчик клика по холсту
+            canvas.addEventListener('click', (e) => {
+                if (isClosed) return;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                addPoint(x, y);
+            });
+
+            // Кнопка "Замкнуть"
+            closeBtn.addEventListener('click', () => {
+                closeFigure();
+            });
+
+            // Очистка
+            clearBtn.addEventListener('click', () => {
                 points = [];
-                currentPoint = null;
                 isClosed = false;
                 draw();
-            }
-
-            // События
-            function handlePointerDown(e) {
-                e.preventDefault();
-                const rect = canvas.getBoundingClientRect();
-                const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
-                const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
-                const pos = getCanvasCoords(clientX, clientY);
-                addPoint(pos.x, pos.y);
-                currentPoint = null;
-            }
-
-            function handlePointerMove(e) {
-                e.preventDefault();
-                const rect = canvas.getBoundingClientRect();
-                const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
-                const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
-                const pos = getCanvasCoords(clientX, clientY);
-                currentPoint = pos;
-                draw();
-            }
-
-            function handlePointerUp(e) {
-                e.preventDefault();
-                currentPoint = null;
-                draw();
-            }
-
-            canvas.addEventListener('mousedown', handlePointerDown);
-            canvas.addEventListener('mousemove', handlePointerMove);
-            canvas.addEventListener('mouseup', handlePointerUp);
-            canvas.addEventListener('mouseleave', handlePointerUp);
-
-            canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const pos = getCanvasCoords(touch.clientX, touch.clientY);
-                addPoint(pos.x, pos.y);
-            }, { passive: false });
-
-            document.getElementById('clearBtn').addEventListener('click', clearAll);
-            document.getElementById('undoBtn').addEventListener('click', undo);
-            document.getElementById('closeBtn').addEventListener('click', () => {
-                if (Telegram) Telegram.close();
-                else window.close();
             });
 
-            document.getElementById('sendBtn').addEventListener('click', function() {
+            // Отправка
+            sendBtn.addEventListener('click', () => {
                 if (points.length < 3) {
-                    alert('Нарисуйте минимум 3 вершины фигуры. Для замыкания нажмите на первую точку или отправьте контур как есть.');
+                    alert('Нарисуйте минимум 3 точки.');
                     return;
                 }
-                // Первая точка никогда не дублируется в payload.
-                // Замыкание — это свойство контура, а не отдельная вершина.
-                // Бот сам замкнёт последнюю сторону при расчёте.
-                const finalPoints = points.slice();
+                // Если фигура не замкнута, добавляем первую точку в конец
+                let sendPoints = points;
+                if (!isClosed) {
+                    sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
+                }
                 const data = {
                     type: 'drawing',
-                    points: finalPoints.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
-                    width: canvas.width,
-                    height: canvas.height
+                    points: sendPoints.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }))
                 };
-                const json = JSON.stringify(data);
                 if (Telegram) {
-                    Telegram.sendData(json);
+                    Telegram.sendData(JSON.stringify(data));
                     Telegram.close();
                 } else {
-                    alert('Данные для отправки: ' + json);
+                    alert('Данные отправлены (вне Telegram): ' + JSON.stringify(data));
                 }
             });
 
-            resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
-            statusEl.textContent = 'Нажмите на холст, чтобы поставить точки';
+            resizeCanvas();
         })();
     </script>
 </body>
