@@ -5,13 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Рисуйте чертёж</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- vConsole для отладки на iPhone -->
     <script src="https://cdn.jsdelivr.net/npm/vconsole@latest/dist/vconsole.min.js"></script>
-    <script>
-        // Включаем vConsole
-        window.vConsole = new window.VConsole();
-        console.log('✅ vConsole загружен');
-    </script>
+    <script>window.vConsole = new window.VConsole();</script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
         body {
@@ -131,7 +126,6 @@
             opacity: 0.7;
             cursor: not-allowed;
         }
-        /* vConsole будет поверх, не мешает */
     </style>
 </head>
 <body>
@@ -167,12 +161,11 @@
             console.log('WebApp объект:', WebApp);
 
             if (WebApp) {
-                // ОБЯЗАТЕЛЬНО для iOS!
                 WebApp.ready();
                 WebApp.expand();
                 console.log('✅ Telegram WebApp инициализирован и готов');
             } else {
-                console.warn('⚠️ Telegram WebApp не найден! Возможно, страница открыта не из Telegram.');
+                console.warn('⚠️ WebApp не найден!');
             }
 
             // =========================================================
@@ -189,9 +182,6 @@
             const sideInputs = document.getElementById('sideInputs');
             const errorMsg = document.getElementById('errorMsg');
 
-            // =========================================================
-            // ДАННЫЕ
-            // =========================================================
             let points = [];
             let isClosed = false;
             let sideFields = [];
@@ -344,9 +334,6 @@
                 draw();
             }
 
-            // =========================================================
-            // ЗАМЫКАНИЕ
-            // =========================================================
             function closeFigure() {
                 if (isClosed || points.length < 3) return;
                 isClosed = true;
@@ -354,9 +341,6 @@
                 draw();
             }
 
-            // =========================================================
-            // ОТМЕНА
-            // =========================================================
             function undoLastPoint() {
                 if (points.length === 0) return;
                 if (isClosed) isClosed = false;
@@ -403,23 +387,19 @@
             });
 
             // =========================================================
-            // ОТПРАВКА (УНИВЕРСАЛЬНАЯ)
+            // ОТПРАВКА
             // =========================================================
             sendBtn.addEventListener('click', function() {
                 console.log('🟢 Кнопка "Отправить" нажата');
-                if (isSending) {
-                    console.log('⏳ Уже отправляем, игнорируем');
-                    return;
-                }
+
+                if (isSending) return;
 
                 if (points.length < 3) {
                     alert('Нарисуйте минимум 3 точки.');
-                    console.warn('❌ Меньше 3 точек');
                     return;
                 }
                 if (!isClosed) {
-                    alert('Сначала замкните фигуру (нажмите «Замкнуть»).');
-                    console.warn('❌ Фигура не замкнута');
+                    alert('Сначала замкните фигуру.');
                     return;
                 }
 
@@ -427,26 +407,20 @@
                 let allValid = true;
                 sideFields.forEach(f => {
                     const val = parseFloat(f.input.value);
-                    if (isNaN(val) || val <= 0) {
-                        allValid = false;
-                    }
+                    if (isNaN(val) || val <= 0) allValid = false;
                     sides.push(val);
                 });
                 if (!allValid || sides.length !== points.length) {
                     errorMsg.classList.add('visible');
-                    console.warn('❌ Не все поля заполнены корректно');
                     return;
                 }
                 errorMsg.classList.remove('visible');
 
-                // Блокируем кнопку
                 isSending = true;
                 sendBtn.disabled = true;
                 sendBtn.textContent = '⏳ Отправка...';
                 sendBtn.classList.add('sending');
-                console.log('📤 Формируем данные для отправки...');
 
-                // Формируем данные
                 const sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
                 const data = {
                     type: 'drawing',
@@ -454,38 +428,36 @@
                     sides_cm: sides
                 };
 
-                console.log('📦 Данные:', JSON.stringify(data, null, 2));
+                console.log('📦 Отправляем:', JSON.stringify(data));
 
                 try {
                     const jsonData = JSON.stringify(data);
 
                     if (WebApp) {
-                        console.log('📨 Отправляем через WebApp.sendData()');
                         WebApp.sendData(jsonData);
-                        console.log('✅ Данные отправлены в Telegram');
+                        console.log('✅ sendData вызван');
 
-                        // Закрываем через 800 мс
+                        // Увеличиваем таймаут до 2 секунд
                         setTimeout(function() {
-                            console.log('⏳ Закрываем WebApp...');
+                            console.log('⏳ Закрываем WebApp через 2 сек');
                             try {
                                 WebApp.close();
                             } catch (e) {
                                 console.warn('Ошибка при закрытии:', e);
                             }
-                        }, 800);
+                        }, 2000);
 
-                        statusEl.textContent = '✅ Отправлено!';
+                        statusEl.textContent = '✅ Отправлено! Закрытие...';
                     } else {
-                        console.warn('⚠️ WebApp не найден, используем alert');
-                        alert('Данные отправлены (тестовый режим):\n' + jsonData);
+                        alert('Данные:\n' + jsonData);
                         isSending = false;
                         sendBtn.disabled = false;
                         sendBtn.textContent = '✅ Отправить';
                         sendBtn.classList.remove('sending');
                     }
                 } catch (error) {
-                    console.error('❌ Ошибка при отправке:', error);
-                    alert('Ошибка отправки: ' + error.message);
+                    console.error('❌ Ошибка:', error);
+                    alert('Ошибка: ' + error.message);
                     isSending = false;
                     sendBtn.disabled = false;
                     sendBtn.textContent = '✅ Отправить';
@@ -493,13 +465,9 @@
                 }
             });
 
-            // =========================================================
-            // RESIZE
-            // =========================================================
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
-
-            console.log('🚀 Страница полностью загружена');
+            console.log('🚀 Страница загружена');
         })();
     </script>
 </body>
