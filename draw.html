@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Рисуйте чертёж</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/vconsole@latest/dist/vconsole.min.js"></script>
-    <script>window.vConsole = new window.VConsole();</script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
         body {
@@ -120,6 +118,10 @@
         .error-msg.visible { display: block; }
         .sending {
             background: #ff9800 !important;
+            color: white !important;
+        }
+        .sent {
+            background: #4CAF50 !important;
             color: white !important;
         }
         #sendBtn:disabled {
@@ -387,7 +389,7 @@
             });
 
             // =========================================================
-            // ОТПРАВКА
+            // ОТПРАВКА (БЕЗ АВТОМАТИЧЕСКОГО ЗАКРЫТИЯ)
             // =========================================================
             sendBtn.addEventListener('click', function() {
                 console.log('🟢 Кнопка "Отправить" нажата');
@@ -437,23 +439,23 @@
                         WebApp.sendData(jsonData);
                         console.log('✅ sendData вызван');
 
-                        // Увеличиваем таймаут до 2 секунд
-                        setTimeout(function() {
-                            console.log('⏳ Закрываем WebApp через 2 сек');
-                            try {
-                                WebApp.close();
-                            } catch (e) {
-                                console.warn('Ошибка при закрытии:', e);
-                            }
-                        }, 2000);
+                        // Меняем кнопку, чтобы пользователь сам закрыл окно
+                        sendBtn.textContent = '✅ Отправлено! Закройте вручную';
+                        sendBtn.classList.remove('sending');
+                        sendBtn.classList.add('sent');
+                        statusEl.textContent = '✅ Данные отправлены. Можете закрыть окно.';
 
-                        statusEl.textContent = '✅ Отправлено! Закрытие...';
+                        // Показываем кнопку закрытия, если есть
+                        // Но мы не можем принудительно закрыть WebApp, только через WebApp.close()
+                        // Предложим пользователю закрыть
+                        alert('Данные отправлены! Закройте окно вручную.');
                     } else {
                         alert('Данные:\n' + jsonData);
                         isSending = false;
                         sendBtn.disabled = false;
                         sendBtn.textContent = '✅ Отправить';
                         sendBtn.classList.remove('sending');
+                        sendBtn.classList.remove('sent');
                     }
                 } catch (error) {
                     console.error('❌ Ошибка:', error);
@@ -462,6 +464,7 @@
                     sendBtn.disabled = false;
                     sendBtn.textContent = '✅ Отправить';
                     sendBtn.classList.remove('sending');
+                    sendBtn.classList.remove('sent');
                 }
             });
 
