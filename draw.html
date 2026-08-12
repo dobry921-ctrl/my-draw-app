@@ -135,6 +135,7 @@
 
             let points = [];
             let currentPoint = null;
+            let isClosed = false;
 
             let W, H;
 
@@ -160,6 +161,17 @@
                 };
             }
 
+            // Генерация букв A, B, C, ... Z, AA, AB, ...
+            function getLabel(index) {
+                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                if (index < alphabet.length) {
+                    return alphabet[index];
+                }
+                const first = Math.floor(index / alphabet.length) - 1;
+                const second = index % alphabet.length;
+                return alphabet[first] + alphabet[second];
+            }
+
             function draw() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 // Сетка
@@ -181,6 +193,7 @@
                 if (points.length === 0) {
                     statusEl.textContent = 'Нажмите на холст, чтобы поставить точки';
                     coordsDisplay.textContent = 'Точек: 0';
+                    isClosed = false;
                     return;
                 }
 
@@ -190,27 +203,38 @@
                 for (let i = 1; i < points.length; i++) {
                     ctx.lineTo(points[i].x, points[i].y);
                 }
-                if (points.length > 2) {
+                if (isClosed && points.length > 2) {
                     ctx.closePath();
                 }
                 ctx.strokeStyle = '#1a73e8';
                 ctx.lineWidth = 4;
                 ctx.stroke();
 
-                // Точки
+                // Если фигура замкнута, заливаем
+                if (isClosed && points.length > 2) {
+                    ctx.fillStyle = 'rgba(26, 115, 232, 0.15)';
+                    ctx.fill();
+                }
+
+                // Рисуем точки и буквы (только заглавные латинские, чёрные)
                 for (let i = 0; i < points.length; i++) {
+                    const p = points[i];
+                    // Точка
                     ctx.beginPath();
-                    ctx.arc(points[i].x, points[i].y, 6, 0, 2 * Math.PI);
+                    ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
                     ctx.fillStyle = '#1a73e8';
                     ctx.fill();
                     ctx.strokeStyle = 'white';
                     ctx.lineWidth = 2;
                     ctx.stroke();
-                    ctx.fillStyle = 'white';
-                    ctx.font = 'bold 14px system-ui';
+                    // Буква (чёрная, заглавная)
+                    const label = getLabel(i);
+                    ctx.fillStyle = '#000000';      // ЧЁРНЫЙ ЦВЕТ
+                    ctx.font = 'bold 16px system-ui';
                     ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(i + 1, points[i].x, points[i].y - 14);
+                    ctx.textBaseline = 'bottom';
+                    // Смещаем букву вверх и немного влево от точки
+                    ctx.fillText(label, p.x - 14, p.y - 10);
                 }
 
                 if (currentPoint) {
@@ -220,11 +244,24 @@
                     ctx.fill();
                 }
 
-                statusEl.textContent = `Точек: ${points.length}`;
+                statusEl.textContent = isClosed ? '✅ Фигура замкнута! Отправьте в бот.' : `Точек: ${points.length}`;
                 coordsDisplay.textContent = `Точек: ${points.length}`;
             }
 
             function addPoint(x, y) {
+                if (isClosed) return;
+                // Проверка на замыкание: если точек > 2 и клик рядом с первой точкой
+                if (points.length > 2) {
+                    const first = points[0];
+                    const dist = Math.hypot(x - first.x, y - first.y);
+                    if (dist < 40) {
+                        isClosed = true;
+                        draw();
+                        statusEl.textContent = '✅ Фигура замкнута! Отправьте в бот.';
+                        return;
+                    }
+                }
+                // Отсекаем слишком близкие точки
                 if (points.length > 0) {
                     const last = points[points.length - 1];
                     const dist = Math.hypot(x - last.x, y - last.y);
@@ -237,6 +274,7 @@
             function undo() {
                 if (points.length > 0) {
                     points.pop();
+                    isClosed = false;
                     draw();
                 }
             }
@@ -244,6 +282,7 @@
             function clearAll() {
                 points = [];
                 currentPoint = null;
+                isClosed = false;
                 draw();
             }
 
@@ -254,14 +293,6 @@
                 const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
                 const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
                 const pos = getCanvasCoords(clientX, clientY);
-                if (points.length > 2) {
-                    const first = points[0];
-                    const dist = Math.hypot(pos.x - first.x, pos.y - first.y);
-                    if (dist < 30) {
-                        statusEl.textContent = 'Фигура замкнута! Отправьте в бот.';
-                        return;
-                    }
-                }
                 addPoint(pos.x, pos.y);
                 currentPoint = null;
             }
@@ -291,14 +322,6 @@
                 e.preventDefault();
                 const touch = e.touches[0];
                 const pos = getCanvasCoords(touch.clientX, touch.clientY);
-                if (points.length > 2) {
-                    const first = points[0];
-                    const dist = Math.hypot(pos.x - first.x, pos.y - first.y);
-                    if (dist < 30) {
-                        statusEl.textContent = 'Фигура замкнута! Отправьте в бот.';
-                        return;
-                    }
-                }
                 addPoint(pos.x, pos.y);
             }, { passive: false });
 
@@ -314,9 +337,19 @@
                     alert('Нарисуйте минимум 3 точки (замкнутую фигуру).');
                     return;
                 }
+                // Если не замкнута, принудительно замыкаем (добавляем первую точку в конец)
+                let finalPoints = points;
+                if (!isClosed) {
+                    const first = points[0];
+                    const last = points[points.length - 1];
+                    const dist = Math.hypot(last.x - first.x, last.y - first.y);
+                    if (dist > 5) {
+                        finalPoints = points.concat([{ x: first.x, y: first.y }]);
+                    }
+                }
                 const data = {
                     type: 'drawing',
-                    points: points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+                    points: finalPoints.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
                     width: canvas.width,
                     height: canvas.height
                 };
