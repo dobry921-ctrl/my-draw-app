@@ -266,7 +266,7 @@
         else drawSketch();
     }
 
-    // ---- Построение по длинам (точное) ----
+    // ---- Построение по длинам (улучшенное) ----
     function normalizeSketchForSolver(pts, targetSidesCm) {
         const n = pts.length;
         const sketchEdges = [];
@@ -323,9 +323,11 @@
         let pts = normalizeSketchForSolver(sketchPts, sidesCm);
         const reference = pts.map(p => ({ ...p }));
 
-        const iterations = Math.min(3000, Math.max(800, n * 250));
-        const shapeWeight = 0.003;
+        // Увеличиваем итерации, уменьшаем вес формы
+        const iterations = Math.min(5000, Math.max(1500, n * 400));
+        const shapeWeight = 0.0005;
 
+        // Основной цикл
         for (let iter = 0; iter < iterations; iter++) {
             for (let i = 1; i < n; i++) {
                 pts[i].x += (reference[i].x - pts[i].x) * shapeWeight;
@@ -369,7 +371,47 @@
                 p.y -= ay;
             }
 
-            if (maxSideError(pts, sidesCm) < 0.001) break;
+            if (maxSideError(pts, sidesCm) < 0.0005) break;
+        }
+
+        // Дополнительный цикл без сохранения формы для точной подгонки
+        for (let iter = 0; iter < 200; iter++) {
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                const a = pts[i], b = pts[j];
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                let dist = Math.hypot(dx, dy);
+                if (dist < 1e-9) {
+                    const angle = (2 * Math.PI * i) / n;
+                    dx = Math.cos(angle);
+                    dy = Math.sin(angle);
+                    dist = 1;
+                }
+                const target = sidesCm[i];
+                const correction = (dist - target) / dist;
+                const cx = dx * correction;
+                const cy = dy * correction;
+
+                if (i === 0) {
+                    b.x -= cx;
+                    b.y -= cy;
+                } else if (j === 0) {
+                    a.x += cx;
+                    a.y += cy;
+                } else {
+                    a.x += cx * 0.5;
+                    a.y += cy * 0.5;
+                    b.x -= cx * 0.5;
+                    b.y -= cy * 0.5;
+                }
+            }
+            const ax = pts[0].x, ay = pts[0].y;
+            for (const p of pts) {
+                p.x -= ax;
+                p.y -= ay;
+            }
+            if (maxSideError(pts, sidesCm) < 0.0001) break;
         }
 
         const errorCm = maxSideError(pts, sidesCm);
@@ -430,7 +472,6 @@
         drawLivePolygon();
 
         if (isClosed) {
-            // Замыкающая линия и заливка
             if (points.length >= 3) {
                 ctx.save();
                 ctx.beginPath();
