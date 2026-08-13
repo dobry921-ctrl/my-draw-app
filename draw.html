@@ -262,8 +262,11 @@
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        if (builtPoints.length >= 3) drawBuilt();
-        else drawSketch();
+        if (activeTab === 'drawing' || builtPoints.length < 3) {
+            drawSketch();
+        } else {
+            drawBuilt();
+        }
     }
 
     // ---- Построение ортогонального многоугольника по длинам сторон и направлениям эскиза ----
@@ -284,19 +287,14 @@
             if (len < 1e-6) {
                 throw new Error(`Сторона ${getLabel(i)}–${getLabel((i+1)%n)} слишком короткая.`);
             }
-            // Нормализованный вектор
             dirs.push({ x: dx / len, y: dy / len });
         }
 
         // 2. Округляем направления до ближайшего из четырёх (ортогональных)
         const orthoDirs = dirs.map(d => {
-            // Находим угол в градусах
             let angle = Math.atan2(d.y, d.x) * 180 / Math.PI;
-            // Приводим к [0, 360)
             if (angle < 0) angle += 360;
-            // Округляем до ближайшего кратного 90
             const rounded = Math.round(angle / 90) * 90;
-            // Преобразуем обратно в вектор (cos, sin)
             const rad = rounded * Math.PI / 180;
             return { x: Math.round(Math.cos(rad)), y: Math.round(Math.sin(rad)) };
         });
@@ -311,16 +309,15 @@
             const nextY = prev.y + dir.y * len;
             pts.push({ x: nextX, y: nextY });
         }
-        // Проверяем замыкание
+        // Проверяем замыкание (в см)
         const last = pts[pts.length - 1];
         const first = pts[0];
         const dx = last.x - first.x;
         const dy = last.y - first.y;
         const dist = Math.hypot(dx, dy);
-        if (dist > 0.01) {
+        if (dist > 0.05) { // 0.05 см = 0.5 мм
             throw new Error('Ортогональный многоугольник не замкнулся – проверьте длины сторон.');
         }
-        // Убираем последнюю дублирующую точку
         pts.pop();
 
         // Переводим в метры и сдвигаем к нулю
@@ -339,12 +336,12 @@
         return Math.abs(area) / 2;
     }
 
-    function maxSideError(pts, targetCm) {
+    function maxSideError(pts, target) {
         let maxError = 0;
         for (let i = 0; i < pts.length; i++) {
             const a = pts[i], b = pts[(i + 1) % pts.length];
             const actual = Math.hypot(b.x - a.x, b.y - a.y);
-            maxError = Math.max(maxError, Math.abs(actual - targetCm[i]));
+            maxError = Math.max(maxError, Math.abs(actual - target[i]));
         }
         return maxError;
     }
@@ -359,17 +356,16 @@
         // Сначала пробуем построить ортогональный многоугольник
         try {
             const result = buildOrthogonalFromSketch(sketchPts, sidesCm);
-            // Проверяем, что длины сторон совпадают с заданными
-            const error = maxSideError(result, sidesCm);
-            if (error < 0.01) {
-                return result; // успешно
+            // Проверяем, что длины сторон совпадают с заданными (сравниваем в метрах)
+            const error = maxSideError(result, sidesCm.map(s => s / 100));
+            if (error < 0.01) { // допуск 1 см
+                return result;
             }
         } catch (e) {
             // Если не получилось – продолжаем к релаксации
         }
 
         // Если не удалось построить ортогонально – используем релаксацию
-        // Общий случай – релаксация (сохраняем ориентацию эскиза)
         const longest = Math.max(...sidesCm);
         const sumOthers = sidesCm.reduce((sum, s) => sum + s, 0) - longest;
         if (longest >= sumOthers - 1e-9) {
@@ -386,7 +382,6 @@
         const targetTotal = sidesCm.reduce((a, b) => a + b, 0);
         const scale = targetTotal / totalSketch;
         let pts = sketchPts.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        // Сдвиг к нулю
         const x0 = pts[0].x, y0 = pts[0].y;
         pts = pts.map(p => ({ x: p.x - x0, y: p.y - y0 }));
 
@@ -510,6 +505,7 @@
         ctx.stroke();
         ctx.restore();
 
+        ctx.save();
         points.forEach((p, i) => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
@@ -521,6 +517,7 @@
             ctx.textBaseline = 'bottom';
             ctx.fillText(getLabel(i), p.x, p.y - 10);
         });
+        ctx.restore();
     }
 
     function drawSketch() {
@@ -686,13 +683,13 @@
         try {
             builtPoints = buildPolygonFromSketchAndLengths(points, sides);
             builtSides = sides.slice();
-            drawBuilt();
+            resizeCanvas();
         } catch (e) {
             builtPoints = [];
             builtSides = [];
             sendBtn.disabled = true;
             showError(e?.message || 'Не удалось построить фигуру.');
-            drawSketch();
+            resizeCanvas();
         }
     }
 
@@ -712,7 +709,8 @@
             label.textContent = `${getLabel(i)}–${getLabel(j)}`;
 
             const input = document.createElement('input');
-            input.type = 'text';
+            input.type = 'number';
+            input.step = '0.1';
             input.autocomplete = 'off';
             input.inputMode = 'decimal';
             input.placeholder = 'см';
@@ -733,6 +731,11 @@
 
     function addPoint(x, y) {
         if (isClosed) return;
+        // Защита от случайного двойного тапа
+        if (points.length > 0) {
+            const last = points[points.length - 1];
+            if (Math.hypot(x - last.x, y - last.y) < 8) return;
+        }
         points.push({ x, y });
         builtPoints = [];
         builtSides = [];
@@ -812,11 +815,7 @@
         if (isDrawing) {
             dimensionsPanel.classList.remove('visible');
         } else {
-            if (isClosed) {
-                dimensionsPanel.classList.add('visible');
-                if (builtPoints.length >= 3) drawBuilt();
-                else if (isClosed) drawSketch();
-            }
+            if (isClosed) dimensionsPanel.classList.add('visible');
         }
         resizeCanvas();
     }
