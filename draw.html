@@ -266,89 +266,68 @@
         else drawSketch();
     }
 
-    // ---- Построение ортогонального многоугольника по длинам сторон и поворотам ----
-    function buildOrthogonalPolygon(sidesCm, turns) {
-        // sidesCm – массив длин сторон (см)
-        // turns – массив поворотов в каждой вершине: +1 (налево) или -1 (направо)
-        // Начинаем с вершины (0,0) и направления (1,0) – вправо
-        const pts = [{ x: 0, y: 0 }];
-        let dir = { x: 1, y: 0 }; // текущее направление
-        for (let i = 0; i < sidesCm.length; i++) {
-            const len = sidesCm[i];
-            const nextX = pts[i].x + dir.x * len;
-            const nextY = pts[i].y + dir.y * len;
-            pts.push({ x: nextX, y: nextY });
-            if (i < sidesCm.length - 1) {
-                // Поворачиваем направление на 90° в соответствии с turn
-                const t = turns[i];
-                // Поворот на 90°: (x,y) -> (-y,x) для левого, (y,-x) для правого
-                if (t === 1) { // налево
-                    dir = { x: -dir.y, y: dir.x };
-                } else { // направо
-                    dir = { x: dir.y, y: -dir.x };
-                }
-            }
+    // ---- Построение ортогонального многоугольника по длинам сторон и направлениям эскиза ----
+    function buildOrthogonalFromSketch(sketchPts, sidesCm) {
+        const n = sidesCm.length;
+        if (n < 3 || sketchPts.length !== n) {
+            throw new Error('Для построения нужно минимум 3 вершины.');
         }
-        // Проверяем, замкнулась ли фигура (последняя точка должна совпасть с первой)
+
+        // 1. Вычисляем направления сторон эскиза (векторы)
+        const dirs = [];
+        for (let i = 0; i < n; i++) {
+            const a = sketchPts[i];
+            const b = sketchPts[(i + 1) % n];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const len = Math.hypot(dx, dy);
+            if (len < 1e-6) {
+                throw new Error(`Сторона ${getLabel(i)}–${getLabel((i+1)%n)} слишком короткая.`);
+            }
+            // Нормализованный вектор
+            dirs.push({ x: dx / len, y: dy / len });
+        }
+
+        // 2. Округляем направления до ближайшего из четырёх (ортогональных)
+        const orthoDirs = dirs.map(d => {
+            // Находим угол в градусах
+            let angle = Math.atan2(d.y, d.x) * 180 / Math.PI;
+            // Приводим к [0, 360)
+            if (angle < 0) angle += 360;
+            // Округляем до ближайшего кратного 90
+            const rounded = Math.round(angle / 90) * 90;
+            // Преобразуем обратно в вектор (cos, sin)
+            const rad = rounded * Math.PI / 180;
+            return { x: Math.round(Math.cos(rad)), y: Math.round(Math.sin(rad)) };
+        });
+
+        // 3. Строим вершины, начиная с (0,0)
+        const pts = [{ x: 0, y: 0 }];
+        for (let i = 0; i < n; i++) {
+            const prev = pts[i];
+            const dir = orthoDirs[i];
+            const len = sidesCm[i];
+            const nextX = prev.x + dir.x * len;
+            const nextY = prev.y + dir.y * len;
+            pts.push({ x: nextX, y: nextY });
+        }
+        // Проверяем замыкание
         const last = pts[pts.length - 1];
         const first = pts[0];
         const dx = last.x - first.x;
         const dy = last.y - first.y;
         const dist = Math.hypot(dx, dy);
         if (dist > 0.01) {
-            throw new Error('Ортогональный многоугольник не замкнулся – проверьте длины сторон и повороты.');
+            throw new Error('Ортогональный многоугольник не замкнулся – проверьте длины сторон.');
         }
         // Убираем последнюю дублирующую точку
         pts.pop();
-        return pts;
-    }
 
-    function detectTurns(sketchPts) {
-        // Определяем повороты в каждой вершине (налево/направо) на основе эскиза
-        const n = sketchPts.length;
-        const turns = [];
-        for (let i = 0; i < n; i++) {
-            const prev = sketchPts[(i - 1 + n) % n];
-            const cur = sketchPts[i];
-            const next = sketchPts[(i + 1) % n];
-            const v1 = { x: cur.x - prev.x, y: cur.y - prev.y };
-            const v2 = { x: next.x - cur.x, y: next.y - cur.y };
-            const cross = v1.x * v2.y - v1.y * v2.x;
-            // Если cross > 0 – поворот налево, иначе направо (с учётом знака)
-            // Округляем до ±1 (игнорируем разворот на 180°, но в ортогональных фигурах такого не бывает)
-            if (Math.abs(cross) < 1e-6) {
-                // Это может быть разворот на 180° – тогда считаем, что поворот не меняется?
-                // Для простоты считаем, что это прямо (поворот 0), но в ортогональных фигурах такого быть не должно.
-                // Если так случилось, берём поворот из предыдущей вершины
-                turns.push(turns.length > 0 ? turns[turns.length - 1] : 1);
-            } else {
-                turns.push(cross > 0 ? 1 : -1);
-            }
-        }
-        return turns;
-    }
-
-    // ---- Построение по длинам (улучшенное) ----
-    function normalizeSketchForSolver(pts, targetSidesCm) {
-        const n = pts.length;
-        const sketchEdges = [];
-        let totalSketch = 0;
-        for (let i = 0; i < n; i++) {
-            const a = pts[i];
-            const b = pts[(i + 1) % n];
-            const len = Math.hypot(b.x - a.x, b.y - a.y);
-            if (!Number.isFinite(len) || len < 1e-6) {
-                throw new Error(`Сторона ${getLabel(i)}–${getLabel((i + 1) % n)} слишком короткая.`);
-            }
-            sketchEdges.push(len);
-            totalSketch += len;
-        }
-        const targetTotal = targetSidesCm.reduce((a, b) => a + b, 0);
-        if (!(targetTotal > 0)) throw new Error('Некорректные длины сторон.');
-        const scale = targetTotal / totalSketch;
-        const result = pts.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        const x0 = result[0].x, y0 = result[0].y;
-        return result.map(p => ({ x: p.x - x0, y: p.y - y0 }));
+        // Переводим в метры и сдвигаем к нулю
+        const ptsM = pts.map(p => ({ x: p.x / 100, y: p.y / 100 }));
+        const minX = Math.min(...ptsM.map(p => p.x));
+        const minY = Math.min(...ptsM.map(p => p.y));
+        return ptsM.map(p => ({ x: p.x - minX, y: p.y - minY }));
     }
 
     function polygonAreaAbs(pts) {
@@ -377,53 +356,19 @@
             throw new Error('Для построения нужно минимум 3 вершины.');
         }
 
-        // Проверка на ортогональность: все углы близки к 90° (с допуском 10°)
-        let isOrthogonal = true;
-        const angleTolerance = 10 * Math.PI / 180; // 10 градусов
-        for (let i = 0; i < n; i++) {
-            const prev = sketchPts[(i - 1 + n) % n];
-            const cur = sketchPts[i];
-            const next = sketchPts[(i + 1) % n];
-            const v1 = { x: cur.x - prev.x, y: cur.y - prev.y };
-            const v2 = { x: next.x - cur.x, y: next.y - cur.y };
-            const len1 = Math.hypot(v1.x, v1.y);
-            const len2 = Math.hypot(v2.x, v2.y);
-            if (len1 < 1e-6 || len2 < 1e-6) continue;
-            const dot = v1.x * v2.x + v1.y * v2.y;
-            const cosAngle = dot / (len1 * len2);
-            const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
-            const deviation = Math.abs(angle - Math.PI / 2);
-            if (deviation > angleTolerance && Math.abs(angle - Math.PI) > angleTolerance) {
-                isOrthogonal = false;
-                break;
+        // Сначала пробуем построить ортогональный многоугольник
+        try {
+            const result = buildOrthogonalFromSketch(sketchPts, sidesCm);
+            // Проверяем, что длины сторон совпадают с заданными
+            const error = maxSideError(result, sidesCm);
+            if (error < 0.01) {
+                return result; // успешно
             }
+        } catch (e) {
+            // Если не получилось – продолжаем к релаксации
         }
 
-        // Если фигура ортогональна – строим ортогональный многоугольник
-        if (isOrthogonal) {
-            try {
-                // Определяем повороты
-                const turns = detectTurns(sketchPts);
-                // Строим ортогональный многоугольник в сантиметрах
-                const ptsCm = buildOrthogonalPolygon(sidesCm, turns);
-                // Переводим в метры и сдвигаем к нулю
-                const ptsM = ptsCm.map(p => ({ x: p.x / 100, y: p.y / 100 }));
-                const minX = Math.min(...ptsM.map(p => p.x));
-                const minY = Math.min(...ptsM.map(p => p.y));
-                const result = ptsM.map(p => ({ x: p.x - minX, y: p.y - minY }));
-                // Проверяем, что длины сторон совпадают с заданными
-                const error = maxSideError(result, sidesCm);
-                if (error > 0.01) {
-                    throw new Error('Ошибка длин после ортогонализации.');
-                }
-                return result;
-            } catch (e) {
-                // Если ортогональное построение не удалось – переходим к общему алгоритму
-                console.warn('Ортогональное построение не удалось, используем релаксацию:', e.message);
-                // падаем в общий алгоритм
-            }
-        }
-
+        // Если не удалось построить ортогонально – используем релаксацию
         // Общий случай – релаксация (сохраняем ориентацию эскиза)
         const longest = Math.max(...sidesCm);
         const sumOthers = sidesCm.reduce((sum, s) => sum + s, 0) - longest;
@@ -431,9 +376,21 @@
             throw new Error('Такие длины сторон не могут образовать замкнутый многоугольник: самая длинная сторона слишком велика.');
         }
 
-        let pts = normalizeSketchForSolver(sketchPts, sidesCm);
-        const reference = pts.map(p => ({ ...p }));
+        // Масштабируем эскиз под суммарную длину
+        let totalSketch = 0;
+        for (let i = 0; i < n; i++) {
+            const a = sketchPts[i];
+            const b = sketchPts[(i + 1) % n];
+            totalSketch += Math.hypot(b.x - a.x, b.y - a.y);
+        }
+        const targetTotal = sidesCm.reduce((a, b) => a + b, 0);
+        const scale = targetTotal / totalSketch;
+        let pts = sketchPts.map(p => ({ x: p.x * scale, y: p.y * scale }));
+        // Сдвиг к нулю
+        const x0 = pts[0].x, y0 = pts[0].y;
+        pts = pts.map(p => ({ x: p.x - x0, y: p.y - y0 }));
 
+        const reference = pts.map(p => ({ ...p }));
         const iterations = Math.min(5000, Math.max(1500, n * 400));
         const shapeWeight = 0.0005;
 
