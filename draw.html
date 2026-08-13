@@ -38,7 +38,44 @@
             cursor: crosshair;
             touch-action: none;
         }
-        .panel {
+        .shape-hint {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 8px;
+            padding: 9px 11px;
+            border-radius: 10px;
+            background: #fff;
+            font-size: 13px;
+            color: #555;
+            text-align: center;
+        }
+        .tabs {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 12px;
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            background: #fff;
+            padding: 5px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.08);
+        }
+        .tabs.visible { display: grid; }
+        .tab-btn {
+            border: 0;
+            background: transparent;
+            border-radius: 9px;
+            padding: 11px 8px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background .2s, color .2s;
+        }
+        .tab-btn.active { background: #3390ec; color: #fff; }
+        .tab-btn:not(.active):hover { background: #e9edf2; }
+
+        #dimensionsPanel {
             width: 100%;
             max-width: 700px;
             margin-top: 12px;
@@ -48,29 +85,9 @@
             box-shadow: 0 2px 8px rgba(0,0,0,.08);
             display: none;
         }
-        .panel.visible { display: block; }
+        #dimensionsPanel.visible { display: block; }
         .panel-title { font-weight: 700; margin-bottom: 8px; }
-        .tabs {
-            width: 100%; max-width: 700px; margin-top: 12px;
-            display: none; grid-template-columns: 1fr 1fr; gap: 6px;
-            background: #fff; padding: 5px; border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,.08);
-        }
-        .tabs.visible { display: grid; }
-        .tab-btn {
-            border: 0; background: transparent; border-radius: 9px;
-            padding: 11px 8px; font-size: 15px; font-weight: 700; cursor: pointer;
-        }
-        .tab-btn.active { background: #3390ec; color: #fff; }
-        .tab-content { width: 100%; max-width: 700px; }
-        .tab-content.hidden { display: none; }
-        #canvasWrap { transition: opacity .15s ease; }
-        .shape-hint {
-            width: 100%; max-width: 700px; margin-top: 8px;
-            padding: 9px 11px; border-radius: 10px; background: #fff;
-            font-size: 13px; color: #555; text-align: center;
-        }
-        .side-input input { font-variant-numeric: tabular-nums; }
+
         .side-input {
             display: grid;
             grid-template-columns: 1fr auto auto;
@@ -92,6 +109,7 @@
         }
         .side-input input:focus { border-color: #3390ec; outline: none; }
         .side-input .unit { font-size: 14px; color: #666; min-width: 24px; }
+
         .toolbar {
             display: flex;
             gap: 10px;
@@ -109,12 +127,14 @@
             cursor: pointer;
             font-weight: 650;
             min-width: 110px;
+            transition: opacity .2s;
         }
         .toolbar button:disabled { opacity: .42; cursor: not-allowed; }
         .primary { background: #3390ec; color: #fff; }
         .danger { background: #f55353; color: #fff; }
         .success { background: #34a853; color: #fff; }
         .warning { background: #f5a623; color: #fff; }
+
         .info {
             width: 100%;
             max-width: 700px;
@@ -132,6 +152,7 @@
             display: none;
         }
         .error-msg.visible { display: block; }
+
         @media (max-width: 480px) {
             body { padding-left: 7px; padding-right: 7px; }
             .toolbar { gap: 7px; }
@@ -141,26 +162,28 @@
     </style>
 </head>
 <body>
-    <div id="canvasTabContent" class="tab-content">
-        <div id="canvasWrap"><canvas id="canvas"></canvas></div>
-        <div class="shape-hint" id="shapeHint">Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.</div>
-    </div>
 
+    <!-- Канвас всегда виден -->
+    <div id="canvasWrap"><canvas id="canvas"></canvas></div>
+    <div class="shape-hint" id="shapeHint">Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.</div>
+
+    <!-- Вкладки (появляются после замыкания) -->
     <div class="tabs" id="tabs">
         <button class="tab-btn active" id="drawingTabBtn" type="button">📐 Чертёж</button>
         <button class="tab-btn" id="dimensionsTabBtn" type="button">📏 Размеры</button>
     </div>
 
-    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
-
-    <div id="dimensionsTabContent" class="tab-content hidden">
-        <div class="panel visible" id="sidePanel">
-            <div class="panel-title">Введите длины сторон в сантиметрах:</div>
-            <div id="sideInputs"></div>
-            <div class="error-msg" id="errorMsg"></div>
-        </div>
+    <!-- Панель ввода размеров (показывается только на вкладке "Размеры") -->
+    <div id="dimensionsPanel">
+        <div class="panel-title">Введите длины сторон в сантиметрах:</div>
+        <div id="sideInputs"></div>
+        <div class="error-msg" id="errorMsg"></div>
     </div>
 
+    <!-- Статус -->
+    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
+
+    <!-- Кнопки -->
     <div class="toolbar">
         <button id="closeBtn" class="success" disabled>🔒 Замкнуть</button>
         <button id="undoBtn" class="warning" disabled>↩ Отменить</button>
@@ -187,16 +210,13 @@
     const undoBtn = document.getElementById('undoBtn');
     const sendBtn = document.getElementById('sendBtn');
     const clearBtn = document.getElementById('clearBtn');
-    const sidePanel = document.getElementById('sidePanel');
     const sideInputs = document.getElementById('sideInputs');
     const errorMsg = document.getElementById('errorMsg');
     const tabs = document.getElementById('tabs');
     const drawingTabBtn = document.getElementById('drawingTabBtn');
     const dimensionsTabBtn = document.getElementById('dimensionsTabBtn');
-    const canvasTabContent = document.getElementById('canvasTabContent');
-    const dimensionsTabContent = document.getElementById('dimensionsTabContent');
+    const dimensionsPanel = document.getElementById('dimensionsPanel');
     const shapeHint = document.getElementById('shapeHint');
-    let activeTab = 'drawing';
 
     let points = [];
     let isClosed = false;
@@ -204,9 +224,9 @@
     let builtPoints = [];
     let builtSides = [];
     let resizeObserver = null;
+    let activeTab = 'drawing';
 
     function getLabel(index) {
-        // Excel-подобная нумерация: A...Z, AA...AZ, BA...
         let n = index + 1;
         let result = '';
         while (n > 0) {
@@ -246,11 +266,11 @@
         else drawSketch();
     }
 
+    // ---- Геометрические функции (без изменений) ----
     function normalizeSketchForSolver(pts, targetSidesCm) {
         const n = pts.length;
         const sketchEdges = [];
         let totalSketch = 0;
-
         for (let i = 0; i < n; i++) {
             const a = pts[i];
             const b = pts[(i + 1) % n];
@@ -261,11 +281,8 @@
             sketchEdges.push(len);
             totalSketch += len;
         }
-
         const targetTotal = targetSidesCm.reduce((a, b) => a + b, 0);
         if (!(targetTotal > 0)) throw new Error('Некорректные длины сторон.');
-
-        // Масштабируем эскиз примерно под реальные размеры.
         const scale = targetTotal / totalSketch;
         const result = pts.map(p => ({ x: p.x * scale, y: p.y * scale }));
         const x0 = result[0].x, y0 = result[0].y;
@@ -297,57 +314,45 @@
             throw new Error('Для построения нужно минимум 3 вершины.');
         }
 
-        // Проверка неравенства многоугольника.
         const longest = Math.max(...sidesCm);
         const sumOthers = sidesCm.reduce((sum, s) => sum + s, 0) - longest;
         if (longest >= sumOthers - 1e-9) {
             throw new Error('Такие длины сторон не могут образовать замкнутый многоугольник: самая длинная сторона слишком велика.');
         }
 
-        // Работаем в сантиметрах. Position Based Dynamics:
-        // длины сторон становятся жёсткими ограничениями, а форма эскиза
-        // используется как начальное приближение.
         let pts = normalizeSketchForSolver(sketchPts, sidesCm);
         const reference = pts.map(p => ({ ...p }));
 
-        // Начальное приближение делаем более устойчивым: каждая следующая
-        // вершина находится на направлении исходного эскиза.
         const iterations = Math.min(3000, Math.max(800, n * 250));
         const shapeWeight = 0.003;
 
         for (let iter = 0; iter < iterations; iter++) {
-            // Мягко сохраняем исходную форму.
             for (let i = 1; i < n; i++) {
                 pts[i].x += (reference[i].x - pts[i].x) * shapeWeight;
                 pts[i].y += (reference[i].y - pts[i].y) * shapeWeight;
             }
 
-            // Попеременно удовлетворяем ограничения длины.
             for (let i = 0; i < n; i++) {
                 const j = (i + 1) % n;
                 const a = pts[i], b = pts[j];
                 let dx = b.x - a.x;
                 let dy = b.y - a.y;
                 let dist = Math.hypot(dx, dy);
-
                 if (dist < 1e-9) {
                     const angle = (2 * Math.PI * i) / n;
                     dx = Math.cos(angle);
                     dy = Math.sin(angle);
                     dist = 1;
                 }
-
                 const target = sidesCm[i];
                 const correction = (dist - target) / dist;
                 const cx = dx * correction;
                 const cy = dy * correction;
 
                 if (i === 0) {
-                    // Фиксируем A.
                     b.x -= cx;
                     b.y -= cy;
                 } else if (j === 0) {
-                    // Фиксируем A.
                     a.x += cx;
                     a.y += cy;
                 } else {
@@ -358,7 +363,6 @@
                 }
             }
 
-            // Возвращаем A в начало координат.
             const ax = pts[0].x, ay = pts[0].y;
             for (const p of pts) {
                 p.x -= ax;
@@ -372,13 +376,10 @@
         if (errorCm > 0.05) {
             throw new Error(`Не удалось точно замкнуть фигуру. Максимальная ошибка стороны: ${errorCm.toFixed(2)} см. Попробуйте нарисовать форму ближе к реальной.`);
         }
-
-        // Контроль площади: вырожденная фигура не имеет смысла.
         if (polygonAreaAbs(pts) < 0.01) {
             throw new Error('Получилась вырожденная фигура с нулевой площадью.');
         }
 
-        // Перевод в метры + нормализация.
         const minX = Math.min(...pts.map(p => p.x));
         const minY = Math.min(...pts.map(p => p.y));
         return pts.map(p => ({
@@ -387,110 +388,93 @@
         }));
     }
 
-    function setActiveTab(tab) {
-        activeTab = tab;
-        const drawing = tab === 'drawing';
-        canvasTabContent.classList.toggle('hidden', !drawing);
-        dimensionsTabContent.classList.toggle('hidden', drawing);
-        drawingTabBtn.classList.toggle('active', drawing);
-        dimensionsTabBtn.classList.toggle('active', !drawing);
-        if (drawing) {
-            resizeCanvas();
-        }
-    }
-
-    function updateTabsVisibility() {
-        const visible = isClosed && points.length >= 3;
-        tabs.classList.toggle('visible', visible);
-        if (!visible) setActiveTab('drawing');
-    }
-
-    function drawGrid() {
-        const { width, height } = getCanvasSize();
-        if (!width || !height) return;
-        const step = 30;
-        ctx.save();
-        ctx.strokeStyle = 'rgba(0,0,0,.06)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x <= width; x += step) {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
-            ctx.stroke();
-        }
-        for (let y = 0; y <= height; y += step) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(width, y);
-            ctx.stroke();
-        }
-        ctx.restore();
-    }
-
+    // ---- Отрисовка ----
     function drawLivePolygon() {
         if (points.length < 2) return;
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-        if (points.length >= 3) {
-            ctx.lineTo(points[0].x, points[0].y);
-            ctx.fillStyle = 'rgba(51,144,236,.12)';
-            ctx.fill();
-        }
+        // Рисуем только отрезки между последовательными точками, не замыкаем на A
         ctx.strokeStyle = '#3390ec';
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         ctx.stroke();
         ctx.restore();
-    }
 
-    function drawSketch() {
-        const { width, height } = getCanvasSize();
-        if (!width || !height) return; // холст скрыт (другая вкладка) — перерисуется при возврате
-        ctx.clearRect(0, 0, width, height);
-        drawGrid();
-
-        if (points.length === 0) {
-            statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
-            closeBtn.disabled = true;
-            undoBtn.disabled = true;
-            sidePanel.classList.remove('visible');
-            sendBtn.disabled = true;
-            return;
-        }
-
-        drawLivePolygon();
-
+        // Подписи точек
         points.forEach((p, i) => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
             ctx.fillStyle = '#1a73e8';
             ctx.fill();
-
             ctx.fillStyle = '#000';
             ctx.font = 'bold 14px system-ui';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText(getLabel(i), p.x, p.y - 10);
         });
+    }
+
+    function drawSketch() {
+        const { width, height } = getCanvasSize();
+        ctx.clearRect(0, 0, width, height);
+
+        if (points.length === 0) {
+            statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
+            closeBtn.disabled = true;
+            undoBtn.disabled = true;
+            sendBtn.disabled = true;
+            return;
+        }
+
+        drawLivePolygon();
 
         if (isClosed) {
-            statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между «Чертёж» и «Размеры».';
-            shapeHint.textContent = 'На вкладке «Чертёж» видны точки A, B, C… и форма фигуры. На вкладке «Размеры» вводятся длины соответствующих сторон в см.';
+            // Рисуем замыкающую линию (от последней к первой)
+            if (points.length >= 3) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(points[points.length-1].x, points[points.length-1].y);
+                ctx.lineTo(points[0].x, points[0].y);
+                ctx.strokeStyle = '#3390ec';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                // Заливка
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(51,144,236,.10)';
+                ctx.fill();
+                ctx.restore();
+            }
+
+            statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между вкладками для просмотра чертежа и ввода размеров.';
+            shapeHint.textContent = 'На вкладке «Чертёж» видны только точки и форма. На вкладке «Размеры» вы можете ввести длины сторон, чертёж при этом обновляется.';
             closeBtn.disabled = true;
-            buildSideInputs();
-            updateTabsVisibility();
+            if (!sideFields.length) buildSideInputs();
+            tabs.classList.add('visible');
+            // Автоматически показываем панель размеров, если активна соответствующая вкладка
+            if (activeTab === 'dimensions') {
+                dimensionsPanel.classList.add('visible');
+            } else {
+                dimensionsPanel.classList.remove('visible');
+            }
         } else {
             statusEl.textContent = points.length >= 3
-                ? `Точек: ${points.length}. Предпросмотр фигуры уже виден. Замкните её кнопкой или нажмите на первую точку.`
+                ? `Точек: ${points.length}. Предпросмотр фигуры виден. Замкните её кнопкой.`
                 : `Точек: ${points.length}. Добавьте ещё ${3 - points.length} точ${points.length === 1 ? 'ку' : 'ки'}.`;
             shapeHint.textContent = points.length >= 3
-                ? 'Предпросмотр замкнутого контура показан автоматически. Последняя линия замыкается на точку A.'
+                ? 'Предпросмотр замкнутого контура показан автоматически. Нажмите "Замкнуть", чтобы зафиксировать.'
                 : 'Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.';
             closeBtn.disabled = points.length < 3;
-            updateTabsVisibility();
+            tabs.classList.remove('visible');
+            dimensionsPanel.classList.remove('visible');
+            sideFields = [];
+            sideInputs.innerHTML = '';
+            sendBtn.disabled = true;
         }
 
         undoBtn.disabled = points.length === 0;
@@ -501,9 +485,7 @@
         if (builtPoints.length < 3) return;
 
         const { width: w, height: h } = getCanvasSize();
-        if (!w || !h) return; // холст скрыт (другая вкладка) — перерисуется при возврате
         ctx.clearRect(0, 0, w, h);
-        drawGrid();
 
         const xs = builtPoints.map(p => p.x);
         const ys = builtPoints.map(p => p.y);
@@ -563,10 +545,8 @@
             const len = Math.hypot(dx, dy);
 
             if (len > 32) {
-                // Нормаль в экранных координатах, фиксированный отступ.
                 const nx = -dy / len * 14;
                 const ny = dx / len * 14;
-
                 ctx.fillStyle = '#d32f2f';
                 ctx.font = '12px system-ui';
                 ctx.textAlign = 'center';
@@ -603,8 +583,6 @@
         try {
             builtPoints = buildPolygonFromSketchAndLengths(points, sides);
             builtSides = sides.slice();
-
-            // После построения показываем именно построенную геометрию.
             drawBuilt();
         } catch (e) {
             builtPoints = [];
@@ -649,22 +627,15 @@
                 if (isClosed) rebuildFigure();
             });
             input.addEventListener('focus', () => {
-                statusEl.textContent = `Введите длину ${getLabel(i)}–${getLabel(j)} в сантиметрах. Перейдите во вкладку «Чертёж», чтобы свериться с точками.`;
+                statusEl.textContent = `Введите длину ${getLabel(i)}–${getLabel(j)} в сантиметрах.`;
             });
         }
     }
 
+    // ---- Обработчики событий ----
     function addPoint(x, y) {
         if (isClosed) return;
-
-        if (points.length > 2) {
-            const first = points[0];
-            if (Math.hypot(x - first.x, y - first.y) < 32) {
-                closeFigure();
-                return;
-            }
-        }
-
+        // Нет автоматического замыкания – просто добавляем точку
         points.push({ x, y });
         builtPoints = [];
         builtSides = [];
@@ -674,7 +645,7 @@
     function closeFigure() {
         if (isClosed || points.length < 3) return;
 
-        // Не допускаем очевидные дубликаты/нулевые стороны.
+        // Проверка на короткие стороны
         for (let i = 0; i < points.length; i++) {
             const a = points[i];
             const b = points[(i + 1) % points.length];
@@ -689,11 +660,12 @@
         builtSides = [];
         showError('');
         drawSketch();
+        // После замыкания автоматически переключаем на вкладку "Размеры"
+        setActiveTab('dimensions');
     }
 
     function undoLastPoint() {
         if (points.length === 0) return;
-
         points.pop();
         isClosed = false;
         builtPoints = [];
@@ -701,14 +673,14 @@
         sideFields = [];
         sideInputs.innerHTML = '';
         showError('');
-        updateTabsVisibility();
+        tabs.classList.remove('visible');
+        dimensionsPanel.classList.remove('visible');
         drawSketch();
     }
 
     function clearAll() {
         if (points.length === 0) return;
         if (!window.confirm('Удалить весь чертёж?')) return;
-
         points = [];
         isClosed = false;
         sideFields = [];
@@ -716,7 +688,8 @@
         builtSides = [];
         sideInputs.innerHTML = '';
         showError('');
-        updateTabsVisibility();
+        tabs.classList.remove('visible');
+        dimensionsPanel.classList.remove('visible');
         drawSketch();
     }
 
@@ -735,6 +708,26 @@
         const p = getPointerPosition(event);
         addPoint(p.x, p.y);
     });
+
+    // ---- Переключение вкладок ----
+    function setActiveTab(tab) {
+        activeTab = tab;
+        const isDrawing = (tab === 'drawing');
+        drawingTabBtn.classList.toggle('active', isDrawing);
+        dimensionsTabBtn.classList.toggle('active', !isDrawing);
+        if (isDrawing) {
+            dimensionsPanel.classList.remove('visible');
+        } else {
+            if (isClosed) {
+                dimensionsPanel.classList.add('visible');
+                // Если фигура уже построена по размерам, перерисовываем
+                if (builtPoints.length >= 3) drawBuilt();
+                else if (isClosed) drawSketch();
+            }
+        }
+        // При переключении всегда перерисовываем канвас (если есть что рисовать)
+        resizeCanvas();
+    }
 
     drawingTabBtn.addEventListener('click', () => setActiveTab('drawing'));
     dimensionsTabBtn.addEventListener('click', () => {
