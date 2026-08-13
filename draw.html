@@ -163,17 +163,17 @@
 </head>
 <body>
 
-    <!-- Канвас всегда виден -->
+    <!-- Канвас -->
     <div id="canvasWrap"><canvas id="canvas"></canvas></div>
     <div class="shape-hint" id="shapeHint">Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.</div>
 
-    <!-- Вкладки (появляются после замыкания) -->
+    <!-- Вкладки -->
     <div class="tabs" id="tabs">
         <button class="tab-btn active" id="drawingTabBtn" type="button">📐 Чертёж</button>
         <button class="tab-btn" id="dimensionsTabBtn" type="button">📏 Размеры</button>
     </div>
 
-    <!-- Панель ввода размеров (показывается только на вкладке "Размеры") -->
+    <!-- Панель ввода размеров -->
     <div id="dimensionsPanel">
         <div class="panel-title">Введите длины сторон в сантиметрах:</div>
         <div id="sideInputs"></div>
@@ -266,7 +266,7 @@
         else drawSketch();
     }
 
-    // ---- Геометрические функции (без изменений) ----
+    // ---- Построение по длинам (точное) ----
     function normalizeSketchForSolver(pts, targetSidesCm) {
         const n = pts.length;
         const sketchEdges = [];
@@ -395,7 +395,6 @@
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-        // Рисуем только отрезки между последовательными точками, не замыкаем на A
         ctx.strokeStyle = '#3390ec';
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
@@ -403,7 +402,6 @@
         ctx.stroke();
         ctx.restore();
 
-        // Подписи точек
         points.forEach((p, i) => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
@@ -432,7 +430,7 @@
         drawLivePolygon();
 
         if (isClosed) {
-            // Рисуем замыкающую линию (от последней к первой)
+            // Замыкающая линия и заливка
             if (points.length >= 3) {
                 ctx.save();
                 ctx.beginPath();
@@ -441,7 +439,6 @@
                 ctx.strokeStyle = '#3390ec';
                 ctx.lineWidth = 3;
                 ctx.stroke();
-                // Заливка
                 ctx.beginPath();
                 ctx.moveTo(points[0].x, points[0].y);
                 for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
@@ -451,12 +448,11 @@
                 ctx.restore();
             }
 
-            statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между вкладками для просмотра чертежа и ввода размеров.';
-            shapeHint.textContent = 'На вкладке «Чертёж» видны только точки и форма. На вкладке «Размеры» вы можете ввести длины сторон, чертёж при этом обновляется.';
+            statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между вкладками.';
+            shapeHint.textContent = 'На вкладке «Чертёж» – форма, на «Размеры» – ввод длин.';
             closeBtn.disabled = true;
             if (!sideFields.length) buildSideInputs();
             tabs.classList.add('visible');
-            // Автоматически показываем панель размеров, если активна соответствующая вкладка
             if (activeTab === 'dimensions') {
                 dimensionsPanel.classList.add('visible');
             } else {
@@ -464,11 +460,11 @@
             }
         } else {
             statusEl.textContent = points.length >= 3
-                ? `Точек: ${points.length}. Предпросмотр фигуры виден. Замкните её кнопкой.`
+                ? `Точек: ${points.length}. Замкните кнопкой.`
                 : `Точек: ${points.length}. Добавьте ещё ${3 - points.length} точ${points.length === 1 ? 'ку' : 'ки'}.`;
             shapeHint.textContent = points.length >= 3
-                ? 'Предпросмотр замкнутого контура показан автоматически. Нажмите "Замкнуть", чтобы зафиксировать.'
-                : 'Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.';
+                ? 'Нажмите "Замкнуть", чтобы зафиксировать.'
+                : 'Поставьте минимум 3 точки.';
             closeBtn.disabled = points.length < 3;
             tabs.classList.remove('visible');
             dimensionsPanel.classList.remove('visible');
@@ -555,7 +551,7 @@
             }
         }
 
-        statusEl.textContent = '✅ Фигура построена по введённым размерам. Можно отправлять.';
+        statusEl.textContent = '✅ Фигура построена. Можно отправлять.';
         sendBtn.disabled = false;
     }
 
@@ -613,7 +609,6 @@
             input.autocomplete = 'off';
             input.inputMode = 'decimal';
             input.placeholder = 'см';
-            input.setAttribute('aria-label', `Длина стороны ${getLabel(i)}-${getLabel(j)}`);
 
             const unit = document.createElement('span');
             unit.className = 'unit';
@@ -626,16 +621,11 @@
             input.addEventListener('input', () => {
                 if (isClosed) rebuildFigure();
             });
-            input.addEventListener('focus', () => {
-                statusEl.textContent = `Введите длину ${getLabel(i)}–${getLabel(j)} в сантиметрах.`;
-            });
         }
     }
 
-    // ---- Обработчики событий ----
     function addPoint(x, y) {
         if (isClosed) return;
-        // Нет автоматического замыкания – просто добавляем точку
         points.push({ x, y });
         builtPoints = [];
         builtSides = [];
@@ -645,7 +635,6 @@
     function closeFigure() {
         if (isClosed || points.length < 3) return;
 
-        // Проверка на короткие стороны
         for (let i = 0; i < points.length; i++) {
             const a = points[i];
             const b = points[(i + 1) % points.length];
@@ -660,7 +649,6 @@
         builtSides = [];
         showError('');
         drawSketch();
-        // После замыкания автоматически переключаем на вкладку "Размеры"
         setActiveTab('dimensions');
     }
 
@@ -709,7 +697,6 @@
         addPoint(p.x, p.y);
     });
 
-    // ---- Переключение вкладок ----
     function setActiveTab(tab) {
         activeTab = tab;
         const isDrawing = (tab === 'drawing');
@@ -720,12 +707,10 @@
         } else {
             if (isClosed) {
                 dimensionsPanel.classList.add('visible');
-                // Если фигура уже построена по размерам, перерисовываем
                 if (builtPoints.length >= 3) drawBuilt();
                 else if (isClosed) drawSketch();
             }
         }
-        // При переключении всегда перерисовываем канвас (если есть что рисовать)
         resizeCanvas();
     }
 
@@ -770,7 +755,6 @@
     });
 
     window.addEventListener('resize', resizeCanvas);
-
     if ('ResizeObserver' in window) {
         resizeObserver = new ResizeObserver(() => resizeCanvas());
         resizeObserver.observe(document.getElementById('canvasWrap'));
