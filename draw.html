@@ -43,9 +43,7 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             display: none;
         }
-        .panel.visible {
-            display: block;
-        }
+        .panel.visible { display: block; }
         .side-input {
             display: flex;
             align-items: center;
@@ -53,11 +51,7 @@
             padding: 6px 0;
             border-bottom: 1px solid #eee;
         }
-        .side-input label {
-            font-weight: 600;
-            font-size: 15px;
-            min-width: 60px;
-        }
+        .side-input label { font-weight: 600; font-size: 15px; min-width: 60px; }
         .side-input input {
             width: 100px;
             padding: 6px 10px;
@@ -66,16 +60,8 @@
             border-radius: 8px;
             text-align: right;
         }
-        .side-input input:focus {
-            border-color: #3390ec;
-            outline: none;
-        }
-        .side-input .unit {
-            font-size: 14px;
-            color: #666;
-            margin-left: 6px;
-            min-width: 30px;
-        }
+        .side-input input:focus { border-color: #3390ec; outline: none; }
+        .side-input .unit { font-size: 14px; color: #666; margin-left: 6px; min-width: 30px; }
         .toolbar {
             display: flex;
             gap: 10px;
@@ -94,49 +80,24 @@
             font-weight: 600;
             min-width: 100px;
         }
-        .toolbar button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
+        .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
         .primary { background: #3390ec; color: white; }
         .danger { background: #f55353; color: white; }
         .success { background: #34a853; color: white; }
         .warning { background: #f5a623; color: white; }
-        .info {
-            margin-top: 8px;
-            font-size: 14px;
-            color: #333;
-            text-align: center;
-            min-height: 20px;
-        }
-        .error-msg {
-            color: #d32f2f;
-            font-size: 13px;
-            margin-top: 6px;
-            display: none;
-        }
-        .error-msg.visible {
-            display: block;
-        }
+        .info { margin-top: 8px; font-size: 14px; color: #333; text-align: center; min-height: 20px; }
+        .error-msg { color: #d32f2f; font-size: 13px; margin-top: 6px; display: none; }
+        .error-msg.visible { display: block; }
     </style>
 </head>
 <body>
-
-    <div id="canvasWrap">
-        <canvas id="canvas"></canvas>
-    </div>
-
-    <div class="info" id="status">
-        Нажмите на холст, чтобы поставить точку
-    </div>
-
-    <!-- Панель ввода длин сторон -->
+    <div id="canvasWrap"><canvas id="canvas"></canvas></div>
+    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
     <div class="panel" id="sidePanel">
         <div style="font-weight:600; margin-bottom:8px;">Введите длины сторон (в см):</div>
         <div id="sideInputs"></div>
         <div class="error-msg" id="errorMsg">Заполните все поля положительными числами.</div>
     </div>
-
     <div class="toolbar">
         <button id="closeBtn" class="success" disabled>🔒 Замкнуть</button>
         <button id="undoBtn" class="warning" disabled>↩ Отменить</button>
@@ -146,11 +107,9 @@
 
     <script>
         (function() {
+            const tg = window.Telegram?.WebApp;
+            if (tg) { tg.expand(); tg.ready(); }
 
-            const Telegram = window.Telegram?.WebApp || null;
-            if (Telegram) Telegram.expand();
-
-            // ==================== ЭЛЕМЕНТЫ ====================
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
             const statusEl = document.getElementById('status');
@@ -162,12 +121,10 @@
             const sideInputs = document.getElementById('sideInputs');
             const errorMsg = document.getElementById('errorMsg');
 
-            // ==================== ДАННЫЕ ====================
             let points = [];
             let isClosed = false;
-            let sideFields = []; // массив объектов { input, label }
+            let sideFields = [];
 
-            // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
             function getLabel(index) {
                 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
                 if (index < alphabet.length) return alphabet[index];
@@ -176,7 +133,6 @@
                 return alphabet[first] + alphabet[second];
             }
 
-            // ==================== РАЗМЕР CANVAS ====================
             function resizeCanvas() {
                 const rect = canvas.parentElement.getBoundingClientRect();
                 const dpr = window.devicePixelRatio || 1;
@@ -186,7 +142,6 @@
                 draw();
             }
 
-            // ==================== ОТРИСОВКА ====================
             function draw() {
                 const rect = canvas.parentElement.getBoundingClientRect();
                 ctx.clearRect(0, 0, rect.width, rect.height);
@@ -197,29 +152,19 @@
                     sidePanel.classList.remove('visible');
                     return;
                 }
-
-                // Линии
                 ctx.beginPath();
                 ctx.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length; i++) {
-                    ctx.lineTo(points[i].x, points[i].y);
-                }
-                if (isClosed && points.length > 2) {
-                    ctx.closePath();
-                }
+                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+                if (isClosed && points.length > 2) ctx.closePath();
                 ctx.strokeStyle = '#1a73e8';
                 ctx.lineWidth = 4;
                 ctx.lineJoin = 'round';
                 ctx.lineCap = 'round';
                 ctx.stroke();
-
-                // Заливка
                 if (isClosed && points.length > 2) {
                     ctx.fillStyle = 'rgba(26, 115, 232, 0.12)';
                     ctx.fill();
                 }
-
-                // Вершины – подписываем буквами
                 points.forEach((p, i) => {
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
@@ -231,8 +176,6 @@
                     ctx.textBaseline = 'bottom';
                     ctx.fillText(getLabel(i), p.x, p.y - 10);
                 });
-
-                // Статус
                 if (isClosed) {
                     statusEl.textContent = '✅ Фигура замкнута. Введите длины сторон внизу.';
                     closeBtn.disabled = true;
@@ -241,8 +184,6 @@
                     closeBtn.disabled = points.length < 3;
                 }
                 undoBtn.disabled = points.length === 0;
-
-                // Показываем панель ввода, если фигура замкнута
                 if (isClosed && points.length >= 3) {
                     buildSideInputs();
                     sidePanel.classList.add('visible');
@@ -251,11 +192,8 @@
                 }
             }
 
-            // ==================== ПОСТРОЕНИЕ ПОЛЕЙ ВВОДА ====================
             function buildSideInputs() {
-                if (sideFields.length > 0 && sideFields.length === points.length) {
-                    return;
-                }
+                if (sideFields.length > 0 && sideFields.length === points.length) return;
                 sideInputs.innerHTML = '';
                 sideFields = [];
                 const n = points.length;
@@ -281,9 +219,7 @@
                     sideInputs.appendChild(div);
                     sideFields.push({ input: inp, label });
                 }
-                sideFields.forEach(f => {
-                    f.input.addEventListener('input', validateInputs);
-                });
+                sideFields.forEach(f => f.input.addEventListener('input', validateInputs));
                 validateInputs();
             }
 
@@ -294,13 +230,10 @@
                     if (isNaN(val) || val <= 0) allFilled = false;
                 });
                 errorMsg.classList.remove('visible');
-                if (!allFilled && sideFields.length > 0) {
-                    errorMsg.classList.add('visible');
-                }
+                if (!allFilled && sideFields.length > 0) errorMsg.classList.add('visible');
                 return allFilled;
             }
 
-            // ==================== ДОБАВЛЕНИЕ ТОЧКИ ====================
             function addPoint(x, y) {
                 if (isClosed) return;
                 if (points.length > 2) {
@@ -314,7 +247,6 @@
                 draw();
             }
 
-            // ==================== ЗАМЫКАНИЕ ====================
             function closeFigure() {
                 if (isClosed || points.length < 3) return;
                 isClosed = true;
@@ -322,18 +254,14 @@
                 draw();
             }
 
-            // ==================== ОТМЕНА ПОСЛЕДНЕЙ ТОЧКИ ====================
             function undoLastPoint() {
                 if (points.length === 0) return;
-                if (isClosed) {
-                    isClosed = false;
-                }
+                if (isClosed) isClosed = false;
                 points.pop();
                 sideFields = [];
                 draw();
             }
 
-            // ==================== КЛИК ПО CANVAS ====================
             canvas.addEventListener('click', function(e) {
                 if (isClosed) return;
                 const rect = canvas.getBoundingClientRect();
@@ -342,7 +270,6 @@
                 addPoint(x, y);
             });
 
-            // ==================== КНОПКИ ====================
             closeBtn.addEventListener('click', closeFigure);
             undoBtn.addEventListener('click', undoLastPoint);
 
@@ -356,22 +283,13 @@
             });
 
             sendBtn.addEventListener('click', function() {
-                if (points.length < 3) {
-                    alert('Нарисуйте минимум 3 точки.');
-                    return;
-                }
-                if (!isClosed) {
-                    alert('Сначала замкните фигуру (нажмите «Замкнуть»).');
-                    return;
-                }
-                // Проверяем ввод длин
+                if (points.length < 3) { alert('Нарисуйте минимум 3 точки.'); return; }
+                if (!isClosed) { alert('Сначала замкните фигуру (нажмите «Замкнуть»).'); return; }
                 const sides = [];
                 let allValid = true;
                 sideFields.forEach(f => {
                     const val = parseFloat(f.input.value);
-                    if (isNaN(val) || val <= 0) {
-                        allValid = false;
-                    }
+                    if (isNaN(val) || val <= 0) allValid = false;
                     sides.push(val);
                 });
                 if (!allValid || sides.length !== points.length) {
@@ -380,27 +298,27 @@
                 }
                 errorMsg.classList.remove('visible');
 
-                // Отправляем точки (без замыкающей, бот сам добавит при необходимости)
                 const data = {
                     type: 'drawing',
                     points: points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
                     sides_cm: sides
                 };
 
-                if (Telegram) {
-                    Telegram.sendData(JSON.stringify(data));
-                    Telegram.close();
-                } else {
-                    alert('Данные отправлены:\n' + JSON.stringify(data, null, 2));
+                try {
+                    if (tg) {
+                        tg.sendData(JSON.stringify(data));
+                        setTimeout(() => tg.close(), 500);
+                    } else {
+                        alert('Telegram WebApp не обнаружен.\nДанные:\n' + JSON.stringify(data, null, 2));
+                    }
+                } catch (e) {
+                    alert('Ошибка отправки: ' + e.message);
                 }
             });
 
-            // ==================== RESIZE ====================
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
-
         })();
     </script>
-
 </body>
 </html>
