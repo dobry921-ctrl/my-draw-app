@@ -1,70 +1,97 @@
-[file name]: draw.html
-[file content begin]
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Рисуйте чертёж</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; }
         body {
             background: #f0f2f5;
-            font-family: system-ui, sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 100vh;
-            padding: 10px;
+            min-height: 100vh;
+            padding: max(10px, env(safe-area-inset-top)) 10px max(16px, env(safe-area-inset-bottom));
             overflow-y: auto;
+            overscroll-behavior: contain;
         }
         #canvasWrap {
             width: 100%;
             max-width: 700px;
-            aspect-ratio: 1/1;
-            background: white;
+            aspect-ratio: 1 / 1;
+            background: #fff;
             border-radius: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,.10);
             overflow: hidden;
             position: relative;
+            flex: 0 0 auto;
         }
         canvas {
             width: 100%;
             height: 100%;
+            display: block;
             border-radius: 16px;
             cursor: crosshair;
-            display: block;
+            touch-action: none;
         }
         .panel {
             width: 100%;
             max-width: 700px;
             margin-top: 12px;
-            background: white;
+            background: #fff;
             border-radius: 12px;
             padding: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 8px rgba(0,0,0,.08);
             display: none;
         }
         .panel.visible { display: block; }
+        .panel-title { font-weight: 700; margin-bottom: 8px; }
+        .tabs {
+            width: 100%; max-width: 700px; margin-top: 12px;
+            display: none; grid-template-columns: 1fr 1fr; gap: 6px;
+            background: #fff; padding: 5px; border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.08);
+        }
+        .tabs.visible { display: grid; }
+        .tab-btn {
+            border: 0; background: transparent; border-radius: 9px;
+            padding: 11px 8px; font-size: 15px; font-weight: 700; cursor: pointer;
+        }
+        .tab-btn.active { background: #3390ec; color: #fff; }
+        .tab-content { width: 100%; max-width: 700px; }
+        .tab-content.hidden { display: none; }
+        #canvasWrap { transition: opacity .15s ease; }
+        .shape-hint {
+            width: 100%; max-width: 700px; margin-top: 8px;
+            padding: 9px 11px; border-radius: 10px; background: #fff;
+            font-size: 13px; color: #555; text-align: center;
+        }
+        .side-input input { font-variant-numeric: tabular-nums; }
         .side-input {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr auto auto;
             align-items: center;
-            justify-content: space-between;
-            padding: 6px 0;
+            gap: 8px;
+            padding: 7px 0;
             border-bottom: 1px solid #eee;
         }
-        .side-input label { font-weight: 600; font-size: 15px; min-width: 60px; }
+        .side-input:last-child { border-bottom: 0; }
+        .side-input label { font-weight: 600; font-size: 15px; }
         .side-input input {
-            width: 100px;
-            padding: 6px 10px;
-            font-size: 15px;
+            width: 110px;
+            padding: 8px 10px;
+            font-size: 16px;
             border: 1px solid #ccc;
             border-radius: 8px;
             text-align: right;
+            background: #fff;
         }
         .side-input input:focus { border-color: #3390ec; outline: none; }
-        .side-input .unit { font-size: 14px; color: #666; margin-left: 6px; min-width: 30px; }
+        .side-input .unit { font-size: 14px; color: #666; min-width: 24px; }
         .toolbar {
             display: flex;
             gap: 10px;
@@ -74,415 +101,666 @@
             flex-wrap: wrap;
         }
         .toolbar button {
-            padding: 14px 16px;
+            padding: 13px 14px;
             font-size: 16px;
-            border: none;
+            border: 0;
             border-radius: 10px;
             flex: 1 1 30%;
             cursor: pointer;
-            font-weight: 600;
-            min-width: 100px;
+            font-weight: 650;
+            min-width: 110px;
         }
-        .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
-        .primary { background: #3390ec; color: white; }
-        .danger { background: #f55353; color: white; }
-        .success { background: #34a853; color: white; }
-        .warning { background: #f5a623; color: white; }
-        .info { margin-top: 8px; font-size: 14px; color: #333; text-align: center; min-height: 20px; }
-        .error-msg { color: #d32f2f; font-size: 13px; margin-top: 6px; display: none; }
+        .toolbar button:disabled { opacity: .42; cursor: not-allowed; }
+        .primary { background: #3390ec; color: #fff; }
+        .danger { background: #f55353; color: #fff; }
+        .success { background: #34a853; color: #fff; }
+        .warning { background: #f5a623; color: #fff; }
+        .info {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 8px;
+            font-size: 14px;
+            color: #333;
+            text-align: center;
+            min-height: 20px;
+            line-height: 1.35;
+        }
+        .error-msg {
+            color: #d32f2f;
+            font-size: 13px;
+            margin-top: 8px;
+            display: none;
+        }
         .error-msg.visible { display: block; }
+        @media (max-width: 480px) {
+            body { padding-left: 7px; padding-right: 7px; }
+            .toolbar { gap: 7px; }
+            .toolbar button { min-width: 0; padding: 12px 8px; font-size: 14px; }
+            .side-input input { width: 100px; }
+        }
     </style>
 </head>
 <body>
-    <div id="canvasWrap"><canvas id="canvas"></canvas></div>
-    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
-    <div class="panel" id="sidePanel">
-        <div style="font-weight:600; margin-bottom:8px;">Введите длины сторон (в см):</div>
-        <div id="sideInputs"></div>
-        <div class="error-msg" id="errorMsg">Заполните все поля положительными числами.</div>
+    <div id="canvasTabContent" class="tab-content">
+        <div id="canvasWrap"><canvas id="canvas"></canvas></div>
+        <div class="shape-hint" id="shapeHint">Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.</div>
     </div>
+
+    <div class="tabs" id="tabs">
+        <button class="tab-btn active" id="drawingTabBtn" type="button">📐 Чертёж</button>
+        <button class="tab-btn" id="dimensionsTabBtn" type="button">📏 Размеры</button>
+    </div>
+
+    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
+
+    <div id="dimensionsTabContent" class="tab-content hidden">
+        <div class="panel visible" id="sidePanel">
+            <div class="panel-title">Введите длины сторон в сантиметрах:</div>
+            <div id="sideInputs"></div>
+            <div class="error-msg" id="errorMsg"></div>
+        </div>
+    </div>
+
     <div class="toolbar">
         <button id="closeBtn" class="success" disabled>🔒 Замкнуть</button>
         <button id="undoBtn" class="warning" disabled>↩ Отменить</button>
-        <button id="sendBtn" class="primary">✅ Отправить</button>
+        <button id="sendBtn" class="primary" disabled>✅ Отправить</button>
         <button id="clearBtn" class="danger">🗑 Очистить</button>
     </div>
 
-    <script>
-        (function() {
-            // ========== ИНИЦИАЛИЗАЦИЯ TELEGRAM ==========
-            const tg = window.Telegram?.WebApp;
-            if (tg) { tg.expand(); tg.ready(); }
+<script>
+(function () {
+    'use strict';
 
-            // ========== ЭЛЕМЕНТЫ ==========
-            const canvas = document.getElementById('canvas');
-            const ctx = canvas.getContext('2d');
-            const statusEl = document.getElementById('status');
-            const closeBtn = document.getElementById('closeBtn');
-            const undoBtn = document.getElementById('undoBtn');
-            const sendBtn = document.getElementById('sendBtn');
-            const clearBtn = document.getElementById('clearBtn');
-            const sidePanel = document.getElementById('sidePanel');
-            const sideInputs = document.getElementById('sideInputs');
-            const errorMsg = document.getElementById('errorMsg');
+    const tg = window.Telegram?.WebApp || null;
+    if (tg) {
+        try {
+            tg.ready();
+            tg.expand();
+        } catch (_) {}
+    }
 
-            // ========== ДАННЫЕ ==========
-            let points = [];          // точки эскиза (в пикселях)
-            let isClosed = false;
-            let sideFields = [];
-            let builtPoints = [];     // построенные точки (после масштабирования по длинам)
-            let builtSides = [];      // длины сторон для построенной фигуры
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const closeBtn = document.getElementById('closeBtn');
+    const undoBtn = document.getElementById('undoBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const sidePanel = document.getElementById('sidePanel');
+    const sideInputs = document.getElementById('sideInputs');
+    const errorMsg = document.getElementById('errorMsg');
+    const tabs = document.getElementById('tabs');
+    const drawingTabBtn = document.getElementById('drawingTabBtn');
+    const dimensionsTabBtn = document.getElementById('dimensionsTabBtn');
+    const canvasTabContent = document.getElementById('canvasTabContent');
+    const dimensionsTabContent = document.getElementById('dimensionsTabContent');
+    const shapeHint = document.getElementById('shapeHint');
+    let activeTab = 'drawing';
 
-            // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-            function getLabel(index) {
-                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                if (index < alphabet.length) return alphabet[index];
-                const first = Math.floor(index / alphabet.length) - 1;
-                const second = index % alphabet.length;
-                return alphabet[first] + alphabet[second];
+    let points = [];
+    let isClosed = false;
+    let sideFields = [];
+    let builtPoints = [];
+    let builtSides = [];
+    let resizeObserver = null;
+
+    function getLabel(index) {
+        // Excel-подобная нумерация: A...Z, AA...AZ, BA...
+        let n = index + 1;
+        let result = '';
+        while (n > 0) {
+            n--;
+            result = String.fromCharCode(65 + (n % 26)) + result;
+            n = Math.floor(n / 26);
+        }
+        return result;
+    }
+
+    function showError(message) {
+        errorMsg.textContent = message;
+        errorMsg.classList.toggle('visible', Boolean(message));
+    }
+
+    function getCanvasSize() {
+        const rect = canvas.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    }
+
+    function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+        const width = Math.max(1, Math.round(rect.width));
+        const height = Math.max(1, Math.round(rect.height));
+
+        const targetWidth = Math.round(width * dpr);
+        const targetHeight = Math.round(height * dpr);
+
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        if (builtPoints.length >= 3) drawBuilt();
+        else drawSketch();
+    }
+
+    function normalizeSketchForSolver(pts, targetSidesCm) {
+        const n = pts.length;
+        const sketchEdges = [];
+        let totalSketch = 0;
+
+        for (let i = 0; i < n; i++) {
+            const a = pts[i];
+            const b = pts[(i + 1) % n];
+            const len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (!Number.isFinite(len) || len < 1e-6) {
+                throw new Error(`Сторона ${getLabel(i)}–${getLabel((i + 1) % n)} слишком короткая.`);
+            }
+            sketchEdges.push(len);
+            totalSketch += len;
+        }
+
+        const targetTotal = targetSidesCm.reduce((a, b) => a + b, 0);
+        if (!(targetTotal > 0)) throw new Error('Некорректные длины сторон.');
+
+        // Масштабируем эскиз примерно под реальные размеры.
+        const scale = targetTotal / totalSketch;
+        const result = pts.map(p => ({ x: p.x * scale, y: p.y * scale }));
+        const x0 = result[0].x, y0 = result[0].y;
+        return result.map(p => ({ x: p.x - x0, y: p.y - y0 }));
+    }
+
+    function polygonAreaAbs(pts) {
+        let area = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const a = pts[i], b = pts[(i + 1) % pts.length];
+            area += a.x * b.y - b.x * a.y;
+        }
+        return Math.abs(area) / 2;
+    }
+
+    function maxSideError(pts, targetCm) {
+        let maxError = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const a = pts[i], b = pts[(i + 1) % pts.length];
+            const actual = Math.hypot(b.x - a.x, b.y - a.y);
+            maxError = Math.max(maxError, Math.abs(actual - targetCm[i]));
+        }
+        return maxError;
+    }
+
+    function buildPolygonFromSketchAndLengths(sketchPts, sidesCm) {
+        const n = sidesCm.length;
+        if (n < 3 || sketchPts.length !== n) {
+            throw new Error('Для построения нужно минимум 3 вершины.');
+        }
+
+        // Проверка неравенства многоугольника.
+        const longest = Math.max(...sidesCm);
+        const sumOthers = sidesCm.reduce((sum, s) => sum + s, 0) - longest;
+        if (longest >= sumOthers - 1e-9) {
+            throw new Error('Такие длины сторон не могут образовать замкнутый многоугольник: самая длинная сторона слишком велика.');
+        }
+
+        // Работаем в сантиметрах. Position Based Dynamics:
+        // длины сторон становятся жёсткими ограничениями, а форма эскиза
+        // используется как начальное приближение.
+        let pts = normalizeSketchForSolver(sketchPts, sidesCm);
+        const reference = pts.map(p => ({ ...p }));
+
+        // Начальное приближение делаем более устойчивым: каждая следующая
+        // вершина находится на направлении исходного эскиза.
+        const iterations = Math.min(3000, Math.max(800, n * 250));
+        const shapeWeight = 0.003;
+
+        for (let iter = 0; iter < iterations; iter++) {
+            // Мягко сохраняем исходную форму.
+            for (let i = 1; i < n; i++) {
+                pts[i].x += (reference[i].x - pts[i].x) * shapeWeight;
+                pts[i].y += (reference[i].y - pts[i].y) * shapeWeight;
             }
 
-            // ---------- ГЕОМЕТРИЯ (скопировано из Python) ----------
-            function computeAnglesFromPoints(pts) {
-                // pts – массив объектов {x, y}
-                const n = pts.length;
-                if (n < 3) return new Array(n).fill(180);
-                // Определяем ориентацию (площадь)
-                let area = 0;
-                for (let i = 0; i < n; i++) {
-                    const p1 = pts[i];
-                    const p2 = pts[(i+1)%n];
-                    area += p1.x * p2.y - p2.x * p1.y;
-                }
-                const orientation = area >= 0 ? 1 : -1;
-                const angles = [];
-                for (let i = 0; i < n; i++) {
-                    const prev = pts[(i-1+n)%n];
-                    const cur = pts[i];
-                    const next = pts[(i+1)%n];
-                    const v1 = { x: prev.x - cur.x, y: prev.y - cur.y };
-                    const v2 = { x: next.x - cur.x, y: next.y - cur.y };
-                    const cross = v1.x * v2.y - v1.y * v2.x;
-                    const dot = v1.x * v2.x + v1.y * v2.y;
-                    const norm1 = Math.hypot(v1.x, v1.y);
-                    const norm2 = Math.hypot(v2.x, v2.y);
-                    if (norm1 === 0 || norm2 === 0) { angles.push(180); continue; }
-                    let angleRad = Math.acos(Math.max(-1, Math.min(1, dot / (norm1 * norm2))));
-                    let angleDeg = angleRad * 180 / Math.PI;
-                    if (cross * orientation < 0) angleDeg = 360 - angleDeg;
-                    angles.push(angleDeg);
-                }
-                return angles;
-            }
+            // Попеременно удовлетворяем ограничения длины.
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                const a = pts[i], b = pts[j];
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                let dist = Math.hypot(dx, dy);
 
-            function buildPolygonFromAnglesAndLengths(sidesCm, anglesDeg) {
-                // sidesCm – массив длин в см, anglesDeg – массив углов (градусы)
-                const n = sidesCm.length;
-                if (n !== anglesDeg.length) throw new Error('Не совпадает количество углов и сторон');
-                const sidesM = sidesCm.map(s => s / 100.0);
-                let x = 0, y = 0;
-                const coords = [{x, y}];
-                let dirRad = 0;
-                for (let i = 0; i < n; i++) {
-                    x += sidesM[i] * Math.cos(dirRad);
-                    y += sidesM[i] * Math.sin(dirRad);
-                    coords.push({x, y});
-                    if (i < n-1) {
-                        const turnDeg = 180 - anglesDeg[(i+1) % n];
-                        dirRad += turnDeg * Math.PI / 180;
-                    }
+                if (dist < 1e-9) {
+                    const angle = (2 * Math.PI * i) / n;
+                    dx = Math.cos(angle);
+                    dy = Math.sin(angle);
+                    dist = 1;
                 }
-                coords.pop(); // убираем последнюю дублирующую точку
-                // Нормализуем (сдвигаем к 0)
-                const minX = Math.min(...coords.map(p => p.x));
-                const minY = Math.min(...coords.map(p => p.y));
-                return coords.map(p => ({ x: p.x - minX, y: p.y - minY }));
-            }
 
-            // ---------- ОТРИСОВКА ПОСТРОЕННОЙ ФИГУРЫ ----------
-            function drawBuilt() {
-                if (!builtPoints || builtPoints.length < 3) return;
-                const rect = canvas.parentElement.getBoundingClientRect();
-                const w = rect.width, h = rect.height;
-                // Найдём масштаб, чтобы фигура поместилась с отступами
-                const margin = 40;
-                const pts = builtPoints;
-                const xs = pts.map(p => p.x);
-                const ys = pts.map(p => p.y);
-                const minX = Math.min(...xs);
-                const maxX = Math.max(...xs);
-                const minY = Math.min(...ys);
-                const maxY = Math.max(...ys);
-                const rangeX = maxX - minX || 1;
-                const rangeY = maxY - minY || 1;
-                const scale = Math.min((w - 2*margin) / rangeX, (h - 2*margin) / rangeY);
-                const offsetX = (w - rangeX * scale) / 2 - minX * scale;
-                const offsetY = (h - rangeY * scale) / 2 - minY * scale;
+                const target = sidesCm[i];
+                const correction = (dist - target) / dist;
+                const cx = dx * correction;
+                const cy = dy * correction;
 
-                ctx.clearRect(0, 0, w, h);
-                // Рисуем линии
-                ctx.beginPath();
-                const p0 = pts[0];
-                ctx.moveTo(p0.x * scale + offsetX, p0.y * scale + offsetY);
-                for (let i = 1; i < pts.length; i++) {
-                    const p = pts[i];
-                    ctx.lineTo(p.x * scale + offsetX, p.y * scale + offsetY);
-                }
-                ctx.closePath();
-                ctx.strokeStyle = '#1a73e8';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-                ctx.fillStyle = 'rgba(26, 115, 232, 0.12)';
-                ctx.fill();
-
-                // Вершины и подписи сторон
-                const n = pts.length;
-                for (let i = 0; i < n; i++) {
-                    const p = pts[i];
-                    const cx = p.x * scale + offsetX;
-                    const cy = p.y * scale + offsetY;
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, 6, 0, 2*Math.PI);
-                    ctx.fillStyle = '#1a73e8';
-                    ctx.fill();
-                    ctx.fillStyle = '#000';
-                    ctx.font = 'bold 14px system-ui';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText(getLabel(i), cx, cy - 10);
-
-                    // Подпись стороны (длина)
-                    const j = (i+1) % n;
-                    const p2 = pts[j];
-                    const mx = (p.x + p2.x)/2 * scale + offsetX;
-                    const my = (p.y + p2.y)/2 * scale + offsetY;
-                    const dx = (p2.x - p.x) * scale;
-                    const dy = (p2.y - p.y) * scale;
-                    const len = Math.hypot(dx, dy);
-                    if (len > 20) {
-                        const perp = 0.03;
-                        const nx = -dy / len * perp * scale;
-                        const ny = dx / len * perp * scale;
-                        ctx.fillStyle = 'red';
-                        ctx.font = '12px system-ui';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(`${builtSides[i].toFixed(1)} см`, mx + nx, my + ny);
-                    }
-                }
-                statusEl.textContent = '✅ Фигура построена по введённым размерам. Можно отправлять.';
-                sendBtn.disabled = false;
-            }
-
-            // ========== ПОСТРОЕНИЕ ФИГУРЫ ПО ДЛИНАМ ==========
-            function rebuildFigure() {
-                // Проверяем, все ли поля заполнены
-                const sides = [];
-                let valid = true;
-                sideFields.forEach(f => {
-                    const val = parseFloat(f.input.value);
-                    if (isNaN(val) || val <= 0) valid = false;
-                    sides.push(val);
-                });
-                if (!valid || sides.length !== points.length) {
-                    errorMsg.classList.add('visible');
-                    return;
-                }
-                errorMsg.classList.remove('visible');
-
-                // Вычисляем углы эскиза
-                const angles = computeAnglesFromPoints(points);
-                // Строим фигуру по длинам и углам
-                try {
-                    const coords = buildPolygonFromAnglesAndLengths(sides, angles);
-                    builtPoints = coords;
-                    builtSides = sides.slice(); // копия
-                    drawBuilt();
-                } catch (e) {
-                    alert('Ошибка построения: ' + e.message);
-                }
-            }
-
-            // ========== ПОСТРОЕНИЕ ПОЛЕЙ ВВОДА ==========
-            function buildSideInputs() {
-                if (sideFields.length > 0 && sideFields.length === points.length) return;
-                sideInputs.innerHTML = '';
-                sideFields = [];
-                const n = points.length;
-                for (let i = 0; i < n; i++) {
-                    const j = (i + 1) % n;
-                    const label = `${getLabel(i)}–${getLabel(j)}`;
-                    const div = document.createElement('div');
-                    div.className = 'side-input';
-                    const lbl = document.createElement('label');
-                    lbl.textContent = label;
-                    const inp = document.createElement('input');
-                    inp.type = 'number';
-                    inp.min = 0.1;
-                    inp.step = 0.1;
-                    inp.placeholder = 'см';
-                    inp.required = true;
-                    const unit = document.createElement('span');
-                    unit.className = 'unit';
-                    unit.textContent = 'см';
-                    div.appendChild(lbl);
-                    div.appendChild(inp);
-                    div.appendChild(unit);
-                    sideInputs.appendChild(div);
-                    sideFields.push({ input: inp, label });
-                }
-                sideFields.forEach(f => {
-                    f.input.addEventListener('input', function() {
-                        // При изменении любого поля перестраиваем фигуру
-                        if (isClosed && points.length >= 3) {
-                            rebuildFigure();
-                        }
-                    });
-                });
-                // Если фигура уже замкнута, сразу строим
-                if (isClosed && points.length >= 3) {
-                    rebuildFigure();
-                }
-            }
-
-            // ========== ОТРИСОВКА ЭСКИЗА ==========
-            function drawSketch() {
-                const rect = canvas.parentElement.getBoundingClientRect();
-                ctx.clearRect(0, 0, rect.width, rect.height);
-                if (points.length === 0) {
-                    statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
-                    closeBtn.disabled = true;
-                    undoBtn.disabled = true;
-                    sidePanel.classList.remove('visible');
-                    sendBtn.disabled = true;
-                    return;
-                }
-                // Линии эскиза
-                ctx.beginPath();
-                ctx.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-                if (isClosed && points.length > 2) ctx.closePath();
-                ctx.strokeStyle = '#1a73e8';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-                if (isClosed && points.length > 2) {
-                    ctx.fillStyle = 'rgba(26, 115, 232, 0.08)';
-                    ctx.fill();
-                }
-                // Вершины
-                points.forEach((p, i) => {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, 6, 0, 2*Math.PI);
-                    ctx.fillStyle = '#1a73e8';
-                    ctx.fill();
-                    ctx.fillStyle = '#000';
-                    ctx.font = 'bold 14px system-ui';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText(getLabel(i), p.x, p.y - 10);
-                });
-
-                if (isClosed) {
-                    statusEl.textContent = '✅ Фигура замкнута. Введите длины сторон внизу.';
-                    closeBtn.disabled = true;
-                    // Показываем панель ввода
-                    sidePanel.classList.add('visible');
-                    buildSideInputs();
+                if (i === 0) {
+                    // Фиксируем A.
+                    b.x -= cx;
+                    b.y -= cy;
+                } else if (j === 0) {
+                    // Фиксируем A.
+                    a.x += cx;
+                    a.y += cy;
                 } else {
-                    statusEl.textContent = `Точек: ${points.length}. Нажмите «Замкнуть» или кликните рядом с первой точкой.`;
-                    closeBtn.disabled = points.length < 3;
-                    sidePanel.classList.remove('visible');
+                    a.x += cx * 0.5;
+                    a.y += cy * 0.5;
+                    b.x -= cx * 0.5;
+                    b.y -= cy * 0.5;
                 }
-                undoBtn.disabled = points.length === 0;
+            }
+
+            // Возвращаем A в начало координат.
+            const ax = pts[0].x, ay = pts[0].y;
+            for (const p of pts) {
+                p.x -= ax;
+                p.y -= ay;
+            }
+
+            if (maxSideError(pts, sidesCm) < 0.001) break;
+        }
+
+        const errorCm = maxSideError(pts, sidesCm);
+        if (errorCm > 0.05) {
+            throw new Error(`Не удалось точно замкнуть фигуру. Максимальная ошибка стороны: ${errorCm.toFixed(2)} см. Попробуйте нарисовать форму ближе к реальной.`);
+        }
+
+        // Контроль площади: вырожденная фигура не имеет смысла.
+        if (polygonAreaAbs(pts) < 0.01) {
+            throw new Error('Получилась вырожденная фигура с нулевой площадью.');
+        }
+
+        // Перевод в метры + нормализация.
+        const minX = Math.min(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        return pts.map(p => ({
+            x: (p.x - minX) / 100,
+            y: (p.y - minY) / 100
+        }));
+    }
+
+    function setActiveTab(tab) {
+        activeTab = tab;
+        const drawing = tab === 'drawing';
+        canvasTabContent.classList.toggle('hidden', !drawing);
+        dimensionsTabContent.classList.toggle('hidden', drawing);
+        drawingTabBtn.classList.toggle('active', drawing);
+        dimensionsTabBtn.classList.toggle('active', !drawing);
+        if (drawing) {
+            resizeCanvas();
+        }
+    }
+
+    function updateTabsVisibility() {
+        const visible = isClosed && points.length >= 3;
+        tabs.classList.toggle('visible', visible);
+        if (!visible) setActiveTab('drawing');
+    }
+
+    function drawLivePolygon() {
+        if (points.length < 2) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+        if (points.length >= 3) ctx.lineTo(points[0].x, points[0].y);
+        if (points.length >= 3) {
+            ctx.fillStyle = 'rgba(51,144,236,.10)';
+            ctx.fill();
+        }
+        ctx.strokeStyle = '#3390ec';
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.setLineDash(points.length >= 3 ? [0] : []);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    function drawSketch() {
+        const { width, height } = getCanvasSize();
+        ctx.clearRect(0, 0, width, height);
+
+        if (points.length === 0) {
+            statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
+            closeBtn.disabled = true;
+            undoBtn.disabled = true;
+            sidePanel.classList.remove('visible');
+            sendBtn.disabled = true;
+            return;
+        }
+
+        drawLivePolygon();
+
+        points.forEach((p, i) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#1a73e8';
+            ctx.fill();
+
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 14px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(getLabel(i), p.x, p.y - 10);
+        });
+
+        if (isClosed) {
+            statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между «Чертёж» и «Размеры».';
+            shapeHint.textContent = 'На вкладке «Чертёж» видны точки A, B, C… и форма фигуры. На вкладке «Размеры» вводятся длины соответствующих сторон в см.';
+            closeBtn.disabled = true;
+            buildSideInputs();
+            updateTabsVisibility();
+        } else {
+            statusEl.textContent = points.length >= 3
+                ? `Точек: ${points.length}. Предпросмотр фигуры уже виден. Замкните её кнопкой или нажмите на первую точку.`
+                : `Точек: ${points.length}. Добавьте ещё ${3 - points.length} точ${points.length === 1 ? 'ку' : 'ки'}.`;
+            shapeHint.textContent = points.length >= 3
+                ? 'Предпросмотр замкнутого контура показан автоматически. Последняя линия замыкается на точку A.'
+                : 'Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.';
+            closeBtn.disabled = points.length < 3;
+            updateTabsVisibility();
+        }
+
+        undoBtn.disabled = points.length === 0;
+        if (!isClosed) sendBtn.disabled = true;
+    }
+
+    function drawBuilt() {
+        if (builtPoints.length < 3) return;
+
+        const { width: w, height: h } = getCanvasSize();
+        ctx.clearRect(0, 0, w, h);
+
+        const xs = builtPoints.map(p => p.x);
+        const ys = builtPoints.map(p => p.y);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const rangeX = Math.max(maxX - minX, 1e-9);
+        const rangeY = Math.max(maxY - minY, 1e-9);
+
+        const margin = 48;
+        const scale = Math.min(
+            (w - 2 * margin) / rangeX,
+            (h - 2 * margin) / rangeY
+        );
+        const offsetX = (w - rangeX * scale) / 2 - minX * scale;
+        const offsetY = (h - rangeY * scale) / 2 - minY * scale;
+
+        const screen = p => ({
+            x: p.x * scale + offsetX,
+            y: p.y * scale + offsetY
+        });
+
+        ctx.beginPath();
+        const first = screen(builtPoints[0]);
+        ctx.moveTo(first.x, first.y);
+        for (let i = 1; i < builtPoints.length; i++) {
+            const p = screen(builtPoints[i]);
+            ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(26,115,232,.12)';
+        ctx.fill();
+        ctx.strokeStyle = '#1a73e8';
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        const n = builtPoints.length;
+        for (let i = 0; i < n; i++) {
+            const p = screen(builtPoints[i]);
+            const p2 = screen(builtPoints[(i + 1) % n]);
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#1a73e8';
+            ctx.fill();
+
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 14px system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(getLabel(i), p.x, p.y - 10);
+
+            const mx = (p.x + p2.x) / 2;
+            const my = (p.y + p2.y) / 2;
+            const dx = p2.x - p.x;
+            const dy = p2.y - p.y;
+            const len = Math.hypot(dx, dy);
+
+            if (len > 32) {
+                // Нормаль в экранных координатах, фиксированный отступ.
+                const nx = -dy / len * 14;
+                const ny = dx / len * 14;
+
+                ctx.fillStyle = '#d32f2f';
+                ctx.font = '12px system-ui';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${builtSides[i].toFixed(1)} см`, mx + nx, my + ny);
+            }
+        }
+
+        statusEl.textContent = '✅ Фигура построена по введённым размерам. Можно отправлять.';
+        sendBtn.disabled = false;
+    }
+
+    function rebuildFigure() {
+        showError('');
+
+        const sides = [];
+        for (const field of sideFields) {
+            const raw = field.input.value.trim().replace(',', '.');
+            const value = Number(raw);
+            if (!Number.isFinite(value) || value <= 0) {
+                showError('Заполните все поля положительными числами.');
                 sendBtn.disabled = true;
+                return;
             }
+            sides.push(value);
+        }
 
-            // ========== ДЕЙСТВИЯ ==========
-            function addPoint(x, y) {
-                if (isClosed) return;
-                if (points.length > 2) {
-                    const first = points[0];
-                    if (Math.hypot(x - first.x, y - first.y) < 40) {
-                        closeFigure();
-                        return;
-                    }
-                }
-                points.push({ x, y });
-                drawSketch();
-            }
+        if (sides.length !== points.length) {
+            showError('Количество длин сторон не совпадает с количеством вершин.');
+            sendBtn.disabled = true;
+            return;
+        }
 
-            function closeFigure() {
-                if (isClosed || points.length < 3) return;
-                isClosed = true;
-                drawSketch();
-            }
+        try {
+            builtPoints = buildPolygonFromSketchAndLengths(points, sides);
+            builtSides = sides.slice();
 
-            function undoLastPoint() {
-                if (points.length === 0) return;
-                if (isClosed) isClosed = false;
-                points.pop();
-                sideFields = [];
-                builtPoints = [];
-                builtSides = [];
-                drawSketch();
-            }
-
-            // ========== СОБЫТИЯ ==========
-            canvas.addEventListener('click', function(e) {
-                if (isClosed) return;
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                addPoint(x, y);
-            });
-
-            closeBtn.addEventListener('click', closeFigure);
-            undoBtn.addEventListener('click', undoLastPoint);
-
-            clearBtn.addEventListener('click', function() {
-                if (points.length === 0) return;
-                if (!confirm('Удалить весь чертёж?')) return;
-                points = [];
-                isClosed = false;
-                sideFields = [];
-                builtPoints = [];
-                builtSides = [];
-                drawSketch();
-            });
-
-            sendBtn.addEventListener('click', function() {
-                if (!builtPoints || builtPoints.length < 3) {
-                    alert('Сначала постройте фигуру.');
-                    return;
-                }
-                // Отправляем построенные координаты (в метрах) и длины сторон (в см)
-                const data = {
-                    type: 'drawing',
-                    points: builtPoints.map(p => ({ x: p.x, y: p.y })), // координаты в метрах
-                    sides_cm: builtSides
-                };
-                try {
-                    if (tg) {
-                        tg.sendData(JSON.stringify(data));
-                        setTimeout(() => tg.close(), 500);
-                    } else {
-                        alert('Telegram WebApp не обнаружен.\nДанные:\n' + JSON.stringify(data, null, 2));
-                    }
-                } catch (e) {
-                    alert('Ошибка отправки: ' + e.message);
-                }
-            });
-
-            // ========== RESIZE ==========
-            window.addEventListener('resize', function() {
-                if (builtPoints && builtPoints.length > 0) drawBuilt();
-                else drawSketch();
-            });
-
-            // Старт
+            // После построения показываем именно построенную геометрию.
+            drawBuilt();
+        } catch (e) {
+            builtPoints = [];
+            builtSides = [];
+            sendBtn.disabled = true;
+            showError(e?.message || 'Не удалось построить фигуру.');
             drawSketch();
-        })();
-    </script>
+        }
+    }
+
+    function buildSideInputs() {
+        const n = points.length;
+        if (sideFields.length === n) return;
+
+        sideInputs.innerHTML = '';
+        sideFields = [];
+
+        for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            const div = document.createElement('div');
+            div.className = 'side-input';
+
+            const label = document.createElement('label');
+            label.textContent = `${getLabel(i)}–${getLabel(j)}`;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.autocomplete = 'off';
+            input.inputMode = 'decimal';
+            input.placeholder = 'см';
+            input.setAttribute('aria-label', `Длина стороны ${getLabel(i)}-${getLabel(j)}`);
+
+            const unit = document.createElement('span');
+            unit.className = 'unit';
+            unit.textContent = 'см';
+
+            div.append(label, input, unit);
+            sideInputs.appendChild(div);
+            sideFields.push({ input, label: `${getLabel(i)}–${getLabel(j)}` });
+
+            input.addEventListener('input', () => {
+                if (isClosed) rebuildFigure();
+            });
+            input.addEventListener('focus', () => {
+                statusEl.textContent = `Введите длину ${getLabel(i)}–${getLabel(j)} в сантиметрах. Перейдите во вкладку «Чертёж», чтобы свериться с точками.`;
+            });
+        }
+    }
+
+    function addPoint(x, y) {
+        if (isClosed) return;
+
+        if (points.length > 2) {
+            const first = points[0];
+            if (Math.hypot(x - first.x, y - first.y) < 32) {
+                closeFigure();
+                return;
+            }
+        }
+
+        points.push({ x, y });
+        builtPoints = [];
+        builtSides = [];
+        drawSketch();
+    }
+
+    function closeFigure() {
+        if (isClosed || points.length < 3) return;
+
+        // Не допускаем очевидные дубликаты/нулевые стороны.
+        for (let i = 0; i < points.length; i++) {
+            const a = points[i];
+            const b = points[(i + 1) % points.length];
+            if (Math.hypot(a.x - b.x, a.y - b.y) < 2) {
+                showError(`Слишком короткая сторона ${getLabel(i)}–${getLabel((i + 1) % points.length)}.`);
+                return;
+            }
+        }
+
+        isClosed = true;
+        builtPoints = [];
+        builtSides = [];
+        showError('');
+        drawSketch();
+    }
+
+    function undoLastPoint() {
+        if (points.length === 0) return;
+
+        points.pop();
+        isClosed = false;
+        builtPoints = [];
+        builtSides = [];
+        sideFields = [];
+        sideInputs.innerHTML = '';
+        showError('');
+        updateTabsVisibility();
+        drawSketch();
+    }
+
+    function clearAll() {
+        if (points.length === 0) return;
+        if (!window.confirm('Удалить весь чертёж?')) return;
+
+        points = [];
+        isClosed = false;
+        sideFields = [];
+        builtPoints = [];
+        builtSides = [];
+        sideInputs.innerHTML = '';
+        showError('');
+        updateTabsVisibility();
+        drawSketch();
+    }
+
+    function getPointerPosition(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+            y: Math.max(0, Math.min(rect.height, event.clientY - rect.top))
+        };
+    }
+
+    canvas.addEventListener('pointerdown', event => {
+        if (isClosed) return;
+        event.preventDefault();
+        try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+        const p = getPointerPosition(event);
+        addPoint(p.x, p.y);
+    });
+
+    drawingTabBtn.addEventListener('click', () => setActiveTab('drawing'));
+    dimensionsTabBtn.addEventListener('click', () => {
+        if (isClosed) setActiveTab('dimensions');
+    });
+
+    closeBtn.addEventListener('click', closeFigure);
+    undoBtn.addEventListener('click', undoLastPoint);
+    clearBtn.addEventListener('click', clearAll);
+
+    sendBtn.addEventListener('click', () => {
+        if (builtPoints.length < 3 || builtSides.length !== builtPoints.length) {
+            window.alert('Сначала введите корректные длины сторон и дождитесь построения фигуры.');
+            return;
+        }
+
+        const data = {
+            type: 'drawing',
+            version: 2,
+            units: 'm',
+            points: builtPoints.map(p => ({
+                x: Number(p.x.toFixed(6)),
+                y: Number(p.y.toFixed(6))
+            })),
+            sides_cm: builtSides.map(s => Number(s.toFixed(3)))
+        };
+
+        try {
+            if (tg) {
+                tg.sendData(JSON.stringify(data));
+                setTimeout(() => {
+                    try { tg.close(); } catch (_) {}
+                }, 350);
+            } else {
+                window.alert('Telegram WebApp не обнаружен.\nДанные:\n' + JSON.stringify(data, null, 2));
+            }
+        } catch (e) {
+            window.alert('Ошибка отправки: ' + (e?.message || e));
+        }
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+
+    if ('ResizeObserver' in window) {
+        resizeObserver = new ResizeObserver(() => resizeCanvas());
+        resizeObserver.observe(document.getElementById('canvasWrap'));
+    }
+
+    resizeCanvas();
+    drawSketch();
+})();
+</script>
 </body>
 </html>
-[file content end]
