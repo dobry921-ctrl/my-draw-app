@@ -41,7 +41,7 @@
             border-radius: 12px;
             padding: 12px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            display: none; /* скрыто по умолчанию */
+            display: none;
         }
         .panel.visible {
             display: block;
@@ -167,6 +167,15 @@
             let isClosed = false;
             let sideFields = []; // массив объектов { input, label }
 
+            // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+            function getLabel(index) {
+                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                if (index < alphabet.length) return alphabet[index];
+                const first = Math.floor(index / alphabet.length) - 1;
+                const second = index % alphabet.length;
+                return alphabet[first] + alphabet[second];
+            }
+
             // ==================== РАЗМЕР CANVAS ====================
             function resizeCanvas() {
                 const rect = canvas.parentElement.getBoundingClientRect();
@@ -210,17 +219,17 @@
                     ctx.fill();
                 }
 
-                // Вершины
+                // Вершины – подписываем буквами
                 points.forEach((p, i) => {
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
                     ctx.fillStyle = '#1a73e8';
                     ctx.fill();
                     ctx.fillStyle = '#000';
-                    ctx.font = '12px system-ui';
+                    ctx.font = 'bold 14px system-ui';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
-                    ctx.fillText(i + 1, p.x, p.y - 10);
+                    ctx.fillText(getLabel(i), p.x, p.y - 10);
                 });
 
                 // Статус
@@ -245,7 +254,6 @@
             // ==================== ПОСТРОЕНИЕ ПОЛЕЙ ВВОДА ====================
             function buildSideInputs() {
                 if (sideFields.length > 0 && sideFields.length === points.length) {
-                    // Проверяем, изменились ли точки – если нет, не перестраиваем
                     return;
                 }
                 sideInputs.innerHTML = '';
@@ -273,7 +281,6 @@
                     sideInputs.appendChild(div);
                     sideFields.push({ input: inp, label });
                 }
-                // Проверяем заполненность при изменении
                 sideFields.forEach(f => {
                     f.input.addEventListener('input', validateInputs);
                 });
@@ -291,14 +298,6 @@
                     errorMsg.classList.add('visible');
                 }
                 return allFilled;
-            }
-
-            function getLabel(index) {
-                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                if (index < alphabet.length) return alphabet[index];
-                const first = Math.floor(index / alphabet.length) - 1;
-                const second = index % alphabet.length;
-                return alphabet[first] + alphabet[second];
             }
 
             // ==================== ДОБАВЛЕНИЕ ТОЧКИ ====================
@@ -319,7 +318,6 @@
             function closeFigure() {
                 if (isClosed || points.length < 3) return;
                 isClosed = true;
-                // Перестраиваем поля ввода
                 sideFields = [];
                 draw();
             }
@@ -382,16 +380,10 @@
                 }
                 errorMsg.classList.remove('visible');
 
-                // Формируем данные для отправки
-                let sendPoints = points;
-                // Если фигура замкнута, добавляем первую точку в конец для согласованности с ботом
-                // но мы уже замкнуты, можно отправить как есть, бот сам поймёт
-                // Для единообразия добавим первую точку в конец (как делали раньше)
-                sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
-
+                // Отправляем точки (без замыкающей, бот сам добавит при необходимости)
                 const data = {
                     type: 'drawing',
-                    points: sendPoints.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+                    points: points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
                     sides_cm: sides
                 };
 
