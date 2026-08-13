@@ -6,63 +6,409 @@
     <title>Рисуйте чертёж</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* ... стили как в предыдущей версии ... */
+        * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
+        body {
+            background: #f0f2f5;
+            font-family: system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        #canvasWrap {
+            width: 100%;
+            max-width: 700px;
+            aspect-ratio: 1/1;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            cursor: crosshair;
+            display: block;
+        }
+        .panel {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 12px;
+            background: white;
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: none; /* скрыто по умолчанию */
+        }
+        .panel.visible {
+            display: block;
+        }
+        .side-input {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .side-input label {
+            font-weight: 600;
+            font-size: 15px;
+            min-width: 60px;
+        }
+        .side-input input {
+            width: 100px;
+            padding: 6px 10px;
+            font-size: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            text-align: right;
+        }
+        .side-input input:focus {
+            border-color: #3390ec;
+            outline: none;
+        }
+        .side-input .unit {
+            font-size: 14px;
+            color: #666;
+            margin-left: 6px;
+            min-width: 30px;
+        }
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            width: 100%;
+            max-width: 700px;
+            flex-wrap: wrap;
+        }
+        .toolbar button {
+            padding: 14px 16px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            flex: 1 1 30%;
+            cursor: pointer;
+            font-weight: 600;
+            min-width: 100px;
+        }
+        .toolbar button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .primary { background: #3390ec; color: white; }
+        .danger { background: #f55353; color: white; }
+        .success { background: #34a853; color: white; }
+        .warning { background: #f5a623; color: white; }
+        .info {
+            margin-top: 8px;
+            font-size: 14px;
+            color: #333;
+            text-align: center;
+            min-height: 20px;
+        }
+        .error-msg {
+            color: #d32f2f;
+            font-size: 13px;
+            margin-top: 6px;
+            display: none;
+        }
+        .error-msg.visible {
+            display: block;
+        }
     </style>
 </head>
 <body>
-    <!-- ... такой же HTML как раньше ... -->
+
+    <div id="canvasWrap">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="info" id="status">
+        Нажмите на холст, чтобы поставить точку
+    </div>
+
+    <!-- Панель ввода длин сторон -->
+    <div class="panel" id="sidePanel">
+        <div style="font-weight:600; margin-bottom:8px;">Введите длины сторон (в см):</div>
+        <div id="sideInputs"></div>
+        <div class="error-msg" id="errorMsg">Заполните все поля положительными числами.</div>
+    </div>
+
+    <div class="toolbar">
+        <button id="closeBtn" class="success" disabled>🔒 Замкнуть</button>
+        <button id="undoBtn" class="warning" disabled>↩ Отменить</button>
+        <button id="sendBtn" class="primary">✅ Отправить</button>
+        <button id="clearBtn" class="danger">🗑 Очистить</button>
+    </div>
+
     <script>
         (function() {
 
-            const WebApp = window.Telegram?.WebApp || null;
-            if (WebApp) {
-                WebApp.ready();
-                WebApp.expand();
+            const Telegram = window.Telegram?.WebApp || null;
+            if (Telegram) Telegram.expand();
+
+            // ==================== ЭЛЕМЕНТЫ ====================
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            const statusEl = document.getElementById('status');
+            const closeBtn = document.getElementById('closeBtn');
+            const undoBtn = document.getElementById('undoBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const sidePanel = document.getElementById('sidePanel');
+            const sideInputs = document.getElementById('sideInputs');
+            const errorMsg = document.getElementById('errorMsg');
+
+            // ==================== ДАННЫЕ ====================
+            let points = [];
+            let isClosed = false;
+            let sideFields = []; // массив объектов { input, label }
+
+            // ==================== РАЗМЕР CANVAS ====================
+            function resizeCanvas() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = Math.round(rect.width * dpr);
+                canvas.height = Math.round(rect.height * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                draw();
             }
 
-            // ... остальной код (рисование, поля ввода) без изменений ...
+            // ==================== ОТРИСОВКА ====================
+            function draw() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                ctx.clearRect(0, 0, rect.width, rect.height);
+                if (points.length === 0) {
+                    statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
+                    closeBtn.disabled = true;
+                    undoBtn.disabled = true;
+                    sidePanel.classList.remove('visible');
+                    return;
+                }
 
-            // ==================== ОТПРАВКА ЧЕРЕЗ HTTP ====================
+                // Линии
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                if (isClosed && points.length > 2) {
+                    ctx.closePath();
+                }
+                ctx.strokeStyle = '#1a73e8';
+                ctx.lineWidth = 4;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // Заливка
+                if (isClosed && points.length > 2) {
+                    ctx.fillStyle = 'rgba(26, 115, 232, 0.12)';
+                    ctx.fill();
+                }
+
+                // Вершины
+                points.forEach((p, i) => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#1a73e8';
+                    ctx.fill();
+                    ctx.fillStyle = '#000';
+                    ctx.font = '12px system-ui';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(i + 1, p.x, p.y - 10);
+                });
+
+                // Статус
+                if (isClosed) {
+                    statusEl.textContent = '✅ Фигура замкнута. Введите длины сторон внизу.';
+                    closeBtn.disabled = true;
+                } else {
+                    statusEl.textContent = `Точек: ${points.length}. Нажмите «Замкнуть» или кликните рядом с первой точкой.`;
+                    closeBtn.disabled = points.length < 3;
+                }
+                undoBtn.disabled = points.length === 0;
+
+                // Показываем панель ввода, если фигура замкнута
+                if (isClosed && points.length >= 3) {
+                    buildSideInputs();
+                    sidePanel.classList.add('visible');
+                } else {
+                    sidePanel.classList.remove('visible');
+                }
+            }
+
+            // ==================== ПОСТРОЕНИЕ ПОЛЕЙ ВВОДА ====================
+            function buildSideInputs() {
+                if (sideFields.length > 0 && sideFields.length === points.length) {
+                    // Проверяем, изменились ли точки – если нет, не перестраиваем
+                    return;
+                }
+                sideInputs.innerHTML = '';
+                sideFields = [];
+                const n = points.length;
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    const label = `${getLabel(i)}–${getLabel(j)}`;
+                    const div = document.createElement('div');
+                    div.className = 'side-input';
+                    const lbl = document.createElement('label');
+                    lbl.textContent = label;
+                    const inp = document.createElement('input');
+                    inp.type = 'number';
+                    inp.min = 0.1;
+                    inp.step = 0.1;
+                    inp.placeholder = 'см';
+                    inp.required = true;
+                    const unit = document.createElement('span');
+                    unit.className = 'unit';
+                    unit.textContent = 'см';
+                    div.appendChild(lbl);
+                    div.appendChild(inp);
+                    div.appendChild(unit);
+                    sideInputs.appendChild(div);
+                    sideFields.push({ input: inp, label });
+                }
+                // Проверяем заполненность при изменении
+                sideFields.forEach(f => {
+                    f.input.addEventListener('input', validateInputs);
+                });
+                validateInputs();
+            }
+
+            function validateInputs() {
+                let allFilled = true;
+                sideFields.forEach(f => {
+                    const val = parseFloat(f.input.value);
+                    if (isNaN(val) || val <= 0) allFilled = false;
+                });
+                errorMsg.classList.remove('visible');
+                if (!allFilled && sideFields.length > 0) {
+                    errorMsg.classList.add('visible');
+                }
+                return allFilled;
+            }
+
+            function getLabel(index) {
+                const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                if (index < alphabet.length) return alphabet[index];
+                const first = Math.floor(index / alphabet.length) - 1;
+                const second = index % alphabet.length;
+                return alphabet[first] + alphabet[second];
+            }
+
+            // ==================== ДОБАВЛЕНИЕ ТОЧКИ ====================
+            function addPoint(x, y) {
+                if (isClosed) return;
+                if (points.length > 2) {
+                    const first = points[0];
+                    if (Math.hypot(x - first.x, y - first.y) < 40) {
+                        closeFigure();
+                        return;
+                    }
+                }
+                points.push({ x, y });
+                draw();
+            }
+
+            // ==================== ЗАМЫКАНИЕ ====================
+            function closeFigure() {
+                if (isClosed || points.length < 3) return;
+                isClosed = true;
+                // Перестраиваем поля ввода
+                sideFields = [];
+                draw();
+            }
+
+            // ==================== ОТМЕНА ПОСЛЕДНЕЙ ТОЧКИ ====================
+            function undoLastPoint() {
+                if (points.length === 0) return;
+                if (isClosed) {
+                    isClosed = false;
+                }
+                points.pop();
+                sideFields = [];
+                draw();
+            }
+
+            // ==================== КЛИК ПО CANVAS ====================
+            canvas.addEventListener('click', function(e) {
+                if (isClosed) return;
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                addPoint(x, y);
+            });
+
+            // ==================== КНОПКИ ====================
+            closeBtn.addEventListener('click', closeFigure);
+            undoBtn.addEventListener('click', undoLastPoint);
+
+            clearBtn.addEventListener('click', function() {
+                if (points.length === 0) return;
+                if (!confirm('Удалить весь чертёж?')) return;
+                points = [];
+                isClosed = false;
+                sideFields = [];
+                draw();
+            });
+
             sendBtn.addEventListener('click', function() {
-                if (isSending) return;
+                if (points.length < 3) {
+                    alert('Нарисуйте минимум 3 точки.');
+                    return;
+                }
+                if (!isClosed) {
+                    alert('Сначала замкните фигуру (нажмите «Замкнуть»).');
+                    return;
+                }
+                // Проверяем ввод длин
+                const sides = [];
+                let allValid = true;
+                sideFields.forEach(f => {
+                    const val = parseFloat(f.input.value);
+                    if (isNaN(val) || val <= 0) {
+                        allValid = false;
+                    }
+                    sides.push(val);
+                });
+                if (!allValid || sides.length !== points.length) {
+                    errorMsg.classList.add('visible');
+                    return;
+                }
+                errorMsg.classList.remove('visible');
 
-                // ... проверки ...
+                // Формируем данные для отправки
+                let sendPoints = points;
+                // Если фигура замкнута, добавляем первую точку в конец для согласованности с ботом
+                // но мы уже замкнуты, можно отправить как есть, бот сам поймёт
+                // Для единообразия добавим первую точку в конец (как делали раньше)
+                sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
 
-                // Формируем данные
-                const sendPoints = points.concat([{ x: points[0].x, y: points[0].y }]);
                 const data = {
                     type: 'drawing',
                     points: sendPoints.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
                     sides_cm: sides
                 };
 
-                const json = JSON.stringify(data);
-                // Получаем user_id из WebApp
-                const user_id = WebApp?.initDataUnsafe?.user?.id || 0;
-
-                // Отправляем на сервер бота
-                fetch('https://ваш-сервер:5000/webapp_data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id, payload: json })
-                })
-                .then(res => res.json())
-                .then(response => {
-                    console.log('✅ Данные отправлены', response);
-                    statusEl.textContent = '✅ Отправлено!';
-                    setTimeout(() => WebApp.close(), 500);
-                })
-                .catch(err => {
-                    console.error('❌ Ошибка:', err);
-                    alert('Ошибка отправки. Попробуйте ещё раз.');
-                    isSending = false;
-                    sendBtn.disabled = false;
-                    sendBtn.textContent = '✅ Отправить';
-                    sendBtn.classList.remove('sending');
-                });
+                if (Telegram) {
+                    Telegram.sendData(JSON.stringify(data));
+                    Telegram.close();
+                } else {
+                    alert('Данные отправлены:\n' + JSON.stringify(data, null, 2));
+                }
             });
+
+            // ==================== RESIZE ====================
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
 
         })();
     </script>
+
 </body>
 </html>
