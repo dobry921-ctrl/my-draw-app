@@ -266,7 +266,7 @@
         else drawSketch();
     }
 
-    // ---- Построение по длинам (улучшенное с детекцией прямоугольника) ----
+    // ---- Построение по длинам (улучшенное) ----
     function normalizeSketchForSolver(pts, targetSidesCm) {
         const n = pts.length;
         const sketchEdges = [];
@@ -308,23 +308,11 @@
         return maxError;
     }
 
-    // Строит прямоугольник по двум сторонам (ширина, высота) и ориентации из эскиза
-    function buildRectangle(sketchPts, sidesCm) {
-        // sidesCm: [a,b,a,b] или [a,b,c,d] с a==c и b==d
+    // Строит прямоугольник строго горизонтально (без наклона)
+    function buildRectangle(sidesCm) {
+        // sidesCm: [a,b,a,b] или [a,b] (первые два)
         const w = sidesCm[0];
         const h = sidesCm[1];
-        // Определяем направление первой стороны из эскиза
-        const dx = sketchPts[1].x - sketchPts[0].x;
-        const dy = sketchPts[1].y - sketchPts[0].y;
-        const len = Math.hypot(dx, dy);
-        if (len < 1e-9) throw new Error('Нулевая сторона в эскизе.');
-        // Единичный вектор вдоль первой стороны
-        const ex = dx / len;
-        const ey = dy / len;
-        // Перпендикуляр (поворот на 90° против часовой)
-        const nx = -ey;
-        const ny = ex;
-
         // Вершины в сантиметрах, затем переведём в метры
         const pts = [
             { x: 0, y: 0 },
@@ -332,16 +320,8 @@
             { x: w, y: h },
             { x: 0, y: h }
         ];
-        // Поворачиваем согласно ориентации эскиза и масштабируем
-        const scale = 1; // уже в см
-        const result = pts.map(p => ({
-            x: (p.x * ex + p.y * nx) / 100,
-            y: (p.x * ey + p.y * ny) / 100
-        }));
-        // Сдвигаем к нулю
-        const minX = Math.min(...result.map(p => p.x));
-        const minY = Math.min(...result.map(p => p.y));
-        return result.map(p => ({ x: p.x - minX, y: p.y - minY }));
+        // Переводим в метры (делим на 100)
+        return pts.map(p => ({ x: p.x / 100, y: p.y / 100 }));
     }
 
     function buildPolygonFromSketchAndLengths(sketchPts, sidesCm) {
@@ -354,12 +334,12 @@
         if (n === 4) {
             const a = sidesCm[0], b = sidesCm[1], c = sidesCm[2], d = sidesCm[3];
             if (Math.abs(a - c) < 0.001 && Math.abs(b - d) < 0.001) {
-                // Это прямоугольник (или квадрат)
-                return buildRectangle(sketchPts, [a, b]);
+                // Это прямоугольник (или квадрат) – строим без наклона
+                return buildRectangle([a, b]);
             }
         }
 
-        // Общий случай – релаксация
+        // Общий случай – релаксация (сохраняем ориентацию эскиза)
         const longest = Math.max(...sidesCm);
         const sumOthers = sidesCm.reduce((sum, s) => sum + s, 0) - longest;
         if (longest >= sumOthers - 1e-9) {
