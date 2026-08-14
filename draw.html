@@ -197,9 +197,46 @@
         
         let camera = { x: 0, y: 0, zoom: 1 };
 
-        // --- Проверка наличия Telegram WebApp ---
+        // --- Улучшенная проверка Telegram WebApp ---
+        function getTelegramWebApp() {
+            // Пытаемся получить объект Telegram.WebApp
+            if (window.Telegram && window.Telegram.WebApp) {
+                return window.Telegram.WebApp;
+            }
+            // Если не найден, пробуем через window.parent (для iframe)
+            try {
+                if (window.parent && window.parent.Telegram && window.parent.Telegram.WebApp) {
+                    return window.parent.Telegram.WebApp;
+                }
+            } catch (e) {}
+            return null;
+        }
+
         function isTelegramWebApp() {
-            return !!(window.Telegram && window.Telegram.WebApp);
+            return getTelegramWebApp() !== null;
+        }
+
+        // Функция отправки данных
+        function sendDataToBot(data) {
+            const webApp = getTelegramWebApp();
+            if (webApp) {
+                webApp.sendData(data);
+                webApp.close();
+                return true;
+            } else {
+                // Попытка отправить через postMessage (для некоторых случаев)
+                try {
+                    if (window.parent) {
+                        window.parent.postMessage({
+                            type: 'web_app_data',
+                            data: data
+                        }, '*');
+                        // Не закрываем окно, так как неизвестно, обработает ли родитель
+                        return true;
+                    }
+                } catch (e) {}
+                return false;
+            }
         }
 
         function resizeCanvas() {
@@ -580,7 +617,7 @@
             autoFitCamera(); draw();
         }
 
-        // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ -----
+        // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ (ИСПРАВЛЕННАЯ) -----
         function sendToBot() {
             const sendBtn = document.getElementById('send-btn');
             sendBtn.disabled = true;
@@ -609,16 +646,20 @@
 
             try {
                 const data = JSON.stringify(payload);
-                if (isTelegramWebApp()) {
-                    window.Telegram.WebApp.sendData(data);
-                    window.Telegram.WebApp.close();
+                const webApp = getTelegramWebApp();
+                if (webApp) {
+                    webApp.sendData(data);
+                    webApp.close();
                 } else {
-                    showToast(
-                        "❌ Ошибка: страница должна быть открыта через Telegram. " +
-                        "Нажмите кнопку «Нарисовать чертёж» в боте.", 
-                        5000
-                    );
-                    sendBtn.disabled = false;
+                    // Пробуем альтернативный способ
+                    const sent = sendDataToBot(data);
+                    if (!sent) {
+                        showToast(
+                            "❌ Ошибка: не удалось отправить данные. Проверьте подключение или используйте кнопку «Скопировать данные».", 
+                            5000
+                        );
+                        sendBtn.disabled = false;
+                    }
                 }
             } catch (e) {
                 showToast("Ошибка отправки: " + e.message, 4000);
@@ -870,11 +911,12 @@
         }
 
         // --- ИНИЦИАЛИЗАЦИЯ ---
-        if (isTelegramWebApp()) {
-            window.Telegram.WebApp.ready();
+        const webApp = getTelegramWebApp();
+        if (webApp) {
+            webApp.ready();
             console.log("Telegram WebApp готов");
         } else {
-            console.warn("Telegram WebApp не доступен (работа в обычном браузере)");
+            console.warn("Telegram WebApp не доступен");
             showToast("⚠️ Откройте приложение через Telegram", 4000);
         }
     </script>
