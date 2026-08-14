@@ -2,1183 +2,754 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Чертёж потолка — построение плана</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Чертёж потолка</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
- 
-  :root{
-    --bg-app:#0a141d;
-    --bg-panel:#101f2c;
-    --bg-panel-2:#0d1a25;
-    --border:#1f3547;
-    --blueprint:#173a56;
-    --blueprint-2:#123048;
-    --grid-minor: rgba(255,255,255,0.06);
-    --grid-major: rgba(255,255,255,0.16);
-    --ink:#eaf4fb;
-    --ink-dim:#a9c2d4;
-    --muted:#6f8ba1;
-    --accent:#ffb454;
-    --accent-2:#5fe3c0;
-    --danger:#ff6f7a;
-    --danger-dim:#7a3f47;
-    font-family:'Space Grotesk', system-ui, sans-serif;
-  }
-  *{box-sizing:border-box;}
-  html,body{
-    margin:0; height:100%; background:var(--bg-app); color:var(--ink);
-    overflow:hidden;
-  }
-  .app{
-    display:grid;
-    grid-template-columns: 258px 1fr 288px;
-    grid-template-rows: 56px 1fr;
-    grid-template-areas:
-      "header header header"
-      "left canvas right";
-    height:100vh;
-  }
-  header.top{
-    grid-area:header;
-    display:flex; align-items:center; gap:16px;
-    padding:0 18px;
-    background:linear-gradient(180deg, var(--bg-panel), var(--bg-panel-2));
-    border-bottom:1px solid var(--border);
-  }
-  .brand{
-    display:flex; align-items:center; gap:10px;
-    font-weight:700; letter-spacing:.02em; font-size:15px; color:var(--ink);
-  }
-  .brand .mark{
-    width:26px; height:26px; border:2px solid var(--accent); border-radius:4px;
-    position:relative; flex:none;
-  }
-  .brand .mark::before, .brand .mark::after{
-    content:""; position:absolute; background:var(--accent);
-  }
-  .brand .mark::before{ left:50%; top:2px; bottom:2px; width:1px; transform:translateX(-50%);}
-  .brand .mark::after{ top:50%; left:2px; right:2px; height:1px; transform:translateY(-50%);}
-  .brand small{ display:block; font-weight:400; font-size:10px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase;}
- 
-  .toolgroup{ display:flex; align-items:center; gap:6px; padding:0 10px; border-left:1px solid var(--border); height:34px;}
-  .btn{
-    appearance:none; border:1px solid var(--border); background:#132435; color:var(--ink-dim);
-    padding:7px 12px; border-radius:7px; font-size:12.5px; cursor:pointer; font-family:inherit;
-    display:flex; align-items:center; gap:6px; white-space:nowrap; transition:.12s;
-  }
-  .btn:hover{ border-color:#33566f; color:var(--ink); background:#16293c;}
-  .btn.active{ background:var(--accent); color:#26160a; border-color:var(--accent); font-weight:600;}
-  .btn.danger:hover{ border-color:var(--danger); color:var(--danger);}
-  .btn:disabled{ opacity:.35; cursor:not-allowed;}
-  .btn.icon{ padding:7px 9px;}
-  .spacer{flex:1;}
- 
-  select, .num-input{
-    background:#0d1c28; border:1px solid var(--border); color:var(--ink);
-    padding:6px 8px; border-radius:6px; font-family:'JetBrains Mono', monospace; font-size:12px;
-  }
- 
-  aside.left{
-    grid-area:left; background:var(--bg-panel); border-right:1px solid var(--border);
-    padding:16px 14px; overflow-y:auto;
-  }
-  aside.right{
-    grid-area:right; background:var(--bg-panel); border-left:1px solid var(--border);
-    padding:16px 14px; overflow-y:auto;
-  }
-  .section{ margin-bottom:20px;}
-  .section h3{
-    margin:0 0 10px; font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
-    color:var(--muted); font-weight:600; display:flex; align-items:center; gap:8px;
-  }
-  .section h3::after{ content:""; flex:1; height:1px; background:var(--border);}
-  .row{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px;}
-  .row label{ font-size:12.5px; color:var(--ink-dim);}
-  .stack .btn{ width:100%; justify-content:flex-start; margin-bottom:6px;}
-  .hint{ font-size:11.5px; color:var(--muted); line-height:1.55; margin-top:8px;}
-  .hint b{ color:var(--ink-dim); font-weight:600;}
-  kbd{
-    background:#0d1c28; border:1px solid var(--border); border-bottom-width:2px; border-radius:4px;
-    padding:1px 6px; font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--accent-2);
-  }
- 
-  main.canvas-wrap{ grid-area:canvas; position:relative; overflow:hidden; background:var(--bg-app);}
-  canvas{ position:absolute; inset:0; width:100%; height:100%; cursor:crosshair;}
- 
-  .float-input{
-    position:absolute; z-index:20; transform:translate(-50%,-140%);
-    background:#0d1c28; border:1px solid var(--accent); border-radius:6px;
-    padding:6px 8px; font-family:'JetBrains Mono', monospace; font-size:12.5px; color:var(--ink);
-    display:flex; align-items:center; gap:6px; pointer-events:none;
-  }
-  .float-input.editable{ pointer-events:auto;}
-  .float-input input{
-    width:70px; background:transparent; border:none; color:var(--accent); font-family:inherit; font-size:inherit;
-    outline:none;
-  }
- 
-  .measure-tag{
-    position:absolute; pointer-events:none; transform:translate(-50%,-50%);
-    font-family:'JetBrains Mono', monospace; font-size:11.5px; color:var(--accent);
-    background:rgba(10,20,29,0.72); padding:2px 6px; border-radius:4px; white-space:nowrap;
-  }
- 
-  .titleblock{
-    position:absolute; right:16px; bottom:16px; width:236px;
-    background:rgba(13,28,40,0.92); border:1px solid var(--border); border-radius:8px;
-    padding:12px 14px; font-family:'JetBrains Mono', monospace; pointer-events:none;
-  }
-  .titleblock h4{ margin:0 0 8px; font-family:'Space Grotesk',sans-serif; font-size:12px; letter-spacing:.06em; color:var(--ink);}
-  .titleblock .tb-row{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-dim); padding:2px 0;}
-  .titleblock .tb-row b{ color:var(--accent-2); font-weight:600;}
-  .titleblock hr{ border:none; border-top:1px dashed var(--border); margin:6px 0;}
- 
-  .results-num{
-    font-family:'JetBrains Mono', monospace; font-size:26px; color:var(--accent); font-weight:700; letter-spacing:-.02em;
-  }
-  .results-sub{ font-size:11px; color:var(--muted); margin-top:2px;}
-  .wall-list, .hole-list{ list-style:none; margin:0; padding:0;}
-  .wall-list li, .hole-list li{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:7px 8px; border-radius:6px; font-size:12px; color:var(--ink-dim);
-    font-family:'JetBrains Mono', monospace; border-bottom:1px solid var(--border);
-  }
-  .wall-list li span.n, .hole-list li span.n{ color:var(--muted); font-family:'Space Grotesk',sans-serif; font-size:11px;}
-  .wall-list li b{ color:var(--ink); font-weight:600;}
-  .hole-list li button{
-    background:none; border:none; color:var(--danger); cursor:pointer; font-size:14px; padding:0 4px;
-  }
-  .empty-note{ font-size:12px; color:var(--muted); font-style:italic; padding:10px 0;}
- 
-  .help-overlay{
-    position:absolute; inset:0; background:rgba(6,12,18,0.82); z-index:50;
-    display:none; align-items:center; justify-content:center;
-  }
-  .help-overlay.show{ display:flex;}
-  .help-card{
-    background:var(--bg-panel); border:1px solid var(--border); border-radius:12px;
-    padding:26px 30px; width:460px; max-width:90vw;
-  }
-  .help-card h2{ margin:0 0 14px; font-size:16px;}
-  .help-card table{ width:100%; border-collapse:collapse; font-size:12.5px;}
-  .help-card td{ padding:6px 0; color:var(--ink-dim); vertical-align:top;}
-  .help-card td:first-child{ width:120px;}
-  .help-card .btn{ margin-top:16px;}
- 
-  .toast{
-    position:absolute; top:14px; left:50%; transform:translateX(-50%);
-    background:#152a3a; border:1px solid var(--accent); color:var(--ink);
-    padding:8px 16px; border-radius:20px; font-size:12.5px; z-index:40;
-    opacity:0; transition:opacity .2s; pointer-events:none;
-  }
-  .toast.show{ opacity:1;}
- 
-  ::-webkit-scrollbar{ width:8px;}
-  ::-webkit-scrollbar-thumb{ background:#22384a; border-radius:4px;}
+:root{
+  --blue:#1769e0;
+  --blue2:#0f56bf;
+  --bg:#f4f6f8;
+  --white:#fff;
+  --text:#17202a;
+  --muted:#68727d;
+  --line:#dfe3e8;
+  --danger:#d92d20;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+button,input{font:inherit}
+button{border:0}
+.app{height:100dvh;display:flex;flex-direction:column}
+.header{
+  height:54px;flex:0 0 54px;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;padding:0 12px;gap:8px
+}
+.title{font-size:17px;font-weight:700;flex:1;text-align:center}
+.iconBtn{
+  width:40px;height:40px;border-radius:10px;background:#f1f3f5;font-size:20px;
+  display:flex;align-items:center;justify-content:center
+}
+.canvasArea{position:relative;flex:1;min-height:0;background:#f1f3f5}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.bottom{
+  flex:0 0 auto;background:#fff;border-top:1px solid var(--line);
+  padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px
+}
+.bottom button{height:46px;border-radius:11px;font-weight:700}
+.mainAction{flex:1;background:var(--blue);color:#fff}
+.secondary{width:48px;background:#f0f2f5}
+.tabs{
+  display:flex;background:#fff;border-top:1px solid var(--line);height:48px;flex:0 0 48px
+}
+.tab{flex:1;background:#fff;color:var(--muted);font-weight:700;border-bottom:3px solid transparent}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.status{
+  position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  background:#fff;border:1px solid var(--line);border-radius:20px;padding:7px 12px;
+  font-size:12px;box-shadow:0 2px 8px #0001;white-space:nowrap
+}
+.panel{
+  position:absolute;left:10px;right:10px;bottom:10px;background:#fff;border-radius:16px;
+  box-shadow:0 8px 30px #0002;padding:14px;display:none
+}
+.panel.show{display:block}
+.panelTitle{font-weight:700;margin-bottom:8px}
+.panelText{font-size:13px;color:var(--muted);line-height:1.4}
+.dimList{
+  position:absolute;inset:0;background:var(--bg);overflow:auto;padding:14px 12px 20px;display:none
+}
+.dimList.show{display:block}
+.dimCard{
+  background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:9px;
+  display:flex;align-items:center;gap:10px
+}
+.dimName{font-weight:700;width:70px}
+.dimValue{font-size:16px;flex:1}
+.dimCard button{background:#edf3ff;color:var(--blue);padding:8px 10px;border-radius:8px;font-weight:700}
+.empty{color:var(--muted);text-align:center;padding:50px 20px;line-height:1.5}
+.modalBack{
+  position:fixed;inset:0;background:#0006;display:none;align-items:flex-end;z-index:20
+}
+.modalBack.show{display:flex}
+.modal{
+  width:100%;background:#fff;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  box-shadow:0 -10px 40px #0003
+}
+.modalTitle{text-align:center;font-size:19px;font-weight:700;margin-bottom:6px}
+.modalSub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:15px}
+.inputWrap{display:flex;align-items:center;gap:8px}
+.modal input{
+  width:100%;height:56px;border:2px solid var(--line);border-radius:12px;text-align:center;
+  font-size:24px;font-weight:700;outline:none
+}
+.modal input:focus{border-color:var(--blue)}
+.unit{font-size:18px;color:var(--muted);font-weight:700}
+.modal button{
+  width:100%;height:52px;margin-top:12px;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-size:16px
+}
+.cancelBtn{background:#f0f2f5!important;color:var(--text)!important}
+.warning{color:var(--danger);font-size:12px;text-align:center;min-height:17px;margin-top:8px}
+.menu{
+  position:fixed;right:10px;top:58px;background:#fff;border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 8px 30px #0002;display:none;z-index:15;overflow:hidden
+}
+.menu.show{display:block}
+.menu button{display:block;background:#fff;padding:13px 18px;width:180px;text-align:left}
+.menu button+button{border-top:1px solid var(--line)}
+@media(min-width:700px){
+  .app{max-width:520px;margin:auto;background:var(--bg);box-shadow:0 0 30px #0002}
+}
 </style>
 </head>
 <body>
 <div class="app">
- 
-  <header class="top">
-    <div class="brand">
-      <div class="mark"></div>
-      <div>Чертёж потолка<small>построение плана помещения</small></div>
-    </div>
- 
-    <div class="toolgroup">
-      <button class="btn active" id="toolOutline" title="Рисовать контур помещения">▱ Контур</button>
-      <button class="btn" id="toolHole" title="Добавить вырез (труба, колонна, ниша)">◌ Вырез</button>
-      <button class="btn icon" id="toolPan" title="Панорамирование (или ПКМ)">✋</button>
-    </div>
- 
-    <div class="toolgroup">
-      <button class="btn icon" id="btnUndo" title="Отменить (Ctrl+Z)">↶</button>
-      <button class="btn icon" id="btnZoomOut" title="Уменьшить масштаб">–</button>
-      <button class="btn icon" id="btnZoomFit" title="По размеру окна">⤢</button>
-      <button class="btn icon" id="btnZoomIn" title="Увеличить масштаб">+</button>
-    </div>
- 
-    <div class="toolgroup">
-      <button class="btn danger" id="btnClear" title="Очистить всё">✕ Очистить</button>
-    </div>
- 
-    <div class="spacer"></div>
- 
-    <div class="toolgroup">
-      <button class="btn" id="btnLoad">Открыть…</button>
-      <button class="btn" id="btnSave">Сохранить .json</button>
-      <button class="btn" id="btnPng">Экспорт PNG</button>
-      <button class="btn icon" id="btnHelp" title="Подсказки">?</button>
-    </div>
-    <input type="file" id="fileInput" accept="application/json" style="display:none">
+  <header class="header">
+    <button class="iconBtn" id="undoBtn">↶</button>
+    <div class="title">Чертёж потолка</div>
+    <button class="iconBtn" id="menuBtn">⋮</button>
   </header>
- 
-  <aside class="left">
-    <div class="section">
-      <h3>Привязка</h3>
-      <div class="row">
-        <label>Угол, шаг</label>
-        <select id="angleStep">
-          <option value="0">выкл</option>
-          <option value="1">1°</option>
-          <option value="5">5°</option>
-          <option value="15" selected>15°</option>
-          <option value="45">45°</option>
-          <option value="90">90°</option>
-        </select>
-      </div>
-      <div class="row">
-        <label>Длина, шаг</label>
-        <select id="lenStep">
-          <option value="0">выкл</option>
-          <option value="0.01" selected>1 см</option>
-          <option value="0.05">5 см</option>
-          <option value="0.1">10 см</option>
-        </select>
-      </div>
-      <div class="row">
-        <label>Сетка</label>
-        <select id="gridToggle">
-          <option value="1" selected>показывать</option>
-          <option value="0">скрыть</option>
-        </select>
-      </div>
+
+  <main class="canvasArea">
+    <canvas id="canvas"></canvas>
+    <div class="status" id="status">Поставьте точку A</div>
+
+    <div class="panel" id="hintPanel">
+      <div class="panelTitle" id="hintTitle">Построение</div>
+      <div class="panelText" id="hintText">Коснитесь поля, чтобы поставить первую точку.</div>
     </div>
- 
-    <div class="section">
-      <h3>Единицы</h3>
-      <div class="row">
-        <label>Отображение</label>
-        <select id="unitSel">
-          <option value="mm">мм</option>
-          <option value="cm">см</option>
-          <option value="m" selected>м</option>
-        </select>
-      </div>
-    </div>
- 
-    <div class="section">
-      <h3>Как рисовать</h3>
-      <div class="hint">
-        <b>1.</b> Кликните — поставить угол стены.<br>
-        <b>2.</b> Наберите число на клавиатуре и нажмите <kbd>Enter</kbd> — стена ляжет точно на эту длину под текущим (привязанным) углом.<br>
-        <b>3.</b> Кликните рядом с первой точкой — контур замкнётся.<br>
-        <b>4.</b> Дважды кликните по длине стены — можно исправить размер.<br>
-        <b>5.</b> Перетаскивайте узлы, чтобы поправить форму.
-      </div>
-    </div>
- 
-    <div class="section">
-      <h3>Клавиши</h3>
-      <div class="hint">
-        <kbd>0–9</kbd> ввод длины · <kbd>Enter</kbd> подтвердить · <kbd>Backspace</kbd> убрать точку · <kbd>Esc</kbd> отмена рисования · <kbd>Ctrl+Z</kbd> отменить · колесо мыши — масштаб · ПКМ — панорама
-      </div>
-    </div>
-  </aside>
- 
-  <main class="canvas-wrap" id="canvasWrap">
-    <canvas id="cv"></canvas>
-    <div class="titleblock" id="titleblock"></div>
-    <div class="toast" id="toast"></div>
- 
-    <div class="help-overlay" id="helpOverlay">
-      <div class="help-card">
-        <h2>Построение чертежа — подсказки</h2>
-        <table>
-          <tr><td>Клик по полю</td><td>поставить следующую точку контура стены</td></tr>
-          <tr><td>Цифры + Enter</td><td>задать точную длину текущей стены (в выбранных единицах)</td></tr>
-          <tr><td>Клик у старта</td><td>замкнуть контур помещения</td></tr>
-          <tr><td>Двойной клик</td><td>по подписи стены — изменить её длину вручную</td></tr>
-          <tr><td>Перетаскивание узла</td><td>поправить форму после замыкания контура</td></tr>
-          <tr><td>Вырез</td><td>кнопка «Вырез» — рисуется так же, площадь вычитается из общей</td></tr>
-          <tr><td>Backspace</td><td>убрать последнюю поставленную точку во время рисования</td></tr>
-          <tr><td>Ctrl+Z</td><td>отменить последнее завершённое действие</td></tr>
-          <tr><td>Колесо мыши</td><td>масштаб (к курсору)</td></tr>
-          <tr><td>ПКМ + перетаскивание</td><td>панорамирование листа</td></tr>
-        </table>
-        <button class="btn active" id="closeHelp">Понятно</button>
-      </div>
-    </div>
+
+    <div class="dimList" id="dimList"></div>
   </main>
- 
-  <aside class="right">
-    <div class="section">
-      <h3>Итоги</h3>
-      <div class="results-num" id="areaNum">0.00 м²</div>
-      <div class="results-sub">чистая площадь потолка (за вычетом вырезов)</div>
-      <div class="row" style="margin-top:12px;">
-        <label>Периметр</label>
-        <b id="periNum" style="font-family:'JetBrains Mono',monospace;">0.00 м</b>
-      </div>
-      <div class="row">
-        <label>Площадь без вычетов</label>
-        <b id="grossNum" style="font-family:'JetBrains Mono',monospace;">0.00 м²</b>
-      </div>
-      <div class="row">
-        <label>Вырезы</label>
-        <b id="holesNum" style="font-family:'JetBrains Mono',monospace;">0.00 м²</b>
-      </div>
-    </div>
- 
-    <div class="section">
-      <h3>Стены</h3>
-      <ul class="wall-list" id="wallList"></ul>
-      <div class="empty-note" id="wallEmpty">Контур ещё не начат — кликните на поле.</div>
-    </div>
- 
-    <div class="section">
-      <h3>Вырезы</h3>
-      <ul class="hole-list" id="holeList"></ul>
-      <div class="empty-note" id="holeEmpty">Вырезов нет.</div>
-    </div>
- 
-    <div class="section">
-      <h3>Углы</h3>
-      <ul class="wall-list" id="angleList"></ul>
-      <div class="empty-note" id="angleEmpty">Появятся после замыкания контура.</div>
-    </div>
-  </aside>
- 
+
+  <div class="bottom">
+    <button class="secondary" id="deleteBtn">⌫</button>
+    <button class="mainAction" id="actionBtn">Поставить точку A</button>
+    <button class="secondary" id="fitBtn">⌖</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="drawTab">Чертёж</button>
+    <button class="tab" id="sizesTab">Размеры</button>
+  </div>
 </div>
- 
+
+<div class="modalBack" id="modalBack">
+  <div class="modal">
+    <div class="modalTitle" id="modalTitle">A–B</div>
+    <div class="modalSub">Введите размер стороны в сантиметрах</div>
+    <div class="inputWrap">
+      <input id="sizeInput" type="number" inputmode="decimal" min="0.1" step="0.1" autocomplete="off">
+      <div class="unit">см</div>
+    </div>
+    <div class="warning" id="modalWarning"></div>
+    <button id="applySize">Продолжить</button>
+    <button class="cancelBtn" id="cancelSize">Отменить</button>
+  </div>
+</div>
+
+<div class="menu" id="menu">
+  <button id="newBtn">Новый чертёж</button>
+  <button id="saveBtn">Сохранить</button>
+  <button id="loadBtn">Открыть</button>
+  <input id="fileInput" type="file" accept=".json,application/json" hidden>
+</div>
+
 <script>
-(function(){
-  "use strict";
- 
-  // ---------- DOM ----------
-  const cv = document.getElementById('cv');
-  const ctx = cv.getContext('2d');
-  const wrap = document.getElementById('canvasWrap');
-  const toast = document.getElementById('toast');
-  const titleblock = document.getElementById('titleblock');
- 
-  // ---------- state ----------
-  let dpr = Math.max(1, window.devicePixelRatio || 1);
-  let scale = 60;              // pixels per meter
-  let offset = {x:0, y:0};     // pixels, world(0,0) -> screen offset
-  let mode = 'outline';        // 'outline' | 'hole' | 'pan'
-  let drawing = false;         // currently placing points for outline or hole
-  let drawingHoleIndex = -1;
- 
-  let outline = { points: [], closed:false };
-  let holes = [];              // [{points:[...], closed:true}]
-  let history = [];
- 
-  let angleStepDeg = 15;
-  let lenStep = 0.01;
-  let showGrid = true;
-  let unit = 'm';
- 
-  let mouseWorld = {x:0,y:0};
-  let mouseScreen = {x:0,y:0};
-  let hoverSnap = null;        // candidate next point while drawing {x,y,len,angle}
-  let inputBuffer = '';
-  let isTypingLength = false;
- 
-  let dragVertex = null;       // {which:'outline'|hole idx, i:index}
-  let isPanning = false;
-  let panStart = null;
-  let offsetStart = null;
- 
-  let editingSegment = null;   // for double-click length edit {which,i}
- 
-  const CLOSE_PX = 14;
-  const VERTEX_HIT_PX = 10;
- 
-  // ---------- helpers ----------
-  function worldToScreen(p){ return { x: p.x*scale + offset.x, y: p.y*scale + offset.y }; }
-  function screenToWorld(p){ return { x: (p.x - offset.x)/scale, y: (p.y - offset.y)/scale }; }
-  function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
-  function fmtUnit(m){
-    if(unit==='mm') return (m*1000).toFixed(0)+' мм';
-    if(unit==='cm') return (m*100).toFixed(1)+' см';
-    return m.toFixed(2)+' м';
-  }
-  function fmtNum(m){
-    if(unit==='mm') return (m*1000).toFixed(0);
-    if(unit==='cm') return (m*100).toFixed(1);
-    return m.toFixed(2);
-  }
-  function parseToMeters(str){
-    const v = parseFloat(str.replace(',','.'));
-    if(isNaN(v)) return null;
-    if(unit==='mm') return v/1000;
-    if(unit==='cm') return v/100;
-    return v;
-  }
-  function snapAngle(rad){
-    if(angleStepDeg<=0) return rad;
-    const step = angleStepDeg*Math.PI/180;
-    return Math.round(rad/step)*step;
-  }
-  function snapLen(len){
-    if(lenStep<=0) return len;
-    return Math.round(len/lenStep)*lenStep;
-  }
-  function showToast(msg){
-    toast.textContent = msg;
-    toast.classList.add('show');
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(()=>toast.classList.remove('show'), 1600);
-  }
- 
-  function resize(){
-    dpr = Math.max(1, window.devicePixelRatio || 1);
-    const r = wrap.getBoundingClientRect();
-    cv.width = r.width*dpr; cv.height = r.height*dpr;
-    cv.style.width = r.width+'px'; cv.style.height = r.height+'px';
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    draw();
-  }
-  window.addEventListener('resize', resize);
- 
-  function centerView(){
-    const r = wrap.getBoundingClientRect();
-    offset.x = r.width/2; offset.y = r.height/2;
-  }
- 
-  // ---------- geometry ----------
-  function polygonArea(points){
-    if(points.length<3) return 0;
-    let s=0;
-    for(let i=0;i<points.length;i++){
-      const a=points[i], b=points[(i+1)%points.length];
-      s += a.x*b.y - b.x*a.y;
-    }
-    return Math.abs(s)/2;
-  }
-  function polygonSignedArea(points){
-    let s=0;
-    for(let i=0;i<points.length;i++){
-      const a=points[i], b=points[(i+1)%points.length];
-      s += a.x*b.y - b.x*a.y;
-    }
-    return s/2;
-  }
-  function perimeter(points, closed){
-    let s=0;
-    const n = points.length;
-    const lim = closed? n : n-1;
-    for(let i=0;i<lim;i++){
-      s += dist(points[i], points[(i+1)%n]);
-    }
-    return s;
-  }
-  function interiorAngles(points){
-    const n = points.length;
-    if(n<3) return [];
-    const turns = [];
-    for(let i=0;i<n;i++){
-      const prev = points[(i-1+n)%n], curr = points[i], next = points[(i+1)%n];
-      const inV = {x:curr.x-prev.x, y:curr.y-prev.y};
-      const outV = {x:next.x-curr.x, y:next.y-curr.y};
-      const cross = inV.x*outV.y - inV.y*outV.x;
-      const dot = inV.x*outV.x + inV.y*outV.y;
-      turns.push(Math.atan2(cross, dot));
-    }
-    const total = turns.reduce((a,b)=>a+b,0);
-    const sign = total>=0? 1 : -1;
-    return turns.map(t => 180 - sign*(t*180/Math.PI));
-  }
- 
-  // ---------- history ----------
-  function snapshot(){
-    return JSON.stringify({outline, holes});
-  }
-  function pushHistory(){
-    history.push(snapshot());
-    if(history.length>60) history.shift();
-  }
-  function undo(){
-    if(history.length===0){ showToast('Нечего отменять'); return; }
-    const snap = JSON.parse(history.pop());
-    outline = snap.outline; holes = snap.holes;
-    drawing=false; drawingHoleIndex=-1; inputBuffer=''; isTypingLength=false;
-    setActiveTool('outline');
-    refreshAll();
-  }
- 
-  // ---------- drawing state machine ----------
-  function currentTargetPoints(){
-    if(mode==='hole' && drawingHoleIndex>=0) return holes[drawingHoleIndex].points;
-    return outline.points;
-  }
-  function currentTargetClosedFlagSet(val){
-    if(mode==='hole' && drawingHoleIndex>=0) holes[drawingHoleIndex].closed = val;
-    else outline.closed = val;
-  }
- 
-  function computeCandidate(rawWorld){
-    const pts = currentTargetPoints();
-    if(pts.length===0) return { x: rawWorld.x, y: rawWorld.y, len:0, angle:0 };
-    const last = pts[pts.length-1];
-    let dx = rawWorld.x-last.x, dy = rawWorld.y-last.y;
-    let ang = Math.atan2(dy,dx);
-    ang = snapAngle(ang);
-    let len = Math.hypot(dx,dy);
-    len = snapLen(len);
-    return {
-      x: last.x + Math.cos(ang)*len,
-      y: last.y + Math.sin(ang)*len,
-      len, angle: ang
-    };
-  }
- 
-  function tryStartOrAddPoint(worldPt){
-    const pts = currentTargetPoints();
-    const cand = pts.length? computeCandidate(worldPt) : {x:worldPt.x, y:worldPt.y, len:0, angle:0};
- 
-    // check close-to-first
-    if(pts.length>=3){
-      const firstScreen = worldToScreen(pts[0]);
-      const candScreen = worldToScreen(cand);
-      if(dist(firstScreen, candScreen) <= CLOSE_PX){
-        pushHistory();
-        currentTargetClosedFlagSet(true);
-        drawing=false;
-        if(mode==='hole'){ drawingHoleIndex=-1; }
-        inputBuffer=''; isTypingLength=false;
-        showToast('Контур замкнут');
-        refreshAll();
-        return;
-      }
-    }
-    pushHistory();
-    pts.push({x:cand.x, y:cand.y});
-    drawing = true;
-    inputBuffer=''; isTypingLength=false;
-    refreshAll();
-  }
- 
-  function confirmTypedLength(){
-    if(!inputBuffer) return;
-    const pts = currentTargetPoints();
-    if(pts.length===0) return;
-    const meters = parseToMeters(inputBuffer);
-    if(meters===null || meters<=0){ showToast('Некорректная длина'); inputBuffer=''; return; }
-    const last = pts[pts.length-1];
-    const ang = hoverSnap ? hoverSnap.angle : 0;
-    const nx = last.x + Math.cos(ang)*meters;
-    const ny = last.y + Math.sin(ang)*meters;
- 
-    // check auto-close against first point after typed length too
-    if(pts.length>=3){
-      const firstScreen = worldToScreen(pts[0]);
-      const candScreen = worldToScreen({x:nx,y:ny});
-      if(dist(firstScreen, candScreen) <= CLOSE_PX*2){
-        pushHistory();
-        currentTargetClosedFlagSet(true);
-        drawing=false;
-        if(mode==='hole'){ drawingHoleIndex=-1; }
-        inputBuffer=''; isTypingLength=false;
-        showToast('Контур замкнут');
-        refreshAll();
-        return;
-      }
-    }
- 
-    pushHistory();
-    pts.push({x:nx,y:ny});
-    inputBuffer=''; isTypingLength=false;
-    drawing=true;
-    refreshAll();
-  }
- 
-  function removeLastPoint(){
-    const pts = currentTargetPoints();
-    if(pts.length===0) return;
-    pushHistory();
-    pts.pop();
-    if(pts.length===0){
-      drawing=false;
-      if(mode==='hole') { holes.splice(drawingHoleIndex,1); drawingHoleIndex=-1; }
-    }
-    inputBuffer=''; isTypingLength=false;
-    refreshAll();
-  }
- 
-  function cancelDrawing(){
-    if(mode==='hole' && drawingHoleIndex>=0 && !holes[drawingHoleIndex].closed){
-      holes.splice(drawingHoleIndex,1);
-      drawingHoleIndex=-1;
-    } else if(mode==='outline' && !outline.closed){
-      outline.points = [];
-    }
-    drawing=false; inputBuffer=''; isTypingLength=false;
-    refreshAll();
-  }
- 
-  // ---------- vertex hit-testing / dragging ----------
-  function findVertexAt(screenPt){
-    if(outline.points.length){
-      for(let i=0;i<outline.points.length;i++){
-        if(dist(worldToScreen(outline.points[i]), screenPt) <= VERTEX_HIT_PX){
-          return {which:'outline', i};
-        }
-      }
-    }
-    for(let h=0; h<holes.length; h++){
-      const hp = holes[h].points;
-      for(let i=0;i<hp.length;i++){
-        if(dist(worldToScreen(hp[i]), screenPt) <= VERTEX_HIT_PX){
-          return {which:'hole', h, i};
-        }
-      }
-    }
-    return null;
-  }
- 
-  function findSegmentAt(screenPt){
-    function testPts(points, closed, which, h){
-      const n = points.length;
-      const lim = closed? n : n-1;
-      for(let i=0;i<lim;i++){
-        const a = worldToScreen(points[i]), b = worldToScreen(points[(i+1)%n]);
-        const mx = (a.x+b.x)/2, my=(a.y+b.y)/2;
-        if(Math.hypot(mx-screenPt.x, my-screenPt.y) <= 16){
-          return {which, h, i};
-        }
-      }
-      return null;
-    }
-    let r = testPts(outline.points, outline.closed, 'outline');
-    if(r) return r;
-    for(let h=0; h<holes.length; h++){
-      r = testPts(holes[h].points, holes[h].closed, 'hole', h);
-      if(r) return r;
-    }
-    return null;
-  }
- 
-  function setSegmentLength(seg, newMeters){
-    if(newMeters<=0.001) return;
-    const points = seg.which==='outline' ? outline.points : holes[seg.h].points;
-    const n = points.length;
-    const a = points[seg.i], b = points[(seg.i+1)%n];
-    const ang = Math.atan2(b.y-a.y, b.x-a.x);
-    pushHistory();
-    b.x = a.x + Math.cos(ang)*newMeters;
-    b.y = a.y + Math.sin(ang)*newMeters;
-    refreshAll();
-  }
- 
-  // ---------- rendering ----------
-  function drawGrid(){
-    const r = wrap.getBoundingClientRect();
-    ctx.fillStyle = 'var(--blueprint)';
-    // background
-    const grad = ctx.createLinearGradient(0,0,0,r.height);
-    grad.addColorStop(0, '#1a4162');
-    grad.addColorStop(1, '#0f3050');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0,0,r.width,r.height);
-    if(!showGrid) return;
- 
-    const topLeft = screenToWorld({x:0,y:0});
-    const botRight = screenToWorld({x:r.width,y:r.height});
- 
-    // minor grid every 0.1m if zoomed enough
-    function drawLines(step, color, width){
-      ctx.strokeStyle = color; ctx.lineWidth = width;
-      ctx.beginPath();
-      let x0 = Math.floor(topLeft.x/step)*step;
-      for(let x=x0; x<=botRight.x; x+=step){
-        const sx = worldToScreen({x,y:0}).x;
-        ctx.moveTo(sx,0); ctx.lineTo(sx,r.height);
-      }
-      let y0 = Math.floor(topLeft.y/step)*step;
-      for(let y=y0; y<=botRight.y; y+=step){
-        const sy = worldToScreen({x:0,y}).y;
-        ctx.moveTo(0,sy); ctx.lineTo(r.width,sy);
-      }
-      ctx.stroke();
-    }
-    if(scale >= 90) drawLines(0.1, 'rgba(255,255,255,0.05)', 1);
-    drawLines(1, 'rgba(255,255,255,0.14)', 1);
- 
-    // axis lines through world 0,0
-    const zero = worldToScreen({x:0,y:0});
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1;
+(() => {
+'use strict';
+
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const status=document.getElementById('status');
+const actionBtn=document.getElementById('actionBtn');
+const undoBtn=document.getElementById('undoBtn');
+const deleteBtn=document.getElementById('deleteBtn');
+const fitBtn=document.getElementById('fitBtn');
+const drawTab=document.getElementById('drawTab');
+const sizesTab=document.getElementById('sizesTab');
+const dimList=document.getElementById('dimList');
+const modalBack=document.getElementById('modalBack');
+const modalTitle=document.getElementById('modalTitle');
+const sizeInput=document.getElementById('sizeInput');
+const modalWarning=document.getElementById('modalWarning');
+const applySize=document.getElementById('applySize');
+const cancelSize=document.getElementById('cancelSize');
+const menu=document.getElementById('menu');
+
+let dpr=1,W=0,H=0;
+let view={zoom:1,ox:0,oy:0};
+let points=[];
+let closed=false;
+let pendingSegment=-1;
+let pendingPoint=-1;
+let preview=null;
+let history=[];
+let activeTab='draw';
+let pointerDown=null;
+let draggingPoint=-1;
+
+function clone(){
+  return JSON.parse(JSON.stringify({points,closed,view}));
+}
+function restore(s){
+  points=s.points||[];
+  closed=!!s.closed;
+  view=s.view||{zoom:1,ox:W/2,oy:H/2};
+  pendingSegment=-1;
+  pendingPoint=-1;
+  preview=null;
+  render();
+  updateUI();
+}
+function saveHistory(){
+  history.push(clone());
+  if(history.length>50)history.shift();
+}
+function undo(){
+  if(!history.length)return;
+  restore(history.pop());
+}
+function resize(){
+  const r=canvas.getBoundingClientRect();
+  dpr=window.devicePixelRatio||1;
+  W=r.width;H=r.height;
+  canvas.width=Math.max(1,Math.round(W*dpr));
+  canvas.height=Math.max(1,Math.round(H*dpr));
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(!view.ox)view.ox=W/2;
+  if(!view.oy)view.oy=H/2;
+  render();
+}
+window.addEventListener('resize',resize);
+
+function screenToWorld(x,y){
+  return {x:(x-view.ox)/view.zoom,y:(y-view.oy)/view.zoom};
+}
+function worldToScreen(p){
+  return {x:p.x*view.zoom+view.ox,y:p.y*view.zoom+view.oy};
+}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function letter(i){
+  let s='',n=i+1;
+  while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}
+  return s;
+}
+function fmt(v){
+  return Number(v).toFixed(1).replace(/\.0$/,'');
+}
+function segmentLength(i){
+  const j=(i+1)%points.length;
+  return dist(points[i],points[j]);
+}
+
+function drawGrid(){
+  ctx.fillStyle='#f1f3f5';
+  ctx.fillRect(0,0,W,H);
+  const base=100*view.zoom;
+  let step=base;
+  while(step<28)step*=2;
+  while(step>120)step/=2;
+  const gx=((view.ox%step)+step)%step;
+  const gy=((view.oy%step)+step)%step;
+  ctx.strokeStyle='#e1e5e9';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let x=gx;x<W;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,H)}
+  for(let y=gy;y<H;y+=step){ctx.moveTo(0,y);ctx.lineTo(W,y)}
+  ctx.stroke();
+}
+
+function drawDimensions(){
+  if(points.length<2)return;
+  const count=closed?points.length:points.length-1;
+  ctx.font='12px Arial';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+
+  for(let i=0;i<count;i++){
+    const j=(i+1)%points.length;
+    const a=worldToScreen(points[i]),b=worldToScreen(points[j]);
+    const len=dist(points[i],points[j]);
+    const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1;
+    const nx=-dy/L,ny=dx/L;
+    const offset=24;
+    const p1={x:a.x+nx*offset,y:a.y+ny*offset};
+    const p2={x:b.x+nx*offset,y:b.y+ny*offset};
+
+    ctx.strokeStyle='#89939e';
+    ctx.lineWidth=1;
     ctx.beginPath();
-    ctx.moveTo(0, zero.y); ctx.lineTo(r.width, zero.y);
-    ctx.moveTo(zero.x, 0); ctx.lineTo(zero.x, r.height);
+    ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
     ctx.stroke();
-  }
- 
-  function drawPolyline(points, closed, opts){
-    if(points.length===0) return;
+
+    ctx.beginPath();
+    ctx.moveTo(p1.x-nx*4,p1.y-ny*4);ctx.lineTo(p1.x+nx*4,p1.y+ny*4);
+    ctx.moveTo(p2.x-nx*4,p2.y-ny*4);ctx.lineTo(p2.x+nx*4,p2.y+ny*4);
+    ctx.stroke();
+
+    let rot=Math.atan2(dy,dx);
+    if(rot>Math.PI/2||rot<-Math.PI/2)rot+=Math.PI;
     ctx.save();
-    ctx.strokeStyle = opts.stroke;
-    ctx.lineWidth = opts.width || 3;
-    ctx.lineJoin = 'round'; ctx.lineCap='round';
-    if(opts.dash) ctx.setLineDash(opts.dash);
-    ctx.beginPath();
-    const p0 = worldToScreen(points[0]);
-    ctx.moveTo(p0.x,p0.y);
-    for(let i=1;i<points.length;i++){
-      const p = worldToScreen(points[i]);
-      ctx.lineTo(p.x,p.y);
-    }
-    if(closed) ctx.closePath();
-    ctx.stroke();
- 
-    if(opts.fill){
-      ctx.fillStyle = opts.fill;
-      ctx.fill();
-    }
+    ctx.translate((p1.x+p2.x)/2,(p1.y+p2.y)/2);
+    ctx.rotate(rot);
+    const text=fmt(len)+' см';
+    const tw=ctx.measureText(text).width+12;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(-tw/2,-10,tw,20);
+    ctx.fillStyle='#4b5563';
+    ctx.fillText(text,0,0);
     ctx.restore();
   }
- 
-  function drawVertices(points, color){
-    points.forEach((p,i)=>{
-      const s = worldToScreen(p);
-      ctx.beginPath();
-      ctx.arc(s.x,s.y, i===0?6:5, 0, Math.PI*2);
-      ctx.fillStyle = i===0 ? 'var(--accent)'.replace('var(--accent)','#ffb454') : '#eaf4fb';
-      ctx.fill();
-      ctx.lineWidth=2; ctx.strokeStyle='#0f2233'; ctx.stroke();
-    });
+}
+
+function drawShape(){
+  if(!points.length)return;
+  const ps=points.map(worldToScreen);
+
+  ctx.save();
+
+  if(points.length>=3){
+    ctx.beginPath();
+    ctx.moveTo(ps[0].x,ps[0].y);
+    for(let i=1;i<ps.length;i++)ctx.lineTo(ps[i].x,ps[i].y);
+    if(closed)ctx.closePath();
+    ctx.fillStyle='rgba(23,105,224,.07)';
+    ctx.fill();
   }
- 
-  function drawLengthLabels(points, closed, color){
-    const n = points.length;
-    const lim = closed? n : n-1;
-    for(let i=0;i<lim;i++){
-      const a = points[i], b = points[(i+1)%n];
-      const len = dist(a,b);
-      const sa = worldToScreen(a), sb = worldToScreen(b);
-      const mx = (sa.x+sb.x)/2, my=(sa.y+sb.y)/2;
-      ctx.save();
-      ctx.font = "600 12px 'JetBrains Mono', monospace";
-      const text = fmtUnit(len);
-      const tw = ctx.measureText(text).width;
-      ctx.fillStyle = 'rgba(10,20,29,0.78)';
-      ctx.fillRect(mx-tw/2-5, my-9, tw+10, 18);
-      ctx.fillStyle = color;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(text, mx, my+1);
-      ctx.restore();
-    }
+
+  ctx.beginPath();
+  ctx.moveTo(ps[0].x,ps[0].y);
+  for(let i=1;i<ps.length;i++)ctx.lineTo(ps[i].x,ps[i].y);
+  if(closed)ctx.closePath();
+  ctx.strokeStyle='#1c2733';
+  ctx.lineWidth=3;
+  ctx.lineJoin='round';
+  ctx.lineCap='round';
+  ctx.stroke();
+
+  if(preview){
+    const last=worldToScreen(points[points.length-1]);
+    const p=worldToScreen(preview);
+    ctx.strokeStyle='#1769e0';
+    ctx.lineWidth=2;
+    ctx.setLineDash([7,6]);
+    ctx.beginPath();
+    ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
- 
-  function drawAngleArcs(points){
-    const n = points.length;
-    if(n<3) return;
-    const angles = interiorAngles(points);
-    for(let i=0;i<n;i++){
-      const p = worldToScreen(points[i]);
-      ctx.save();
-      ctx.font = "500 10.5px 'JetBrains Mono', monospace";
-      const text = angles[i].toFixed(1)+'°';
-      const tw = ctx.measureText(text).width;
-      const prev = points[(i-1+n)%n], next = points[(i+1)%n];
-      // offset label toward polygon interior-ish (average of neighbor directions, inverted)
-      const dx = (points[i].x*2 - prev.x - next.x);
-      const dy = (points[i].y*2 - prev.y - next.y);
-      const dlen = Math.hypot(dx,dy)||1;
-      const ox = (dx/dlen)*22, oy=(dy/dlen)*22;
-      ctx.fillStyle = 'rgba(95,227,192,0.16)';
-      ctx.fillRect(p.x+ox-tw/2-4, p.y+oy-8, tw+8, 16);
-      ctx.fillStyle = '#5fe3c0';
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(text, p.x+ox, p.y+oy+1);
-      ctx.restore();
-    }
+
+  ps.forEach((p,i)=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,i===pendingPoint?9:7,0,Math.PI*2);
+    ctx.fillStyle='#fff';
+    ctx.fill();
+    ctx.strokeStyle='#1769e0';
+    ctx.lineWidth=3;
+    ctx.stroke();
+
+    ctx.fillStyle='#17202a';
+    ctx.font='bold 13px Arial';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText(letter(i),p.x,p.y-18);
+  });
+
+  ctx.restore();
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawGrid();
+  drawShape();
+  if(activeTab==='draw')drawDimensions();
+}
+
+function updateStatus(){
+  if(closed){
+    status.textContent='Контур замкнут';
+  }else if(points.length===0){
+    status.textContent='Поставьте точку A';
+  }else{
+    status.textContent='Следующая точка: '+letter(points.length);
   }
- 
-  function draw(){
-    drawGrid();
- 
-    // outline fill
-    if(outline.points.length>=3){
-      drawPolyline(outline.points, outline.closed, {
-        stroke:'#eaf4fb', width:3, fill: outline.closed ? 'rgba(234,244,251,0.06)' : null
-      });
-    } else if(outline.points.length>=1){
-      drawPolyline(outline.points, false, {stroke:'#eaf4fb', width:3});
-    }
- 
-    // holes
-    holes.forEach(h=>{
-      if(h.points.length>=2){
-        drawPolyline(h.points, h.closed, {
-          stroke:'#ff8fa0', width:2, dash:[6,4], fill: h.closed? 'rgba(255,111,122,0.10)':null
-        });
-      }
-    });
- 
-    // rubber band preview
-    if(drawing){
-      const pts = currentTargetPoints();
-      if(pts.length){
-        const cand = isTypingLength && inputBuffer ? previewTypedPoint() : computeCandidate(mouseWorld);
-        hoverSnap = cand;
-        const last = pts[pts.length-1];
-        drawPolyline([last, cand], false, {stroke:'#ffb454', width:2, dash:[7,5]});
-        const s = worldToScreen(cand);
-        ctx.beginPath(); ctx.arc(s.x,s.y,4,0,Math.PI*2); ctx.fillStyle='#ffb454'; ctx.fill();
-      }
-    }
- 
-    if(outline.points.length) drawVertices(outline.points);
-    holes.forEach(h=> drawVertices(h.points));
- 
-    if(outline.points.length>=2) drawLengthLabels(outline.points, outline.closed, '#ffd28a');
-    holes.forEach(h=>{ if(h.points.length>=2) drawLengthLabels(h.points, h.closed, '#ffb3bc'); });
- 
-    if(outline.closed && outline.points.length>=3) drawAngleArcs(outline.points);
- 
-    updateFloatingLabel();
-    updateTitleblock();
+}
+function updateAction(){
+  if(closed){
+    actionBtn.textContent='Готово';
+    return;
   }
- 
-  function previewTypedPoint(){
-    const pts = currentTargetPoints();
-    const last = pts[pts.length-1];
-    const meters = parseToMeters(inputBuffer||'0') || 0;
-    const ang = hoverSnap ? hoverSnap.angle : 0;
-    return { x:last.x+Math.cos(ang)*meters, y:last.y+Math.sin(ang)*meters, len:meters, angle:ang };
+  if(points.length===0)actionBtn.textContent='Поставить точку A';
+  else actionBtn.textContent='Поставить точку '+letter(points.length);
+}
+function updateUI(){
+  updateStatus();
+  updateAction();
+  undoBtn.disabled=history.length===0;
+  undoBtn.style.opacity=history.length?'1':'.45';
+  buildDimensions();
+  render();
+}
+function buildDimensions(){
+  if(!points.length){
+    dimList.innerHTML='<div class="empty">Размеры появятся после построения сторон.</div>';
+    return;
   }
- 
-  // ---------- floating length/angle readout ----------
-  let floatEl = null;
-  function updateFloatingLabel(){
-    if(!drawing || !hoverSnap){
-      if(floatEl){ floatEl.remove(); floatEl=null; }
-      return;
-    }
-    if(!floatEl){
-      floatEl = document.createElement('div');
-      floatEl.className = 'float-input';
-      wrap.appendChild(floatEl);
-    }
-    const pts = currentTargetPoints();
-    const last = pts[pts.length-1];
-    const len = isTypingLength ? (parseToMeters(inputBuffer||'0')||0) : dist(last, hoverSnap);
-    const deg = ((hoverSnap.angle*180/Math.PI)+360)%360;
-    const s = worldToScreen(hoverSnap);
-    floatEl.style.left = s.x+'px';
-    floatEl.style.top = s.y+'px';
-    floatEl.innerHTML = (isTypingLength? ('<b>'+ (inputBuffer||'0') +'</b> '+ (unit)) : fmtUnit(len)) + '  <span style="color:#5fe3c0">∠'+deg.toFixed(0)+'°</span>';
+  let html='<div style="font-weight:700;margin:4px 0 12px">Размеры сторон</div>';
+  const count=closed?points.length:Math.max(0,points.length-1);
+  for(let i=0;i<count;i++){
+    const j=(i+1)%points.length;
+    html+=`
+      <div class="dimCard">
+        <div class="dimName">${letter(i)}–${letter(j)}</div>
+        <div class="dimValue">${fmt(segmentLength(i))} см</div>
+        <button data-edit="${i}">Изменить</button>
+      </div>`;
   }
- 
-  function updateTitleblock(){
-    const area = polygonArea(outline.points) - holes.reduce((s,h)=>s+ (h.closed? polygonArea(h.points):0),0);
-    const peri = outline.closed ? perimeter(outline.points, true) : 0;
-    const date = new Date().toLocaleDateString('ru-RU');
-    titleblock.innerHTML =
-      '<h4>ЧЕРТЁЖ ПОТОЛКА</h4>' +
-      '<div class="tb-row"><span>Дата</span><b>'+date+'</b></div>' +
-      '<div class="tb-row"><span>Сетка</span><b>1 кл. = 1 м</b></div>' +
-      '<hr>' +
-      '<div class="tb-row"><span>Площадь</span><b>'+ (outline.closed? area.toFixed(2)+' м²' : '—') +'</b></div>' +
-      '<div class="tb-row"><span>Периметр</span><b>'+ (outline.closed? peri.toFixed(2)+' м' : '—') +'</b></div>' +
-      '<div class="tb-row"><span>Вырезов</span><b>'+ holes.filter(h=>h.closed).length +'</b></div>';
+  if(points.length>=3){
+    html+=`
+      <div style="font-weight:700;margin:20px 0 10px">Контроль</div>
+      <div class="dimCard"><div class="dimName">Площадь</div><div class="dimValue">${fmt(area()/10000)} м²</div></div>
+      <div class="dimCard"><div class="dimName">Периметр</div><div class="dimValue">${fmt(perimeter()/100)} м</div></div>`;
   }
- 
-  // ---------- side panel refresh ----------
-  function refreshAll(){
-    // wall list
-    const wallList = document.getElementById('wallList');
-    const wallEmpty = document.getElementById('wallEmpty');
-    wallList.innerHTML='';
-    const pts = outline.points;
-    const n = pts.length;
-    const lim = outline.closed? n : Math.max(0,n-1);
-    if(lim>0){
-      wallEmpty.style.display='none';
-      for(let i=0;i<lim;i++){
-        const len = dist(pts[i], pts[(i+1)%n]);
-        const li = document.createElement('li');
-        li.innerHTML = '<span class="n">Стена '+(i+1)+'</span><b>'+fmtUnit(len)+'</b>';
-        wallList.appendChild(li);
-      }
-    } else {
-      wallEmpty.style.display='block';
-    }
- 
-    // angle list
-    const angleList = document.getElementById('angleList');
-    const angleEmpty = document.getElementById('angleEmpty');
-    angleList.innerHTML='';
-    if(outline.closed && pts.length>=3){
-      angleEmpty.style.display='none';
-      const angles = interiorAngles(pts);
-      angles.forEach((a,i)=>{
-        const li = document.createElement('li');
-        li.innerHTML = '<span class="n">Угол '+(i+1)+'</span><b>'+a.toFixed(1)+'°</b>';
-        angleList.appendChild(li);
-      });
-    } else {
-      angleEmpty.style.display='block';
-    }
- 
-    // holes list
-    const holeList = document.getElementById('holeList');
-    const holeEmpty = document.getElementById('holeEmpty');
-    holeList.innerHTML='';
-    if(holes.length){
-      holeEmpty.style.display='none';
-      holes.forEach((h,idx)=>{
-        const a = h.closed? polygonArea(h.points):0;
-        const li = document.createElement('li');
-        li.innerHTML = '<span class="n">Вырез '+(idx+1)+'</span><b>'+(h.closed? a.toFixed(2)+' м²':'рисуется…')+'</b>';
-        const del = document.createElement('button');
-        del.textContent='✕';
-        del.title='Удалить вырез';
-        del.onclick = ()=>{ pushHistory(); holes.splice(idx,1); refreshAll(); };
-        li.appendChild(del);
-        holeList.appendChild(li);
-      });
-    } else {
-      holeEmpty.style.display='block';
-    }
- 
-    // totals
-    const gross = polygonArea(outline.points);
-    const holesArea = holes.reduce((s,h)=> s+(h.closed? polygonArea(h.points):0), 0);
-    const net = Math.max(0, gross-holesArea);
-    document.getElementById('areaNum').textContent = (outline.closed? net.toFixed(2):'0.00')+' м²';
-    document.getElementById('grossNum').textContent = (outline.closed? gross.toFixed(2):'0.00')+' м²';
-    document.getElementById('holesNum').textContent = holesArea.toFixed(2)+' м²';
-    document.getElementById('periNum').textContent = (outline.closed? perimeter(outline.points,true).toFixed(2):'0.00')+' м';
- 
-    document.getElementById('btnUndo').disabled = history.length===0;
- 
-    draw();
-  }
- 
-  // ---------- toolbar ----------
-  function setActiveTool(t){
-    mode = t;
-    document.getElementById('toolOutline').classList.toggle('active', t==='outline');
-    document.getElementById('toolHole').classList.toggle('active', t==='hole');
-    document.getElementById('toolPan').classList.toggle('active', t==='pan');
-    cv.style.cursor = t==='pan' ? 'grab' : 'crosshair';
-  }
-  document.getElementById('toolOutline').onclick = ()=>{
-    setActiveTool('outline');
-  };
-  document.getElementById('toolHole').onclick = ()=>{
-    if(!outline.closed){ showToast('Сначала замкните контур помещения'); return; }
-    setActiveTool('hole');
-    pushHistory();
-    holes.push({points:[], closed:false});
-    drawingHoleIndex = holes.length-1;
-    drawing = false;
-    refreshAll();
-  };
-  document.getElementById('toolPan').onclick = ()=> setActiveTool('pan');
- 
-  document.getElementById('btnUndo').onclick = undo;
-  document.getElementById('btnClear').onclick = ()=>{
-    if(outline.points.length===0 && holes.length===0) return;
-    if(confirm('Очистить весь чертёж?')){
-      pushHistory();
-      outline = {points:[], closed:false};
-      holes = [];
-      drawing=false; drawingHoleIndex=-1;
-      setActiveTool('outline');
-      refreshAll();
-    }
-  };
-  document.getElementById('btnZoomIn').onclick = ()=> zoomAt(1.2, {x: cv.width/dpr/2, y: cv.height/dpr/2});
-  document.getElementById('btnZoomOut').onclick = ()=> zoomAt(1/1.2, {x: cv.width/dpr/2, y: cv.height/dpr/2});
-  document.getElementById('btnZoomFit').onclick = fitToView;
- 
-  document.getElementById('angleStep').onchange = e=> angleStepDeg = parseFloat(e.target.value);
-  document.getElementById('lenStep').onchange = e=> lenStep = parseFloat(e.target.value);
-  document.getElementById('gridToggle').onchange = e=> { showGrid = e.target.value==='1'; draw(); };
-  document.getElementById('unitSel').onchange = e=> { unit = e.target.value; refreshAll(); };
- 
-  document.getElementById('btnHelp').onclick = ()=> document.getElementById('helpOverlay').classList.add('show');
-  document.getElementById('closeHelp').onclick = ()=> document.getElementById('helpOverlay').classList.remove('show');
- 
-  document.getElementById('btnPng').onclick = ()=>{
-    const link = document.createElement('a');
-    link.download = 'chertezh-potolka.png';
-    link.href = cv.toDataURL('image/png');
-    link.click();
-  };
-  document.getElementById('btnSave').onclick = ()=>{
-    const data = JSON.stringify({outline, holes, unit}, null, 2);
-    const blob = new Blob([data], {type:'application/json'});
-    const link = document.createElement('a');
-    link.download = 'chertezh-potolka.json';
-    link.href = URL.createObjectURL(blob);
-    link.click();
-  };
-  document.getElementById('btnLoad').onclick = ()=> document.getElementById('fileInput').click();
-  document.getElementById('fileInput').onchange = (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      try{
-        const data = JSON.parse(reader.result);
-        pushHistory();
-        outline = data.outline || {points:[], closed:false};
-        holes = data.holes || [];
-        if(data.unit){ unit = data.unit; document.getElementById('unitSel').value = unit; }
-        drawing=false; drawingHoleIndex=-1;
-        setActiveTool('outline');
-        fitToView();
-        refreshAll();
-        showToast('Файл загружен');
-      }catch(err){ showToast('Не удалось прочитать файл'); }
+  dimList.innerHTML=html;
+  dimList.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.onclick=()=>{
+      const i=Number(btn.dataset.edit);
+      openSizeEditor(i);
     };
-    reader.readAsText(file);
-    e.target.value='';
+  });
+}
+function area(){
+  if(points.length<3)return 0;
+  let s=0;
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length];
+    s+=a.x*b.y-b.x*a.y;
+  }
+  return Math.abs(s)/2;
+}
+function perimeter(){
+  if(points.length<2)return 0;
+  let s=0;
+  for(let i=0;i<points.length-1;i++)s+=segmentLength(i);
+  if(closed)s+=segmentLength(points.length-1);
+  return s;
+}
+
+function openSizeEditor(segmentIndex){
+  pendingSegment=segmentIndex;
+  modalTitle.textContent=letter(segmentIndex)+'–'+letter((segmentIndex+1)%points.length);
+  sizeInput.value=fmt(segmentLength(segmentIndex));
+  modalWarning.textContent='';
+  modalBack.classList.add('show');
+  setTimeout(()=>{sizeInput.focus();sizeInput.select()},100);
+}
+function closeModal(){
+  modalBack.classList.remove('show');
+  pendingSegment=-1;
+  pendingPoint=-1;
+}
+function applyCurrentSize(){
+  const target=parseFloat(String(sizeInput.value).replace(',','.'));
+  if(!Number.isFinite(target)||target<=0){
+    modalWarning.textContent='Введите размер больше 0 см';
+    return;
+  }
+
+  if(pendingSegment>=0){
+    resizeSegment(pendingSegment,target);
+    closeModal();
+    return;
+  }
+
+  if(pendingPoint>=1){
+    const i=pendingPoint;
+    const a=points[i-1];
+    const b=points[i];
+    const old=dist(a,b);
+    if(old<0.001){
+      modalWarning.textContent='Сторона слишком короткая. Поставьте точку дальше от предыдущей.';
+      return;
+    }
+
+    saveHistory();
+
+    // The previous vertex stays fixed. The newly created vertex moves along
+    // the current direction so the entered real length becomes exact.
+    const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy);
+    points[i]={
+      x:a.x+dx/L*target,
+      y:a.y+dy/L*target
+    };
+
+    closeModal();
+    updateUI();
+    return;
+  }
+}
+function resizeSegment(i,target){
+  if(i<0||i>=points.length-1 && !closed)return;
+  const j=(i+1)%points.length;
+  const a=points[i],b=points[j];
+  const old=dist(a,b);
+  if(old<0.001)return;
+
+  saveHistory();
+
+  // For editing an existing side, move only the second endpoint.
+  // This preserves the already entered previous geometry.
+  const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy);
+  points[j]={
+    x:a.x+dx/L*target,
+    y:a.y+dy/L*target
   };
- 
-  function fitToView(){
-    const allPts = outline.points.concat(...holes.map(h=>h.points));
-    if(allPts.length===0){ scale=60; centerView(); draw(); return; }
-    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-    allPts.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
-    const r = wrap.getBoundingClientRect();
-    const w = Math.max(0.5, maxX-minX), h = Math.max(0.5, maxY-minY);
-    const pad = 80;
-    scale = Math.min((r.width-pad)/w, (r.height-pad)/h);
-    scale = Math.max(8, Math.min(scale, 400));
-    const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
-    offset.x = r.width/2 - cx*scale;
-    offset.y = r.height/2 - cy*scale;
-    draw();
+
+  updateUI();
+}
+
+function addFirstPoint(p){
+  saveHistory();
+  points=[p];
+  closed=false;
+  pendingPoint=-1;
+  updateUI();
+}
+function addNextPoint(p){
+  if(closed)return;
+  saveHistory();
+  points.push(p);
+  pendingPoint=points.length-1;
+  openSizeEditorForNewSide();
+}
+function openSizeEditorForNewSide(){
+  const i=pendingPoint;
+  modalTitle.textContent=letter(i-1)+'–'+letter(i);
+  sizeInput.value='';
+  modalWarning.textContent='';
+  modalBack.classList.add('show');
+  setTimeout(()=>sizeInput.focus(),100);
+}
+
+function closeContour(){
+  if(points.length<3)return;
+  saveHistory();
+  closed=true;
+  preview=null;
+  pendingPoint=-1;
+  updateUI();
+}
+
+function getCanvasPoint(e){
+  const r=canvas.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+function nearPoint(x,y){
+  for(let i=points.length-1;i>=0;i--){
+    const p=worldToScreen(points[i]);
+    if(Math.hypot(p.x-x,p.y-y)<18)return i;
   }
- 
-  function zoomAt(factor, screenPt){
-    const before = screenToWorld(screenPt);
-    scale = Math.max(8, Math.min(scale*factor, 500));
-    const after = worldToScreen(before);
-    offset.x += screenPt.x-after.x;
-    offset.y += screenPt.y-after.y;
-    draw();
+  return -1;
+}
+
+canvas.addEventListener('pointerdown',e=>{
+  if(activeTab!=='draw')return;
+  const p=getCanvasPoint(e);
+  pointerDown={x:p.x,y:p.y,time:Date.now()};
+  const idx=nearPoint(p.x,p.y);
+
+  if(idx>=0){
+    if(!closed && idx===0 && points.length>=3){
+      closeContour();
+      return;
+    }
+    if(closed){
+      pendingPoint=idx;
+      render();
+    }else{
+      draggingPoint=idx;
+      canvas.setPointerCapture(e.pointerId);
+    }
+    return;
   }
- 
-  // ---------- mouse events ----------
-  function getScreenPt(e){
-    const r = cv.getBoundingClientRect();
-    return { x: e.clientX-r.left, y: e.clientY-r.top };
+
+  if(!closed && !modalBack.classList.contains('show')){
+    const world=screenToWorld(p.x,p.y);
+    if(points.length===0)addFirstPoint(world);
+    else addNextPoint(world);
   }
- 
-  cv.addEventListener('mousedown', (e)=>{
-    const sp = getScreenPt(e);
-    if(e.button===2 || mode==='pan'){
-      isPanning=true; panStart=sp; offsetStart={...offset}; cv.style.cursor='grabbing';
-      return;
-    }
-    if(e.button!==0) return;
- 
-    // dragging existing vertex takes priority when not actively drawing a new one
-    const hit = findVertexAt(sp);
-    if(hit && !( (mode==='outline'&&drawing&&!outline.closed) || (mode==='hole'&&drawing) )){
-      dragVertex = hit; pushHistory(); return;
-    }
- 
-    if(mode==='outline'){
-      if(outline.closed) return; // must drag vertices instead
-      tryStartOrAddPoint(screenToWorld(sp));
-    } else if(mode==='hole'){
-      if(drawingHoleIndex<0) return;
-      if(holes[drawingHoleIndex].closed) return;
-      tryStartOrAddPoint(screenToWorld(sp));
-    }
-  });
- 
-  cv.addEventListener('contextmenu', e=> e.preventDefault());
- 
-  window.addEventListener('mousemove', (e)=>{
-    const sp = getScreenPt(e);
-    mouseScreen = sp;
-    mouseWorld = screenToWorld(sp);
- 
-    if(isPanning){
-      offset.x = offsetStart.x + (sp.x-panStart.x);
-      offset.y = offsetStart.y + (sp.y-panStart.y);
-      draw();
-      return;
-    }
-    if(dragVertex){
-      const w = screenToWorld(sp);
-      if(dragVertex.which==='outline'){ outline.points[dragVertex.i] = {x:w.x,y:w.y}; }
-      else { holes[dragVertex.h].points[dragVertex.i] = {x:w.x,y:w.y}; }
-      refreshAll();
-      return;
-    }
-    if(drawing) draw();
-  });
- 
-  window.addEventListener('mouseup', ()=>{
-    if(isPanning){ isPanning=false; cv.style.cursor = mode==='pan'?'grab':'crosshair'; }
-    if(dragVertex){ dragVertex=null; refreshAll(); }
-  });
- 
-  cv.addEventListener('dblclick', (e)=>{
-    const sp = getScreenPt(e);
-    const seg = findSegmentAt(sp);
-    if(!seg) return;
-    const points = seg.which==='outline' ? outline.points : holes[seg.h].points;
-    const n = points.length;
-    const a = points[seg.i], b = points[(seg.i+1)%n];
-    const curLen = dist(a,b);
-    const val = prompt('Новая длина стены ('+unit+'):', fmtNum(curLen));
-    if(val===null) return;
-    const meters = parseToMeters(val);
-    if(meters===null || meters<=0){ showToast('Некорректное значение'); return; }
-    setSegmentLength(seg, meters);
-  });
- 
-  cv.addEventListener('wheel', (e)=>{
-    e.preventDefault();
-    const sp = getScreenPt(e);
-    const factor = e.deltaY<0 ? 1.1 : 1/1.1;
-    zoomAt(factor, sp);
-  }, {passive:false});
- 
-  // ---------- keyboard ----------
-  window.addEventListener('keydown', (e)=>{
-    if(e.target.tagName==='INPUT') return;
- 
-    if(e.key==='Escape'){ cancelDrawing(); return; }
-    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); return; }
- 
-    if(!drawing) return;
- 
-    if(e.key==='Backspace'){
-      e.preventDefault();
-      if(isTypingLength && inputBuffer.length){
-        inputBuffer = inputBuffer.slice(0,-1);
-        if(inputBuffer==='') isTypingLength=false;
-        draw();
-      } else {
-        removeLastPoint();
-      }
-      return;
-    }
-    if(e.key==='Enter'){
-      if(isTypingLength) confirmTypedLength();
-      return;
-    }
-    if(/^[0-9.,]$/.test(e.key)){
-      isTypingLength = true;
-      inputBuffer += e.key;
-      draw();
-    }
-  });
- 
-  // ---------- init ----------
-  function init(){
-    centerView();
-    resize();
-    setActiveTool('outline');
-    refreshAll();
-    showToast('Кликните на поле, чтобы начать контур помещения');
+});
+
+canvas.addEventListener('pointermove',e=>{
+  const p=getCanvasPoint(e);
+  if(draggingPoint>=0 && !closed){
+    points[draggingPoint]=screenToWorld(p.x,p.y);
+    preview=null;
+    render();
+  }else if(points.length && !closed && !modalBack.classList.contains('show')){
+    preview=screenToWorld(p.x,p.y);
+    render();
   }
-  init();
- 
+});
+canvas.addEventListener('pointerup',()=>{
+  draggingPoint=-1;
+});
+
+canvas.addEventListener('dblclick',()=>{
+  if(!closed&&points.length>=3)closeContour();
+});
+
+function setDrawTab(){
+  activeTab='draw';
+  drawTab.classList.add('active');
+  sizesTab.classList.remove('active');
+  dimList.classList.remove('show');
+  canvas.style.display='block';
+  status.style.display='block';
+  updateUI();
+}
+function setSizesTab(){
+  activeTab='sizes';
+  sizesTab.classList.add('active');
+  drawTab.classList.remove('active');
+  dimList.classList.add('show');
+  canvas.style.display='none';
+  status.style.display='none';
+  buildDimensions();
+}
+drawTab.onclick=setDrawTab;
+sizesTab.onclick=setSizesTab;
+
+actionBtn.onclick=()=>{
+  if(closed)return;
+  if(points.length===0){
+    status.textContent='Коснитесь поля, чтобы поставить A';
+  }else{
+    status.textContent='Коснитесь поля, чтобы поставить '+letter(points.length);
+  }
+};
+
+deleteBtn.onclick=()=>{
+  if(!points.length)return;
+  if(modalBack.classList.contains('show'))return;
+  saveHistory();
+  if(closed){
+    closed=false;
+    points.pop();
+  }else{
+    points.pop();
+  }
+  pendingPoint=-1;
+  preview=null;
+  updateUI();
+};
+
+fitBtn.onclick=()=>{
+  if(!points.length)return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  points.forEach(p=>{
+    minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);
+    maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);
+  });
+  const ww=Math.max(100,maxX-minX),hh=Math.max(100,maxY-minY);
+  view.zoom=Math.min((W-90)/ww,(H-90)/hh);
+  view.zoom=Math.max(.05,Math.min(8,view.zoom));
+  view.ox=W/2-(minX+maxX)/2*view.zoom;
+  view.oy=H/2-(minY+maxY)/2*view.zoom;
+  render();
+};
+
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  const x=e.clientX-r.left,y=e.clientY-r.top;
+  const before=screenToWorld(x,y);
+  const factor=e.deltaY<0?1.1:.9;
+  view.zoom=Math.max(.05,Math.min(8,view.zoom*factor));
+  const after=worldToScreen(before);
+  view.ox+=x-after.x;
+  view.oy+=y-after.y;
+  render();
+},{passive:false});
+
+undoBtn.onclick=undo;
+
+applySize.onclick=applyCurrentSize;
+sizeInput.addEventListener('keydown',e=>{
+  if(e.key==='Enter')applyCurrentSize();
+});
+cancelSize.onclick=()=>{
+  // If this is a newly added point and the user cancels its required size,
+  // remove that unfinished point. The previous contour remains intact.
+  if(pendingPoint>=1){
+    points.pop();
+    pendingPoint=-1;
+    preview=null;
+  }
+  closeModal();
+  updateUI();
+};
+modalBack.addEventListener('pointerdown',e=>{
+  if(e.target===modalBack){
+    // Do not silently close the required size dialog.
+  }
+});
+
+menuBtn.onclick=()=>menu.classList.toggle('show');
+document.addEventListener('pointerdown',e=>{
+  if(!menu.contains(e.target)&&e.target.id!=='menuBtn')menu.classList.remove('show');
+});
+
+newBtn.onclick=()=>{
+  if(points.length && !confirm('Создать новый чертёж?'))return;
+  points=[];closed=false;history=[];pendingPoint=-1;preview=null;
+  view={zoom:1,ox:W/2,oy:H/2};
+  menu.classList.remove('show');
+  setDrawTab();
+};
+saveBtn.onclick=()=>{
+  const data={app:'MobileCeilingDesigner',version:2,unit:'cm',points,closed,view};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ceiling-drawing.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  menu.classList.remove('show');
+};
+loadBtn.onclick=()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange=e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!Array.isArray(data.points))throw new Error('Неверный файл');
+      points=data.points;
+      closed=!!data.closed;
+      view=data.view||{zoom:1,ox:W/2,oy:H/2};
+      history=[];
+      pendingPoint=-1;
+      preview=null;
+      menu.classList.remove('show');
+      setDrawTab();
+    }catch(err){
+      alert('Не удалось открыть файл.');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+};
+
+function init(){
+  view.ox=window.innerWidth/2;
+  view.oy=window.innerHeight/2;
+  resize();
+  updateUI();
+}
+init();
+
 })();
 </script>
 </body>
