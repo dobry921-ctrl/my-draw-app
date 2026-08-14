@@ -2,18 +2,18 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <!-- Мета-тег для запрета зумирования на мобильных устройствах -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Мобильный замер потолков</title>
+    <title>Мобильный замер потолков (Адаптивный)</title>
     <style>
         :root {
-            --bg-color: #1e1e1e;
-            --primary: #007acc;
-            --primary-hover: #005f9e;
+            --bg-color: #f0f2f5;
+            --top-bg: #ffffff;
+            --primary: #0066cc;
+            --primary-hover: #0052a3;
             --accent: #e67e22;
-            --danger: #d13438;
-            --text: #ffffff;
-            --sheet-bg: #252526;
+            --danger: #dc3545;
+            --text-dark: #333333;
+            --line-color: #2c3e50;
         }
         
         body {
@@ -21,54 +21,61 @@
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-color);
-            color: var(--text);
-            overflow: hidden; /* Отключаем прокрутку страницы */
+            color: var(--text-dark);
+            overflow: hidden; 
             display: flex;
             flex-direction: column;
             height: 100vh;
-            height: 100dvh; /* Для iOS Safari */
+            height: 100dvh; 
         }
 
-        /* Верхняя панель управления */
+        /* Верхняя панель */
         #top-bar {
-            background-color: #2d2d30;
+            background-color: var(--top-bg);
             padding: 10px 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             z-index: 10;
         }
 
         .title-info {
-            font-size: 0.9rem;
-            color: #ccc;
+            font-size: 0.85rem;
+            color: #666;
         }
 
         .title-info strong {
-            color: var(--primary);
+            color: var(--text-dark);
             font-size: 1.1rem;
             display: block;
+        }
+
+        .top-buttons {
+            display: flex;
+            gap: 10px;
         }
 
         .btn {
             background-color: var(--primary);
             color: white;
             border: none;
-            padding: 10px 15px;
-            border-radius: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
             font-size: 0.9rem;
-            font-weight: bold;
+            font-weight: 500;
             cursor: pointer;
             touch-action: manipulation;
         }
+        .btn:active { background-color: var(--primary-hover); }
         .btn-danger { background-color: var(--danger); }
+        .btn-outline { background: transparent; color: var(--text-dark); border: 1px solid #ccc; }
 
         /* Холст */
         #canvas-container {
             flex-grow: 1;
             position: relative;
-            touch-action: none; /* Отключаем жесты браузера на холсте */
+            touch-action: none; 
         }
         canvas {
             display: block;
@@ -76,79 +83,69 @@
             height: 100%;
         }
 
-        /* Всплывающая шторка на пол-экрана */
-        #bottom-sheet {
+        /* Кнопка "Замкнуть фигуру" */
+        #close-btn {
             position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 50vh;
-            background-color: var(--sheet-bg);
-            border-top-left-radius: 20px;
-            border-top-right-radius: 20px;
-            box-shadow: 0 -5px 15px rgba(0,0,0,0.5);
-            transform: translateY(100%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: 20;
-            display: flex;
-            flex-direction: column;
-            box-sizing: border-box;
-            padding: 20px;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #28a745;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 25px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: none;
+            z-index: 5;
         }
 
-        #bottom-sheet.active {
-            transform: translateY(0);
-        }
-
-        .sheet-header {
-            text-align: center;
-            font-size: 1.2rem;
-            margin-bottom: 20px;
-            font-weight: bold;
-        }
-
-        .input-group {
-            display: flex;
-            flex-direction: column;
+        /* Компактная нижняя панель ввода */
+        #bottom-input-bar {
+            background-color: var(--top-bg);
+            padding: 10px 15px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            display: none; 
+            flex-direction: row;
+            align-items: center;
             gap: 10px;
-            margin-bottom: 20px;
+            z-index: 10;
+        }
+
+        #bottom-input-bar.active {
+            display: flex;
+        }
+
+        #side-label {
+            font-weight: bold;
+            color: var(--text-dark);
+            white-space: nowrap;
+        }
+
+        #side-input {
             flex-grow: 1;
-        }
-
-        .input-group label {
+            background-color: #f8f9fa;
+            border: 1px solid #ced4da;
+            color: var(--text-dark);
+            padding: 10px;
+            border-radius: 6px;
             font-size: 1.1rem;
-            color: var(--accent);
-        }
-
-        .input-group input {
-            background-color: #3e3e42;
-            border: 1px solid #555;
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 1.5rem;
-            text-align: center;
             outline: none;
+            min-width: 0;
         }
-
-        .input-group input:focus {
-            border-color: var(--accent);
-        }
+        #side-input:focus { border-color: var(--primary); }
 
         .btn-next {
             background-color: var(--accent);
-            padding: 15px;
-            font-size: 1.2rem;
-            border-radius: 10px;
-            width: 100%;
+            padding: 10px 20px;
+            white-space: nowrap;
         }
-        
-        #instruction-toast {
+
+        #toast {
             position: absolute;
             top: 70px;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.7);
+            color: white;
             padding: 8px 16px;
             border-radius: 20px;
             font-size: 0.85rem;
@@ -166,22 +163,23 @@
             <strong>Замер потолка</strong>
             <span id="status-text">Черчение контура</span>
         </div>
-        <button class="btn btn-danger" onclick="resetAll()">Сброс</button>
+        <div class="top-buttons">
+            <button class="btn btn-outline" id="undo-btn" onclick="undoPoint()">Отмена</button>
+            <button class="btn btn-danger" onclick="resetAll()">Сброс</button>
+        </div>
     </div>
 
-    <div id="instruction-toast">Тапайте по экрану, чтобы задать углы комнаты. Для завершения нажмите на первую точку.</div>
+    <div id="toast">Тапайте по экрану для создания углов. Линии не должны пересекаться.</div>
 
     <div id="canvas-container">
         <canvas id="appCanvas"></canvas>
+        <button class="btn" id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
     </div>
 
-    <!-- Всплывающая шторка ввода размеров -->
-    <div id="bottom-sheet">
-        <div class="sheet-header">Ввод размеров сторон</div>
-        <div class="input-group">
-            <label id="side-label">Сторона A-B =</label>
-            <input type="number" inputmode="numeric" id="side-input" placeholder="Введите в см">
-        </div>
+    <!-- Компактная панель ввода в одну строку -->
+    <div id="bottom-input-bar">
+        <div id="side-label">A-B =</div>
+        <input type="number" inputmode="numeric" id="side-input" placeholder="см">
         <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
     </div>
 
@@ -189,26 +187,22 @@
         const canvas = document.getElementById('appCanvas');
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('canvas-container');
-        const bottomSheet = document.getElementById('bottom-sheet');
+        const bottomBar = document.getElementById('bottom-input-bar');
         const sideLabel = document.getElementById('side-label');
         const sideInput = document.getElementById('side-input');
         const statusText = document.getElementById('status-text');
-        const toast = document.getElementById('instruction-toast');
+        const toast = document.getElementById('toast');
+        const closeBtn = document.getElementById('close-btn');
+        const undoBtn = document.getElementById('undo-btn');
 
-        // Алфавит для обозначения углов (A, B, C, D...)
         const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
         let points = [];
-        let edges = []; // { startIdx, endIdx, label, lengthCm }
+        let edges = []; 
         let isClosed = false;
-        let scaleFactor = 1; // Для адаптации масштаба чертежа
-
-        let currentInputEdge = 0; // Индекс стороны, которую сейчас вводим
+        let scaleFactor = 1; // см в 1 пикселе
+        let currentInputEdge = 0; 
         let state = 'DRAWING'; // DRAWING, INPUT_SIDES, DONE
 
-        const TOUCH_TOLERANCE = 30; // Увеличенный радиус для пальцев (touch)
-
-        // Инициализация холста
         function resizeCanvas() {
             canvas.width = container.clientWidth;
             canvas.height = container.clientHeight;
@@ -216,62 +210,99 @@
         }
         window.addEventListener('resize', resizeCanvas);
 
-        // Получение координат с учетом тапов и мыши
-        function getPointerPos(e) {
-            const rect = canvas.getBoundingClientRect();
-            let clientX, clientY;
-            if (e.touches && e.touches.length > 0) {
-                clientX = e.touches[0].clientX;
-                clientY = e.touches[0].clientY;
-            } else {
-                clientX = e.clientX;
-                clientY = e.clientY;
+        function showToast(msg, duration = 3000) {
+            toast.innerText = msg;
+            toast.style.display = 'block';
+            if(duration > 0) {
+                setTimeout(() => { if(state === 'DRAWING') toast.style.display = 'none'; }, duration);
             }
-            return {
-                x: clientX - rect.left,
-                y: clientY - rect.top
-            };
         }
 
-        // Обработка касаний (работает и на телефоне, и мышкой)
-        canvas.addEventListener('pointerdown', (e) => {
-            if (state !== 'DRAWING') return;
-            e.preventDefault();
+        // --- МАТЕМАТИКА: Проверка пересечения отрезков ---
+        function ccw(A, B, C) {
+            return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+        }
+        function doIntersect(p1, p2, p3, p4) {
+            return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
+        }
 
-            const pos = getPointerPos(e);
+        function checkIntersectionValid(newPoint, isClosing = false) {
+            if (points.length < 2) return true;
+            
+            const lastPoint = points[points.length - 1];
+            // Проверяем новую линию (lastPoint -> newPoint) со всеми существующими линиями
+            // Если это замыкание, мы не проверяем пересечение с первой линией в её начале
+            
+            let limit = isClosing ? points.length - 2 : points.length - 1;
+            
+            for (let i = 0; i < limit; i++) {
+                const p1 = points[i];
+                const p2 = points[i+1];
+                
+                // Смежные линии имеют общую точку, их не проверяем на классическое пересечение
+                if (p2 === lastPoint) continue;
+                if (isClosing && p1 === newPoint) continue;
 
-            // Проверка на замыкание контура
-            if (points.length >= 3) {
-                const distToFirst = Math.hypot(pos.x - points[0].x, pos.y - points[0].y);
-                if (distToFirst < TOUCH_TOLERANCE) {
-                    closePolygon();
-                    return;
+                if (doIntersect(lastPoint, newPoint, p1, p2)) {
+                    return false; // Найдено пересечение
                 }
             }
+            return true;
+        }
 
-            // Добавление точки (назначаем букву)
-            points.push({ 
-                x: pos.x, 
-                y: pos.y, 
-                letter: getLetter(points.length) 
-            });
-            draw();
-        });
-
-        // Функция генерации имени угла (A, B, C... AA, AB...)
+        // --- УПРАВЛЕНИЕ ТОЧКАМИ ---
         function getLetter(index) {
             if (index < 26) return ALPHABET[index];
             return ALPHABET[Math.floor(index / 26) - 1] + ALPHABET[index % 26];
         }
 
-        // Замыкание контура и переход к вводу размеров
+        canvas.addEventListener('pointerdown', (e) => {
+            if (state !== 'DRAWING') return;
+            e.preventDefault();
+
+            const rect = canvas.getBoundingClientRect();
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            let pos = { x: clientX - rect.left, y: clientY - rect.top };
+
+            // Проверка на пересечение
+            if (!checkIntersectionValid(pos)) {
+                showToast("Линии не должны пересекаться!", 2000);
+                return;
+            }
+
+            points.push({ x: pos.x, y: pos.y, letter: getLetter(points.length) });
+            updateUI();
+            draw();
+        });
+
+        function undoPoint() {
+            if (state !== 'DRAWING' || points.length === 0) return;
+            points.pop();
+            updateUI();
+            draw();
+        }
+
+        function updateUI() {
+            closeBtn.style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
+            undoBtn.style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
+        }
+
         function closePolygon() {
+            if (points.length < 3) return;
+            
+            // Проверяем, не пересекает ли замыкающая линия контур
+            if (!checkIntersectionValid(points[0], true)) {
+                showToast("Замыкание невозможно: линия пересекает чертеж!", 2000);
+                return;
+            }
+
             isClosed = true;
             state = 'INPUT_SIDES';
             statusText.innerText = 'Ввод размеров';
             toast.style.display = 'none';
+            updateUI();
             
-            // Формируем список сторон
             edges = [];
             for (let i = 0; i < points.length; i++) {
                 let nextIdx = (i + 1) % points.length;
@@ -279,60 +310,91 @@
                     startIdx: i,
                     endIdx: nextIdx,
                     label: `${points[i].letter}-${points[nextIdx].letter}`,
-                    lengthCm: null // Пока не задано
+                    lengthCm: null 
                 });
             }
 
             currentInputEdge = 0;
-            draw();
-            openBottomSheet();
+            bottomBar.classList.add('active');
+            updateInputUI();
         }
 
-        function openBottomSheet() {
-            bottomSheet.classList.add('active');
-            updateBottomSheetUI();
-        }
-
-        function updateBottomSheetUI() {
+        function updateInputUI() {
             const edge = edges[currentInputEdge];
-            sideLabel.innerText = `Сторона ${edge.label} =`;
+            sideLabel.innerText = `${edge.label} =`;
             sideInput.value = '';
             sideInput.focus();
-            draw(); // Перерисовываем, чтобы подсветить активную сторону
+            draw(); 
         }
 
-        // Нажатие кнопки "Далее"
+        // --- ФИЗИЧЕСКИЙ ДВИЖОК ДЛЯ АДАПТАЦИИ ЧЕРТЕЖА ---
+        function adaptShape() {
+            if (scaleFactor === 1) return; // Масштаб еще не задан
+            
+            // Выполняем итерации релаксации (система пружин)
+            // Пытаемся подогнать длины сторон под заданные, не меняя не заданные сильно
+            for (let iter = 0; iter < 200; iter++) {
+                for (let i = 0; i < edges.length; i++) {
+                    if (edges[i].lengthCm === null) continue;
+                    
+                    let p1 = points[edges[i].startIdx];
+                    let p2 = points[edges[i].endIdx];
+                    
+                    let dx = p2.x - p1.x;
+                    let dy = p2.y - p1.y;
+                    let currentDist = Math.hypot(dx, dy);
+                    let targetDist = edges[i].lengthCm / scaleFactor;
+                    
+                    if (currentDist === 0) continue;
+                    
+                    // Разница между текущей и целевой длиной
+                    let diff = targetDist - currentDist;
+                    let offsetX = (diff * (dx / currentDist)) * 0.5;
+                    let offsetY = (diff * (dy / currentDist)) * 0.5;
+
+                    // Точку A (индекс 0) фиксируем, чтобы чертеж не улетал
+                    if (edges[i].startIdx !== 0) {
+                        p1.x -= offsetX;
+                        p1.y -= offsetY;
+                    }
+                    if (edges[i].endIdx !== 0) {
+                        p2.x += offsetX;
+                        p2.y += offsetY;
+                    }
+                }
+            }
+        }
+
         function saveSideAndNext() {
             const val = parseFloat(sideInput.value);
             if (isNaN(val) || val <= 0) {
-                alert("Пожалуйста, введите корректное число больше 0");
+                alert("Введите корректное число");
                 return;
             }
 
-            // Сохраняем введенный размер (в см)
             edges[currentInputEdge].lengthCm = val;
 
-            // "Адаптация" чертежа под введенные размеры (базовое масштабирование по первой стороне)
+            // Установка базового масштаба по первой введенной стороне
             if (currentInputEdge === 0) {
                 const pt1 = points[edges[0].startIdx];
                 const pt2 = points[edges[0].endIdx];
                 const pixelDist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y);
-                // Задаем коэффициент: сколько сантиметров в 1 пикселе
                 scaleFactor = val / pixelDist; 
             }
 
+            // Адаптируем чертеж
+            adaptShape();
+
             currentInputEdge++;
 
-            // Если ввели все стороны
             if (currentInputEdge >= edges.length) {
-                bottomSheet.classList.remove('active');
+                bottomBar.classList.remove('active');
                 state = 'DONE';
-                statusText.innerText = 'Чертеж готов';
-                toast.innerText = 'Размеры заданы. Чертеж адаптирован.';
-                toast.style.display = 'block';
+                statusText.innerText = 'Готово';
+                showToast('Все размеры заданы.', 0);
                 draw();
             } else {
-                updateBottomSheetUI();
+                updateInputUI();
             }
         }
 
@@ -343,25 +405,25 @@
             state = 'DRAWING';
             scaleFactor = 1;
             statusText.innerText = 'Черчение контура';
-            toast.innerText = 'Тапайте по экрану, чтобы задать углы комнаты.';
-            toast.style.display = 'block';
-            bottomSheet.classList.remove('active');
+            bottomBar.classList.remove('active');
+            updateUI();
+            showToast('Тапайте по экрану для создания углов.', 0);
             draw();
         }
 
-        // Отрисовка
+        // --- ОТРИСОВКА ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Сетка
-            ctx.strokeStyle = '#333';
+            ctx.strokeStyle = '#e0e0e0';
             ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-            for (let y = 0; y < canvas.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+            for (let x = 0; x < canvas.width; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+            for (let y = 0; y < canvas.height; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
 
             if (points.length === 0) return;
 
-            // Рисуем заливку
+            // Заливка фигуры
             ctx.beginPath();
             ctx.moveTo(points[0].x, points[0].y);
             for (let i = 1; i < points.length; i++) {
@@ -369,11 +431,11 @@
             }
             if (isClosed) {
                 ctx.lineTo(points[0].x, points[0].y);
-                ctx.fillStyle = 'rgba(0, 122, 204, 0.2)';
+                ctx.fillStyle = 'rgba(0, 102, 204, 0.1)';
                 ctx.fill();
             }
 
-            // Рисуем линии (стороны)
+            // Отрисовка линий (стен)
             for (let i = 0; i < points.length; i++) {
                 let nextIdx = (i + 1) % points.length;
                 if (!isClosed && nextIdx === 0) continue;
@@ -382,43 +444,40 @@
                 ctx.moveTo(points[i].x, points[i].y);
                 ctx.lineTo(points[nextIdx].x, points[nextIdx].y);
 
-                // Подсветка активной стороны, которую сейчас вводим
                 if (state === 'INPUT_SIDES' && i === edges[currentInputEdge].startIdx) {
-                    ctx.strokeStyle = '#e67e22'; // Оранжевый для текущей стороны
+                    ctx.strokeStyle = 'var(--accent)'; 
                     ctx.lineWidth = 4;
                 } else {
-                    ctx.strokeStyle = '#007acc';
-                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'var(--line-color)';
+                    ctx.lineWidth = 2.5;
                 }
                 ctx.stroke();
                 
-                // Вывод длины стороны поверх линии
+                // Текст размеров
                 if (isClosed) {
                     const edge = edges[i];
                     let text = '';
                     
-                    // Если пользователь ввел размер - показываем его, иначе примерный
                     if (edge.lengthCm !== null) {
-                        text = edge.lengthCm + ' см';
+                        text = edge.lengthCm + '';
                     } else if (scaleFactor !== 1) {
-                        // Адаптивный размер, если ввели хотя бы первую сторону
                         const pDist = Math.hypot(points[nextIdx].x - points[i].x, points[nextIdx].y - points[i].y);
-                        text = '~' + Math.round(pDist * scaleFactor) + ' см';
+                        text = '~' + Math.round(pDist * scaleFactor);
                     }
 
                     if (text !== '') {
                         const midX = (points[i].x + points[nextIdx].x) / 2;
                         const midY = (points[i].y + points[nextIdx].y) / 2;
                         
-                        ctx.font = 'bold 14px Arial';
+                        ctx.font = 'bold 15px Arial';
                         const textWidth = ctx.measureText(text).width;
                         
-                        // Подложка текста
-                        ctx.fillStyle = 'rgba(30, 30, 30, 0.8)';
+                        ctx.fillStyle = '#ffffff';
                         ctx.fillRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
+                        ctx.strokeStyle = '#ccc';
+                        ctx.strokeRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
                         
-                        // Текст (оранжевый если ввели, белый если еще нет)
-                        ctx.fillStyle = edge.lengthCm !== null ? '#e67e22' : '#ffffff';
+                        ctx.fillStyle = edge.lengthCm !== null ? 'var(--accent)' : 'var(--text-dark)';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.fillText(text, midX, midY);
@@ -426,30 +485,24 @@
                 }
             }
 
-            // Рисуем углы (точки) и их буквенные обозначения
+            // Отрисовка углов (точек)
             points.forEach((p, index) => {
                 ctx.beginPath();
-                
-                // Анимация/подсветка первой точки для замыкания
-                if (!isClosed && index === 0 && points.length >= 3) {
-                    ctx.fillStyle = '#00ff00';
-                    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-                } else {
-                    ctx.fillStyle = '#ffcc00';
-                    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-                }
-                ctx.fill();
-
-                // Отрисовка букв углов (A, B, C...)
                 ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = 'var(--line-color)';
+                ctx.lineWidth = 2;
+                ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = var(--text-dark);
                 ctx.font = 'bold 16px Arial';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'bottom';
-                ctx.fillText(p.letter, p.x + 10, p.y - 10);
+                ctx.fillText(p.letter, p.x + 8, p.y - 8);
             });
         }
 
-        // Инициализация при старте
         resizeCanvas();
     </script>
 </body>
