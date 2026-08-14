@@ -592,15 +592,12 @@
         function buildPayload() {
             // Внутренние координаты Draw хранятся в условных единицах canvas.
             // scaleFactor = сантиметров на одну условную единицу.
-            // Бот хранит координаты в метрах, поэтому переводим cm -> m.
-            const pointsCm = points.map(p => ({
-                x: p.x * scaleFactor,
-                y: p.y * scaleFactor
-            }));
-
-            const pointsM = pointsCm.map(p => ({
-                x: p.x / 100,
-                y: p.y / 100
+            // Сохраняем ту же систему координат, которую видит пользователь:
+            // X вправо, Y вниз. Python при построении чертежа использует
+            // invert_yaxis(), поэтому фигура в Telegram не будет зеркальной.
+            const pointsM = points.map(p => ({
+                x: (p.x * scaleFactor) / 100,
+                y: (p.y * scaleFactor) / 100
             }));
 
             const sides = edges.map(e => Number(e.lengthCm));
@@ -608,7 +605,7 @@
 
             return {
                 type: 'drawing',
-                version: 2,
+                version: 3,
                 points: pointsM,
                 sides_cm: sides,
                 diagonals: diagonals,
@@ -639,7 +636,7 @@
                 const data = JSON.stringify(payload);
 
                 // Telegram.WebApp.sendData принимает строку; для этого режима
-                // не используем postMessage и не вызываем внешние HTTP-запросы.
+                // Используем только официальный Telegram WebApp API.
                 const byteLength = new TextEncoder().encode(data).length;
                 if (byteLength > 4096) {
                     throw new Error(`Данные слишком большие (${byteLength} байт). Максимум Telegram — 4096 байт.`);
