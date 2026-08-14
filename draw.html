@@ -1,756 +1,398 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Чертёж потолка</title>
-<style>
-:root{
-  --blue:#1769e0;
-  --blue2:#0f56bf;
-  --bg:#f4f6f8;
-  --white:#fff;
-  --text:#17202a;
-  --muted:#68727d;
-  --line:#dfe3e8;
-  --danger:#d92d20;
-}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
-button,input{font:inherit}
-button{border:0}
-.app{height:100dvh;display:flex;flex-direction:column}
-.header{
-  height:54px;flex:0 0 54px;background:#fff;border-bottom:1px solid var(--line);
-  display:flex;align-items:center;padding:0 12px;gap:8px
-}
-.title{font-size:17px;font-weight:700;flex:1;text-align:center}
-.iconBtn{
-  width:40px;height:40px;border-radius:10px;background:#f1f3f5;font-size:20px;
-  display:flex;align-items:center;justify-content:center
-}
-.canvasArea{position:relative;flex:1;min-height:0;background:#f1f3f5}
-canvas{display:block;width:100%;height:100%;touch-action:none}
-.bottom{
-  flex:0 0 auto;background:#fff;border-top:1px solid var(--line);
-  padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px
-}
-.bottom button{height:46px;border-radius:11px;font-weight:700}
-.mainAction{flex:1;background:var(--blue);color:#fff}
-.secondary{width:48px;background:#f0f2f5}
-.tabs{
-  display:flex;background:#fff;border-top:1px solid var(--line);height:48px;flex:0 0 48px
-}
-.tab{flex:1;background:#fff;color:var(--muted);font-weight:700;border-bottom:3px solid transparent}
-.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
-.status{
-  position:absolute;top:10px;left:50%;transform:translateX(-50%);
-  background:#fff;border:1px solid var(--line);border-radius:20px;padding:7px 12px;
-  font-size:12px;box-shadow:0 2px 8px #0001;white-space:nowrap
-}
-.panel{
-  position:absolute;left:10px;right:10px;bottom:10px;background:#fff;border-radius:16px;
-  box-shadow:0 8px 30px #0002;padding:14px;display:none
-}
-.panel.show{display:block}
-.panelTitle{font-weight:700;margin-bottom:8px}
-.panelText{font-size:13px;color:var(--muted);line-height:1.4}
-.dimList{
-  position:absolute;inset:0;background:var(--bg);overflow:auto;padding:14px 12px 20px;display:none
-}
-.dimList.show{display:block}
-.dimCard{
-  background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:9px;
-  display:flex;align-items:center;gap:10px
-}
-.dimName{font-weight:700;width:70px}
-.dimValue{font-size:16px;flex:1}
-.dimCard button{background:#edf3ff;color:var(--blue);padding:8px 10px;border-radius:8px;font-weight:700}
-.empty{color:var(--muted);text-align:center;padding:50px 20px;line-height:1.5}
-.modalBack{
-  position:fixed;inset:0;background:#0006;display:none;align-items:flex-end;z-index:20
-}
-.modalBack.show{display:flex}
-.modal{
-  width:100%;background:#fff;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
-  box-shadow:0 -10px 40px #0003
-}
-.modalTitle{text-align:center;font-size:19px;font-weight:700;margin-bottom:6px}
-.modalSub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:15px}
-.inputWrap{display:flex;align-items:center;gap:8px}
-.modal input{
-  width:100%;height:56px;border:2px solid var(--line);border-radius:12px;text-align:center;
-  font-size:24px;font-weight:700;outline:none
-}
-.modal input:focus{border-color:var(--blue)}
-.unit{font-size:18px;color:var(--muted);font-weight:700}
-.modal button{
-  width:100%;height:52px;margin-top:12px;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-size:16px
-}
-.cancelBtn{background:#f0f2f5!important;color:var(--text)!important}
-.warning{color:var(--danger);font-size:12px;text-align:center;min-height:17px;margin-top:8px}
-.menu{
-  position:fixed;right:10px;top:58px;background:#fff;border:1px solid var(--line);border-radius:12px;
-  box-shadow:0 8px 30px #0002;display:none;z-index:15;overflow:hidden
-}
-.menu.show{display:block}
-.menu button{display:block;background:#fff;padding:13px 18px;width:180px;text-align:left}
-.menu button+button{border-top:1px solid var(--line)}
-@media(min-width:700px){
-  .app{max-width:520px;margin:auto;background:var(--bg);box-shadow:0 0 30px #0002}
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прототип построения потолков (Easy Ceiling)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+            background-color: #1e1e1e;
+            color: #fff;
+        }
+        #sidebar {
+            width: 320px;
+            background-color: #2d2d30;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 10;
+        }
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden;
+            background-color: #1e1e1e;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            color: #007acc;
+        }
+        .btn {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background-color: #005f9e;
+        }
+        .btn-danger {
+            background-color: #d13438;
+        }
+        .btn-danger:hover {
+            background-color: #a82a2d;
+        }
+        .btn-warning {
+            background-color: #e67e22;
+        }
+        .btn-warning:hover {
+            background-color: #cf711f;
+        }
+        .info-panel {
+            background-color: #3e3e42;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .info-panel p {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .instructions {
+            font-size: 0.85rem;
+            color: #cccccc;
+            line-height: 1.5;
+            background: #252526;
+            padding: 10px;
+            border-left: 3px solid #007acc;
+        }
+        .instructions-diag {
+            border-left: 3px solid #e67e22;
+        }
+    </style>
 </head>
 <body>
-<div class="app">
-  <header class="header">
-    <button class="iconBtn" id="undoBtn">↶</button>
-    <div class="title">Чертёж потолка</div>
-    <button class="iconBtn" id="menuBtn">⋮</button>
-  </header>
 
-  <main class="canvasArea">
-    <canvas id="canvas"></canvas>
-    <div class="status" id="status">Поставьте точку A</div>
+    <div id="sidebar">
+        <h2>Построение потолка</h2>
+        
+        <div class="instructions">
+            <strong>1. Контур:</strong><br>
+            Кликайте, чтобы ставить углы. Для завершения кликните на первую точку (станет зеленой).
+        </div>
+        
+        <div class="instructions instructions-diag">
+            <strong>2. Диагонали (Замер):</strong><br>
+            После завершения контура кликните на один угол, затем на другой, чтобы провести диагональ.
+        </div>
 
-    <div class="panel" id="hintPanel">
-      <div class="panelTitle" id="hintTitle">Построение</div>
-      <div class="panelText" id="hintText">Коснитесь поля, чтобы поставить первую точку.</div>
+        <button class="btn btn-warning" onclick="clearDiagonals()">Удалить диагонали</button>
+        <button class="btn btn-danger" onclick="clearCanvas()">Очистить всё</button>
+
+        <div class="info-panel">
+            <strong>Параметры потолка:</strong>
+            <p><span>Периметр:</span> <span id="perimeter-val">0.00 м</span></p>
+            <p><span>Площадь:</span> <span id="area-val">0.00 м²</span></p>
+            <p><span>Углов:</span> <span id="corners-val">0</span></p>
+            <p><span>Диагоналей:</span> <span id="diagonals-val">0</span></p>
+        </div>
     </div>
 
-    <div class="dimList" id="dimList"></div>
-  </main>
-
-  <div class="bottom">
-    <button class="secondary" id="deleteBtn">⌫</button>
-    <button class="mainAction" id="actionBtn">Поставить точку A</button>
-    <button class="secondary" id="fitBtn">⌖</button>
-  </div>
-
-  <div class="tabs">
-    <button class="tab active" id="drawTab">Чертёж</button>
-    <button class="tab" id="sizesTab">Размеры</button>
-  </div>
-</div>
-
-<div class="modalBack" id="modalBack">
-  <div class="modal">
-    <div class="modalTitle" id="modalTitle">A–B</div>
-    <div class="modalSub">Введите размер стороны в сантиметрах</div>
-    <div class="inputWrap">
-      <input id="sizeInput" type="number" inputmode="decimal" min="0.1" step="0.1" autocomplete="off">
-      <div class="unit">см</div>
+    <div id="canvas-container">
+        <canvas id="draftCanvas"></canvas>
     </div>
-    <div class="warning" id="modalWarning"></div>
-    <button id="applySize">Продолжить</button>
-    <button class="cancelBtn" id="cancelSize">Отменить</button>
-  </div>
-</div>
 
-<div class="menu" id="menu">
-  <button id="newBtn">Новый чертёж</button>
-  <button id="saveBtn">Сохранить</button>
-  <button id="loadBtn">Открыть</button>
-  <input id="fileInput" type="file" accept=".json,application/json" hidden>
-</div>
+    <script>
+        const canvas = document.getElementById('draftCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
 
-<script>
-(() => {
-'use strict';
+        // Масштаб: 1 пиксель = 2 см (для визуализации)
+        const PIXEL_TO_METER = 0.02; 
 
-const canvas=document.getElementById('canvas');
-const ctx=canvas.getContext('2d');
-const status=document.getElementById('status');
-const actionBtn=document.getElementById('actionBtn');
-const undoBtn=document.getElementById('undoBtn');
-const deleteBtn=document.getElementById('deleteBtn');
-const fitBtn=document.getElementById('fitBtn');
-const drawTab=document.getElementById('drawTab');
-const sizesTab=document.getElementById('sizesTab');
-const dimList=document.getElementById('dimList');
-const modalBack=document.getElementById('modalBack');
-const modalTitle=document.getElementById('modalTitle');
-const sizeInput=document.getElementById('sizeInput');
-const modalWarning=document.getElementById('modalWarning');
-const applySize=document.getElementById('applySize');
-const cancelSize=document.getElementById('cancelSize');
-const menu=document.getElementById('menu');
+        let points = [];
+        let diagonals = [];
+        let isClosed = false;
+        let mousePos = { x: 0, y: 0 };
+        let selectedPointIndex = null; // Для построения диагоналей
 
-let dpr=1,W=0,H=0;
-let view={zoom:1,ox:0,oy:0};
-let points=[];
-let closed=false;
-let pendingSegment=-1;
-let pendingPoint=-1;
-let preview=null;
-let history=[];
-let activeTab='draw';
-let pointerDown=null;
-let draggingPoint=-1;
+        const CLOSE_TOLERANCE = 15; // Радиус прилипания/клика
 
-function clone(){
-  return JSON.parse(JSON.stringify({points,closed,view}));
-}
-function restore(s){
-  points=s.points||[];
-  closed=!!s.closed;
-  view=s.view||{zoom:1,ox:W/2,oy:H/2};
-  pendingSegment=-1;
-  pendingPoint=-1;
-  preview=null;
-  render();
-  updateUI();
-}
-function saveHistory(){
-  history.push(clone());
-  if(history.length>50)history.shift();
-}
-function undo(){
-  if(!history.length)return;
-  restore(history.pop());
-}
-function resize(){
-  const r=canvas.getBoundingClientRect();
-  dpr=window.devicePixelRatio||1;
-  W=r.width;H=r.height;
-  canvas.width=Math.max(1,Math.round(W*dpr));
-  canvas.height=Math.max(1,Math.round(H*dpr));
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  if(!view.ox)view.ox=W/2;
-  if(!view.oy)view.oy=H/2;
-  render();
-}
-window.addEventListener('resize',resize);
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
 
-function screenToWorld(x,y){
-  return {x:(x-view.ox)/view.zoom,y:(y-view.oy)/view.zoom};
-}
-function worldToScreen(p){
-  return {x:p.x*view.zoom+view.ox,y:p.y*view.zoom+view.oy};
-}
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
-function letter(i){
-  let s='',n=i+1;
-  while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}
-  return s;
-}
-function fmt(v){
-  return Number(v).toFixed(1).replace(/\.0$/,'');
-}
-function segmentLength(i){
-  const j=(i+1)%points.length;
-  return dist(points[i],points[j]);
-}
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+            draw(); // Перерисовываем для отображения линии к курсору
+        });
 
-function drawGrid(){
-  ctx.fillStyle='#f1f3f5';
-  ctx.fillRect(0,0,W,H);
-  const base=100*view.zoom;
-  let step=base;
-  while(step<28)step*=2;
-  while(step>120)step/=2;
-  const gx=((view.ox%step)+step)%step;
-  const gy=((view.oy%step)+step)%step;
-  ctx.strokeStyle='#e1e5e9';
-  ctx.lineWidth=1;
-  ctx.beginPath();
-  for(let x=gx;x<W;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,H)}
-  for(let y=gy;y<H;y+=step){ctx.moveTo(0,y);ctx.lineTo(W,y)}
-  ctx.stroke();
-}
+        canvas.addEventListener('mousedown', (e) => {
+            // РЕЖИМ 2: ПОСТРОЕНИЕ ДИАГОНАЛЕЙ (после замыкания)
+            if (isClosed) {
+                let clickedIndex = -1;
+                // Ищем, по какому углу кликнули
+                for(let i = 0; i < points.length; i++) {
+                    if(Math.hypot(mousePos.x - points[i].x, mousePos.y - points[i].y) < CLOSE_TOLERANCE) {
+                        clickedIndex = i;
+                        break;
+                    }
+                }
 
-function drawDimensions(){
-  if(points.length<2)return;
-  const count=closed?points.length:points.length-1;
-  ctx.font='12px Arial';
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
+                if (clickedIndex !== -1) {
+                    if (selectedPointIndex === null) {
+                        // Выбираем первую точку для диагонали
+                        selectedPointIndex = clickedIndex;
+                    } else if (selectedPointIndex === clickedIndex) {
+                        // Отменяем выбор, если кликнули на ту же точку
+                        selectedPointIndex = null; 
+                    } else {
+                        // Проверяем, не является ли линия соседней стеной
+                        const isAdjacent = Math.abs(selectedPointIndex - clickedIndex) === 1 || 
+                                           Math.abs(selectedPointIndex - clickedIndex) === points.length - 1;
+                        
+                        if (!isAdjacent) {
+                            // Проверяем, нет ли уже такой диагонали
+                            const exists = diagonals.some(d => 
+                                (d.p1 === selectedPointIndex && d.p2 === clickedIndex) ||
+                                (d.p2 === selectedPointIndex && d.p1 === clickedIndex)
+                            );
 
-  for(let i=0;i<count;i++){
-    const j=(i+1)%points.length;
-    const a=worldToScreen(points[i]),b=worldToScreen(points[j]);
-    const len=dist(points[i],points[j]);
-    const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1;
-    const nx=-dy/L,ny=dx/L;
-    const offset=24;
-    const p1={x:a.x+nx*offset,y:a.y+ny*offset};
-    const p2={x:b.x+nx*offset,y:b.y+ny*offset};
+                            if (!exists) {
+                                diagonals.push({ p1: selectedPointIndex, p2: clickedIndex });
+                                updateMetricsUI();
+                            }
+                        }
+                        // Сбрасываем выбор после создания
+                        selectedPointIndex = null; 
+                    }
+                } else {
+                    // Клик в пустоту сбрасывает выбор
+                    selectedPointIndex = null;
+                }
+                draw();
+                return;
+            }
 
-    ctx.strokeStyle='#89939e';
-    ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
-    ctx.stroke();
+            // РЕЖИМ 1: РИСОВАНИЕ КОНТУРА
+            if (points.length > 2) {
+                const distToFirst = Math.hypot(mousePos.x - points[0].x, mousePos.y - points[0].y);
+                if (distToFirst < CLOSE_TOLERANCE) {
+                    isClosed = true;
+                    calculateMetrics();
+                    draw();
+                    return;
+                }
+            }
 
-    ctx.beginPath();
-    ctx.moveTo(p1.x-nx*4,p1.y-ny*4);ctx.lineTo(p1.x+nx*4,p1.y+ny*4);
-    ctx.moveTo(p2.x-nx*4,p2.y-ny*4);ctx.lineTo(p2.x+nx*4,p2.y+ny*4);
-    ctx.stroke();
+            points.push({ x: mousePos.x, y: mousePos.y });
+            updateMetricsUI();
+            draw();
+        });
 
-    let rot=Math.atan2(dy,dx);
-    if(rot>Math.PI/2||rot<-Math.PI/2)rot+=Math.PI;
-    ctx.save();
-    ctx.translate((p1.x+p2.x)/2,(p1.y+p2.y)/2);
-    ctx.rotate(rot);
-    const text=fmt(len)+' см';
-    const tw=ctx.measureText(text).width+12;
-    ctx.fillStyle='#fff';
-    ctx.fillRect(-tw/2,-10,tw,20);
-    ctx.fillStyle='#4b5563';
-    ctx.fillText(text,0,0);
-    ctx.restore();
-  }
-}
+        function clearCanvas() {
+            points = [];
+            diagonals = [];
+            isClosed = false;
+            selectedPointIndex = null;
+            document.getElementById('perimeter-val').innerText = '0.00 м';
+            document.getElementById('area-val').innerText = '0.00 м²';
+            updateMetricsUI();
+            draw();
+        }
 
-function drawShape(){
-  if(!points.length)return;
-  const ps=points.map(worldToScreen);
+        function clearDiagonals() {
+            diagonals = [];
+            selectedPointIndex = null;
+            updateMetricsUI();
+            draw();
+        }
 
-  ctx.save();
+        function drawGrid() {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 50) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 50) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+        }
 
-  if(points.length>=3){
-    ctx.beginPath();
-    ctx.moveTo(ps[0].x,ps[0].y);
-    for(let i=1;i<ps.length;i++)ctx.lineTo(ps[i].x,ps[i].y);
-    if(closed)ctx.closePath();
-    ctx.fillStyle='rgba(23,105,224,.07)';
-    ctx.fill();
-  }
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
 
-  ctx.beginPath();
-  ctx.moveTo(ps[0].x,ps[0].y);
-  for(let i=1;i<ps.length;i++)ctx.lineTo(ps[i].x,ps[i].y);
-  if(closed)ctx.closePath();
-  ctx.strokeStyle='#1c2733';
-  ctx.lineWidth=3;
-  ctx.lineJoin='round';
-  ctx.lineCap='round';
-  ctx.stroke();
+            if (points.length === 0) return;
 
-  if(preview){
-    const last=worldToScreen(points[points.length-1]);
-    const p=worldToScreen(preview);
-    ctx.strokeStyle='#1769e0';
-    ctx.lineWidth=2;
-    ctx.setLineDash([7,6]);
-    ctx.beginPath();
-    ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
+            // 1. Заливка и контур стен
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            
+            if (isClosed) {
+                ctx.lineTo(points[0].x, points[0].y);
+                ctx.fillStyle = 'rgba(0, 122, 204, 0.15)';
+                ctx.fill();
+            } else {
+                ctx.lineTo(mousePos.x, mousePos.y); // Линия прицела
+            }
+            
+            ctx.strokeStyle = '#007acc';
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
-  ps.forEach((p,i)=>{
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,i===pendingPoint?9:7,0,Math.PI*2);
-    ctx.fillStyle='#fff';
-    ctx.fill();
-    ctx.strokeStyle='#1769e0';
-    ctx.lineWidth=3;
-    ctx.stroke();
+            // 2. Отрисовка сохраненных диагоналей
+            if (isClosed) {
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([5, 5]); // Пунктир
+                
+                diagonals.forEach(d => {
+                    const pt1 = points[d.p1];
+                    const pt2 = points[d.p2];
+                    
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#e67e22'; // Оранжевый цвет
+                    ctx.moveTo(pt1.x, pt1.y);
+                    ctx.lineTo(pt2.x, pt2.y);
+                    ctx.stroke();
 
-    ctx.fillStyle='#17202a';
-    ctx.font='bold 13px Arial';
-    ctx.textAlign='center';
-    ctx.textBaseline='middle';
-    ctx.fillText(letter(i),p.x,p.y-18);
-  });
+                    // Текст длины диагонали
+                    const dist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y) * PIXEL_TO_METER;
+                    const midX = (pt1.x + pt2.x) / 2;
+                    const midY = (pt1.y + pt2.y) / 2;
+                    
+                    ctx.fillStyle = '#e67e22';
+                    ctx.font = 'bold 13px Arial';
+                    ctx.textAlign = 'center';
+                    
+                    // Делаем подложку под текст для читаемости
+                    const text = dist.toFixed(2) + ' м';
+                    const textWidth = ctx.measureText(text).width;
+                    ctx.fillStyle = '#1e1e1e';
+                    ctx.fillRect(midX - textWidth/2 - 2, midY - 12, textWidth + 4, 16);
+                    
+                    ctx.fillStyle = '#e67e22';
+                    ctx.fillText(text, midX, midY);
+                });
+                ctx.setLineDash([]); // Возврат к сплошной линии
+            }
 
-  ctx.restore();
-}
+            // 3. Линия-предпросмотр для строящейся диагонали
+            if (isClosed && selectedPointIndex !== null) {
+                const startPt = points[selectedPointIndex];
+                ctx.beginPath();
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = 'rgba(230, 126, 34, 0.6)'; // Полупрозрачный оранжевый
+                ctx.moveTo(startPt.x, startPt.y);
+                ctx.lineTo(mousePos.x, mousePos.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
 
-function render(){
-  ctx.clearRect(0,0,W,H);
-  drawGrid();
-  drawShape();
-  if(activeTab==='draw')drawDimensions();
-}
+            // 4. Длины стен (размеры)
+            if (points.length > 1) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                
+                for (let i = 0; i < points.length; i++) {
+                    let nextIdx = i + 1;
+                    if (nextIdx === points.length) {
+                        if (!isClosed) continue;
+                        nextIdx = 0;
+                    }
+                    
+                    const p1 = points[i];
+                    const p2 = points[nextIdx];
+                    
+                    const distPixels = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                    const distMeters = (distPixels * PIXEL_TO_METER).toFixed(2) + ' м';
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    
+                    // Подложка под текст периметра
+                    const textWidth = ctx.measureText(distMeters).width;
+                    ctx.fillStyle = 'rgba(30, 30, 30, 0.7)';
+                    ctx.fillRect(midX - textWidth/2 - 2, midY - 22, textWidth + 4, 16);
 
-function updateStatus(){
-  if(closed){
-    status.textContent='Контур замкнут';
-  }else if(points.length===0){
-    status.textContent='Поставьте точку A';
-  }else{
-    status.textContent='Следующая точка: '+letter(points.length);
-  }
-}
-function updateAction(){
-  if(closed){
-    actionBtn.textContent='Готово';
-    return;
-  }
-  if(points.length===0)actionBtn.textContent='Поставить точку A';
-  else actionBtn.textContent='Поставить точку '+letter(points.length);
-}
-function updateUI(){
-  updateStatus();
-  updateAction();
-  undoBtn.disabled=history.length===0;
-  undoBtn.style.opacity=history.length?'1':'.45';
-  buildDimensions();
-  render();
-}
-function buildDimensions(){
-  if(!points.length){
-    dimList.innerHTML='<div class="empty">Размеры появятся после построения сторон.</div>';
-    return;
-  }
-  let html='<div style="font-weight:700;margin:4px 0 12px">Размеры сторон</div>';
-  const count=closed?points.length:Math.max(0,points.length-1);
-  for(let i=0;i<count;i++){
-    const j=(i+1)%points.length;
-    html+=`
-      <div class="dimCard">
-        <div class="dimName">${letter(i)}–${letter(j)}</div>
-        <div class="dimValue">${fmt(segmentLength(i))} см</div>
-        <button data-edit="${i}">Изменить</button>
-      </div>`;
-  }
-  if(points.length>=3){
-    html+=`
-      <div style="font-weight:700;margin:20px 0 10px">Контроль</div>
-      <div class="dimCard"><div class="dimName">Площадь</div><div class="dimValue">${fmt(area()/10000)} м²</div></div>
-      <div class="dimCard"><div class="dimName">Периметр</div><div class="dimValue">${fmt(perimeter()/100)} м</div></div>`;
-  }
-  dimList.innerHTML=html;
-  dimList.querySelectorAll('[data-edit]').forEach(btn=>{
-    btn.onclick=()=>{
-      const i=Number(btn.dataset.edit);
-      openSizeEditor(i);
-    };
-  });
-}
-function area(){
-  if(points.length<3)return 0;
-  let s=0;
-  for(let i=0;i<points.length;i++){
-    const a=points[i],b=points[(i+1)%points.length];
-    s+=a.x*b.y-b.x*a.y;
-  }
-  return Math.abs(s)/2;
-}
-function perimeter(){
-  if(points.length<2)return 0;
-  let s=0;
-  for(let i=0;i<points.length-1;i++)s+=segmentLength(i);
-  if(closed)s+=segmentLength(points.length-1);
-  return s;
-}
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(distMeters, midX, midY - 10);
+                }
+            }
 
-function openSizeEditor(segmentIndex){
-  pendingSegment=segmentIndex;
-  modalTitle.textContent=letter(segmentIndex)+'–'+letter((segmentIndex+1)%points.length);
-  sizeInput.value=fmt(segmentLength(segmentIndex));
-  modalWarning.textContent='';
-  modalBack.classList.add('show');
-  setTimeout(()=>{sizeInput.focus();sizeInput.select()},100);
-}
-function closeModal(){
-  modalBack.classList.remove('show');
-  pendingSegment=-1;
-  pendingPoint=-1;
-}
-function applyCurrentSize(){
-  const target=parseFloat(String(sizeInput.value).replace(',','.'));
-  if(!Number.isFinite(target)||target<=0){
-    modalWarning.textContent='Введите размер больше 0 см';
-    return;
-  }
+            // 5. Отрисовка углов (точек)
+            points.forEach((p, index) => {
+                ctx.beginPath();
+                
+                if (!isClosed && index === 0 && points.length > 2) {
+                    // Подсветка для замыкания
+                    const dist = Math.hypot(mousePos.x - p.x, mousePos.y - p.y);
+                    ctx.fillStyle = dist < CLOSE_TOLERANCE ? '#00ff00' : '#ffcc00';
+                    ctx.arc(p.x, p.y, dist < CLOSE_TOLERANCE ? 8 : 5, 0, Math.PI * 2);
+                } else if (isClosed && selectedPointIndex === index) {
+                    // Подсветка выбранной точки для диагонали
+                    ctx.fillStyle = '#e67e22';
+                    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                    // Добавим пульсирующее кольцо
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#e67e22';
+                    ctx.stroke();
+                } else {
+                    // Обычная точка
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                }
+                ctx.fill();
+            });
+        }
 
-  if(pendingSegment>=0){
-    resizeSegment(pendingSegment,target);
-    closeModal();
-    return;
-  }
+        function calculateMetrics() {
+            let perimeterPixels = 0;
+            let areaPixels = 0; 
 
-  if(pendingPoint>=1){
-    const i=pendingPoint;
-    const a=points[i-1];
-    const b=points[i];
-    const old=dist(a,b);
-    if(old<0.001){
-      modalWarning.textContent='Сторона слишком короткая. Поставьте точку дальше от предыдущей.';
-      return;
-    }
+            for (let i = 0; i < points.length; i++) {
+                let j = (i + 1) % points.length;
+                perimeterPixels += Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
+                areaPixels += points[i].x * points[j].y - points[j].x * points[i].y;
+            }
 
-    saveHistory();
+            areaPixels = Math.abs(areaPixels / 2);
 
-    // The previous vertex stays fixed. The newly created vertex moves along
-    // the current direction so the entered real length becomes exact.
-    const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy);
-    points[i]={
-      x:a.x+dx/L*target,
-      y:a.y+dy/L*target
-    };
+            document.getElementById('perimeter-val').innerText = (perimeterPixels * PIXEL_TO_METER).toFixed(2) + ' м';
+            document.getElementById('area-val').innerText = (areaPixels * (PIXEL_TO_METER * PIXEL_TO_METER)).toFixed(2) + ' м²';
+        }
 
-    closeModal();
-    updateUI();
-    return;
-  }
-}
-function resizeSegment(i,target){
-  if(i<0||i>=points.length-1 && !closed)return;
-  const j=(i+1)%points.length;
-  const a=points[i],b=points[j];
-  const old=dist(a,b);
-  if(old<0.001)return;
+        function updateMetricsUI() {
+            document.getElementById('corners-val').innerText = points.length;
+            document.getElementById('diagonals-val').innerText = diagonals.length;
+        }
 
-  saveHistory();
-
-  // For editing an existing side, move only the second endpoint.
-  // This preserves the already entered previous geometry.
-  const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy);
-  points[j]={
-    x:a.x+dx/L*target,
-    y:a.y+dy/L*target
-  };
-
-  updateUI();
-}
-
-function addFirstPoint(p){
-  saveHistory();
-  points=[p];
-  closed=false;
-  pendingPoint=-1;
-  updateUI();
-}
-function addNextPoint(p){
-  if(closed)return;
-  saveHistory();
-  points.push(p);
-  pendingPoint=points.length-1;
-  openSizeEditorForNewSide();
-}
-function openSizeEditorForNewSide(){
-  const i=pendingPoint;
-  modalTitle.textContent=letter(i-1)+'–'+letter(i);
-  sizeInput.value='';
-  modalWarning.textContent='';
-  modalBack.classList.add('show');
-  setTimeout(()=>sizeInput.focus(),100);
-}
-
-function closeContour(){
-  if(points.length<3)return;
-  saveHistory();
-  closed=true;
-  preview=null;
-  pendingPoint=-1;
-  updateUI();
-}
-
-function getCanvasPoint(e){
-  const r=canvas.getBoundingClientRect();
-  return {x:e.clientX-r.left,y:e.clientY-r.top};
-}
-function nearPoint(x,y){
-  for(let i=points.length-1;i>=0;i--){
-    const p=worldToScreen(points[i]);
-    if(Math.hypot(p.x-x,p.y-y)<18)return i;
-  }
-  return -1;
-}
-
-canvas.addEventListener('pointerdown',e=>{
-  if(activeTab!=='draw')return;
-  const p=getCanvasPoint(e);
-  pointerDown={x:p.x,y:p.y,time:Date.now()};
-  const idx=nearPoint(p.x,p.y);
-
-  if(idx>=0){
-    if(!closed && idx===0 && points.length>=3){
-      closeContour();
-      return;
-    }
-    if(closed){
-      pendingPoint=idx;
-      render();
-    }else{
-      draggingPoint=idx;
-      canvas.setPointerCapture(e.pointerId);
-    }
-    return;
-  }
-
-  if(!closed && !modalBack.classList.contains('show')){
-    const world=screenToWorld(p.x,p.y);
-    if(points.length===0)addFirstPoint(world);
-    else addNextPoint(world);
-  }
-});
-
-canvas.addEventListener('pointermove',e=>{
-  const p=getCanvasPoint(e);
-  if(draggingPoint>=0 && !closed){
-    points[draggingPoint]=screenToWorld(p.x,p.y);
-    preview=null;
-    render();
-  }else if(points.length && !closed && !modalBack.classList.contains('show')){
-    preview=screenToWorld(p.x,p.y);
-    render();
-  }
-});
-canvas.addEventListener('pointerup',()=>{
-  draggingPoint=-1;
-});
-
-canvas.addEventListener('dblclick',()=>{
-  if(!closed&&points.length>=3)closeContour();
-});
-
-function setDrawTab(){
-  activeTab='draw';
-  drawTab.classList.add('active');
-  sizesTab.classList.remove('active');
-  dimList.classList.remove('show');
-  canvas.style.display='block';
-  status.style.display='block';
-  updateUI();
-}
-function setSizesTab(){
-  activeTab='sizes';
-  sizesTab.classList.add('active');
-  drawTab.classList.remove('active');
-  dimList.classList.add('show');
-  canvas.style.display='none';
-  status.style.display='none';
-  buildDimensions();
-}
-drawTab.onclick=setDrawTab;
-sizesTab.onclick=setSizesTab;
-
-actionBtn.onclick=()=>{
-  if(closed)return;
-  if(points.length===0){
-    status.textContent='Коснитесь поля, чтобы поставить A';
-  }else{
-    status.textContent='Коснитесь поля, чтобы поставить '+letter(points.length);
-  }
-};
-
-deleteBtn.onclick=()=>{
-  if(!points.length)return;
-  if(modalBack.classList.contains('show'))return;
-  saveHistory();
-  if(closed){
-    closed=false;
-    points.pop();
-  }else{
-    points.pop();
-  }
-  pendingPoint=-1;
-  preview=null;
-  updateUI();
-};
-
-fitBtn.onclick=()=>{
-  if(!points.length)return;
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  points.forEach(p=>{
-    minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);
-    maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);
-  });
-  const ww=Math.max(100,maxX-minX),hh=Math.max(100,maxY-minY);
-  view.zoom=Math.min((W-90)/ww,(H-90)/hh);
-  view.zoom=Math.max(.05,Math.min(8,view.zoom));
-  view.ox=W/2-(minX+maxX)/2*view.zoom;
-  view.oy=H/2-(minY+maxY)/2*view.zoom;
-  render();
-};
-
-canvas.addEventListener('wheel',e=>{
-  e.preventDefault();
-  const r=canvas.getBoundingClientRect();
-  const x=e.clientX-r.left,y=e.clientY-r.top;
-  const before=screenToWorld(x,y);
-  const factor=e.deltaY<0?1.1:.9;
-  view.zoom=Math.max(.05,Math.min(8,view.zoom*factor));
-  const after=worldToScreen(before);
-  view.ox+=x-after.x;
-  view.oy+=y-after.y;
-  render();
-},{passive:false});
-
-undoBtn.onclick=undo;
-
-applySize.onclick=applyCurrentSize;
-sizeInput.addEventListener('keydown',e=>{
-  if(e.key==='Enter')applyCurrentSize();
-});
-cancelSize.onclick=()=>{
-  // If this is a newly added point and the user cancels its required size,
-  // remove that unfinished point. The previous contour remains intact.
-  if(pendingPoint>=1){
-    points.pop();
-    pendingPoint=-1;
-    preview=null;
-  }
-  closeModal();
-  updateUI();
-};
-modalBack.addEventListener('pointerdown',e=>{
-  if(e.target===modalBack){
-    // Do not silently close the required size dialog.
-  }
-});
-
-menuBtn.onclick=()=>menu.classList.toggle('show');
-document.addEventListener('pointerdown',e=>{
-  if(!menu.contains(e.target)&&e.target.id!=='menuBtn')menu.classList.remove('show');
-});
-
-newBtn.onclick=()=>{
-  if(points.length && !confirm('Создать новый чертёж?'))return;
-  points=[];closed=false;history=[];pendingPoint=-1;preview=null;
-  view={zoom:1,ox:W/2,oy:H/2};
-  menu.classList.remove('show');
-  setDrawTab();
-};
-saveBtn.onclick=()=>{
-  const data={app:'MobileCeilingDesigner',version:2,unit:'cm',points,closed,view};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='ceiling-drawing.json';
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  menu.classList.remove('show');
-};
-loadBtn.onclick=()=>document.getElementById('fileInput').click();
-document.getElementById('fileInput').onchange=e=>{
-  const file=e.target.files[0];
-  if(!file)return;
-  const reader=new FileReader();
-  reader.onload=()=>{
-    try{
-      const data=JSON.parse(reader.result);
-      if(!Array.isArray(data.points))throw new Error('Неверный файл');
-      points=data.points;
-      closed=!!data.closed;
-      view=data.view||{zoom:1,ox:W/2,oy:H/2};
-      history=[];
-      pendingPoint=-1;
-      preview=null;
-      menu.classList.remove('show');
-      setDrawTab();
-    }catch(err){
-      alert('Не удалось открыть файл.');
-    }
-  };
-  reader.readAsText(file);
-  e.target.value='';
-};
-
-function init(){
-  view.ox=window.innerWidth/2;
-  view.oy=window.innerHeight/2;
-  resize();
-  updateUI();
-}
-init();
-
-})();
-</script>
+        resizeCanvas();
+    </script>
 </body>
 </html>
