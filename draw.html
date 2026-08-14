@@ -14,7 +14,6 @@
             --danger: #dc3545;
             --success: #28a745;
             --text-dark: #222222;
-            --red-dim: #d32f2f;
         }
         
         * { box-sizing: border-box; }
@@ -69,7 +68,7 @@
             display: none; z-index: 40; cursor: pointer; white-space: nowrap;
         }
 
-        /* Нижние всплывающие панели */
+        /* Нижние панели */
         .bottom-panel {
             position: absolute; bottom: 0; left: 0; width: 100%;
             background-color: var(--top-bg); box-shadow: 0 -4px 15px rgba(0,0,0,0.15);
@@ -80,13 +79,13 @@
         .bottom-panel.active { display: flex; }
 
         /* Ввод сторон */
-        #input-row { display: flex; align-items: center; gap: 10px; width: 100%; }
+        #input-row { display: flex; align-items: center; gap: 8px; width: 100%; }
         #side-label { font-weight: bold; font-size: 1.1rem; white-space: nowrap; }
         #side-input {
             flex-grow: 1; background: #f8f9fa; border: 1px solid #ced4da;
             padding: 10px; border-radius: 6px; font-size: 1.1rem; min-width: 0;
         }
-        .btn-next { background-color: var(--accent); padding: 10px 20px; white-space: nowrap; }
+        .btn-next { background-color: var(--accent); padding: 10px 18px; white-space: nowrap; }
 
         /* Диагонали и результаты */
         .panel-title { font-weight: bold; font-size: 1.05rem; margin-bottom: 10px; }
@@ -113,9 +112,9 @@
 
         #toast {
             position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8); color: white; padding: 8px 16px;
-            border-radius: 20px; font-size: 0.85rem; pointer-events: none;
-            text-align: center; width: 90%; max-width: 400px; z-index: 50; display: none;
+            background: rgba(0, 0, 0, 0.85); color: white; padding: 10px 18px;
+            border-radius: 20px; font-size: 0.9rem; pointer-events: none;
+            text-align: center; width: 90%; max-width: 420px; z-index: 200; display: none;
         }
 
         .share-btn { width: 100%; padding: 12px; font-size: 1.05rem; background-color: #0088cc; display: flex; justify-content: center; gap: 8px; align-items: center; margin-top: 5px; }
@@ -144,6 +143,7 @@
     <!-- Ввод сторон -->
     <div id="bottom-input-bar" class="bottom-panel">
         <div id="input-row">
+            <button class="btn btn-outline" id="prev-side-btn" onclick="prevSide()" style="display: none;">Назад</button>
             <div id="side-label">A-B =</div>
             <input type="number" inputmode="decimal" id="side-input" placeholder="см">
             <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
@@ -201,10 +201,12 @@
         window.addEventListener('resize', resizeCanvas);
         setTimeout(resizeCanvas, 50);
 
+        let toastTimer = null;
         function showToast(msg, duration = 3000) {
             const t = document.getElementById('toast');
             t.innerText = msg; t.style.display = 'block';
-            if(duration > 0) setTimeout(() => { t.style.display = 'none'; }, duration);
+            if (toastTimer) clearTimeout(toastTimer);
+            if(duration > 0) toastTimer = setTimeout(() => { t.style.display = 'none'; }, duration);
         }
         showToast("Тапайте по экрану для создания углов. Замкните, нажав на 1-ю точку.", 4000);
 
@@ -290,7 +292,7 @@
             draw();
         }, {passive: false});
 
-        // --- ТОЧНАЯ ПРОВЕРКА ПЕРЕСЕЧЕНИЙ СТОРУН ---
+        // --- ПРОВЕРКА ПЕРЕСЕЧЕНИЙ ЛИНИЙ ---
         function doIntersect(p1, p2, p3, p4) {
             if ((Math.hypot(p1.x-p3.x, p1.y-p3.y) < 1e-4) || (Math.hypot(p1.x-p4.x, p1.y-p4.y) < 1e-4) ||
                 (Math.hypot(p2.x-p3.x, p2.y-p3.y) < 1e-4) || (Math.hypot(p2.x-p4.x, p2.y-p4.y) < 1e-4)) {
@@ -310,6 +312,20 @@
                 if (doIntersect(lastP, newPoint, points[i], points[i + 1])) return false;
             }
             return true;
+        }
+
+        function hasSelfIntersection(pts) {
+            let n = pts.length;
+            if (n < 4) return false;
+            for (let i = 0; i < n; i++) {
+                let p1 = pts[i], p2 = pts[(i + 1) % n];
+                for (let j = i + 2; j < n; j++) {
+                    if (i === 0 && j === n - 1) continue;
+                    let p3 = pts[j], p4 = pts[(j + 1) % n];
+                    if (doIntersect(p1, p2, p3, p4)) return true;
+                }
+            }
+            return false;
         }
 
         function getLetter(i) {
@@ -333,6 +349,46 @@
 
         function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); } }
 
+        // --- ВЫРАВНИВАНИЕ ПРЯМЫХ УГЛОВ (ORTHOGONAL SNAP) ---
+        function snapOrthogonalGeometry() {
+            if (points.length < 3) return;
+
+            for (let i = 0; i < points.length; i++) {
+                let nxt = (i + 1) % points.length;
+                let dx = points[nxt].x - points[i].x;
+                let dy = points[nxt].y - points[i].y;
+                let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                let normAngle = (angle + 360) % 360;
+
+                // Если угол близковат к 0/90/180/270 (погрешность до 20 градусов), делаем его строго H или V
+                let isH = (normAngle <= 20 || normAngle >= 340 || (normAngle >= 160 && normAngle <= 200));
+                let isV = ((normAngle >= 70 && normAngle <= 110) || (normAngle >= 250 && normAngle <= 290));
+
+                if (isH) {
+                    edges[i].type = 'H';
+                } else if (isV) {
+                    edges[i].type = 'V';
+                } else {
+                    edges[i].type = 'FREE';
+                }
+            }
+
+            // Корректируем начальные координаты под прямые углы
+            for (let iter = 0; iter < 5; iter++) {
+                for (let i = 0; i < edges.length; i++) {
+                    let p1 = points[edges[i].startIdx];
+                    let p2 = points[edges[i].endIdx];
+                    if (edges[i].type === 'H') {
+                        let avgY = (p1.y + p2.y) / 2;
+                        p1.y = avgY; p2.y = avgY;
+                    } else if (edges[i].type === 'V') {
+                        let avgX = (p1.x + p2.x) / 2;
+                        p1.x = avgX; p2.x = avgX;
+                    }
+                }
+            }
+        }
+
         function closePolygon() {
             if (points.length < 3) return;
             if (!checkIntersectionValid(points[0], true)) { showToast("Замыкание невозможно: линия пересекает контур!", 2000); return; }
@@ -340,14 +396,17 @@
             isClosed = true; state = 'INPUT_SIDES';
             statusText.innerText = 'Ввод размеров';
             document.getElementById('toast').style.display = 'none';
-            updateUI();
             
             edges = points.map((p, i) => {
                 let nxt = (i+1)%points.length;
-                return { startIdx: i, endIdx: nxt, label: `${p.letter}-${points[nxt].letter}`, lengthCm: null };
+                return { startIdx: i, endIdx: nxt, label: `${p.letter}-${points[nxt].letter}`, lengthCm: null, type: 'FREE' };
             });
 
+            // Выравниваем почти прямые углы
+            snapOrthogonalGeometry();
+
             currentInputEdge = 0;
+            updateUI();
             document.getElementById('bottom-input-bar').classList.add('active');
             updateInputUI();
         }
@@ -359,41 +418,89 @@
 
         function updateInputUI() {
             document.getElementById('side-label').innerText = `${edges[currentInputEdge].label} =`;
-            document.getElementById('side-input').value = '';
+            let val = edges[currentInputEdge].lengthCm;
+            document.getElementById('side-input').value = val !== null ? val : '';
+            document.getElementById('prev-side-btn').style.display = currentInputEdge > 0 ? 'inline-block' : 'none';
             document.getElementById('side-input').focus();
             autoFitCamera(); draw();
         }
 
-        // --- ГЕОМЕТРИЧЕСКАЯ АДАПТАЦИЯ (Итеративный solver длин) ---
-        function adjustShapeToLengths() {
-            if (scaleFactor === 1 || points.length < 3) return;
+        function prevSide() {
+            if (currentInputEdge > 0) {
+                currentInputEdge--;
+                updateInputUI();
+            }
+        }
 
-            for (let iter = 0; iter < 120; iter++) {
+        // --- УМНЫЙ АЛГОРИТМ ПЕРЕСЧЕТА ФИГУРЫ (С ЗАЩИТОЙ ОТ ПЕРЕСЕЧЕНИЙ И СОХРАНЕНИЕМ ГЕОМЕТРИИ) ---
+        function adjustShapeToLengths() {
+            if (scaleFactor === 1 || points.length < 3) return true;
+
+            let oldPoints = points.map(p => ({ ...p }));
+
+            // Фиксируем начальные направления для неортогональных (произвольных) граней
+            let initialEdgeAngles = edges.map((e) => {
+                let p1 = points[e.startIdx], p2 = points[e.endIdx];
+                return Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            });
+
+            for (let iter = 0; iter < 150; iter++) {
                 for (let i = 0; i < edges.length; i++) {
                     let e = edges[i];
                     if (e.lengthCm === null) continue;
 
                     let p1 = points[e.startIdx], p2 = points[e.endIdx];
-                    let dx = p2.x - p1.x, dy = p2.y - p1.y;
-                    let currentDist = Math.hypot(dx, dy);
-                    if (currentDist < 0.001) continue;
-
                     let targetDist = e.lengthCm / scaleFactor;
-                    let diff = (currentDist - targetDist) / currentDist;
 
-                    let shiftX = dx * 0.5 * diff;
-                    let shiftY = dy * 0.5 * diff;
+                    if (e.type === 'H') {
+                        let currentDist = Math.abs(p2.x - p1.x);
+                        if (currentDist < 1e-4) currentDist = 1e-4;
+                        let diff = targetDist - currentDist;
+                        let sign = (p2.x >= p1.x) ? 1 : -1;
+                        p1.y = p2.y; // Жестко держим прямые углы
+                        if (e.startIdx !== 0) p1.x -= sign * diff * 0.5;
+                        if (e.endIdx !== 0) p2.x += sign * diff * 0.5;
+                    } else if (e.type === 'V') {
+                        let currentDist = Math.abs(p2.y - p1.y);
+                        if (currentDist < 1e-4) currentDist = 1e-4;
+                        let diff = targetDist - currentDist;
+                        let sign = (p2.y >= p1.y) ? 1 : -1;
+                        p1.x = p2.x; // Жестко держим прямые углы
+                        if (e.startIdx !== 0) p1.y -= sign * diff * 0.5;
+                        if (e.endIdx !== 0) p2.y += sign * diff * 0.5;
+                    } else {
+                        // Произвольные углы (6-угольники, треугольники и т.д.)
+                        let dx = p2.x - p1.x, dy = p2.y - p1.y;
+                        let currentDist = Math.hypot(dx, dy);
+                        if (currentDist < 1e-4) continue;
 
-                    if (e.startIdx !== 0) { p1.x += shiftX; p1.y += shiftY; }
-                    if (e.endIdx !== 0) { p2.x -= shiftX; p2.y -= shiftY; }
+                        let ang = initialEdgeAngles[i];
+                        let targetDx = Math.cos(ang) * targetDist;
+                        let targetDy = Math.sin(ang) * targetDist;
+
+                        let shiftX = (dx - targetDx) * 0.5;
+                        let shiftY = (dy - targetDy) * 0.5;
+
+                        if (e.startIdx !== 0) { p1.x += shiftX; p1.y += shiftY; }
+                        if (e.endIdx !== 0) { p2.x -= shiftX; p2.y -= shiftY; }
+                    }
                 }
             }
+
+            // ПРОВЕРКА: Не вызвало ли изменение размера самопересечение сторон?
+            if (hasSelfIntersection(points)) {
+                points = oldPoints; // Откатываем координаты обратно
+                return false;
+            }
+
+            return true;
         }
 
         function saveSideAndNext() {
             let val = parseFloat(document.getElementById('side-input').value.replace(',','.'));
-            if (isNaN(val) || val <= 0) { alert("Введите корректное число см"); return; }
+            if (isNaN(val) || val <= 0) { showToast("Введите корректное число см", 2500); return; }
 
+            let oldVal = edges[currentInputEdge].lengthCm;
             edges[currentInputEdge].lengthCm = val;
 
             if (currentInputEdge === 0) {
@@ -402,7 +509,13 @@
                 scaleFactor = val / Math.hypot(dx, dy);
             }
 
-            adjustShapeToLengths();
+            let success = adjustShapeToLengths();
+            if (!success) {
+                edges[currentInputEdge].lengthCm = oldVal; // Возвращаем прежний размер
+                showToast("Ошибка: этот размер приводит к пересечению сторон! Измените значение.", 4000);
+                return;
+            }
+
             currentInputEdge++;
 
             if (currentInputEdge >= edges.length) {
@@ -492,7 +605,7 @@
 
         // --- ЭКСПОРТ PNG / PDF С ОТРЕСОВАННЫМ ОТЧЕТОМ НА КАРТИНКЕ ---
         async function exportAndShare() {
-            autoFitCamera(); draw(); // Отрисовываем чистый холст с отчетом
+            autoFitCamera(); draw();
 
             canvas.toBlob(async (blob) => {
                 if(!blob) return;
@@ -515,7 +628,7 @@
         function drawSummaryCardOnCanvas() {
             if (state !== 'DONE' && state !== 'SELECT_MATERIAL') return;
 
-            let minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y));
+            let maxY = Math.max(...points.map(p => p.y));
             let minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
             let cx = (minX + maxX) / 2;
 
@@ -545,14 +658,12 @@
             let areaM2 = (Math.abs(areaPx/2) * scaleFactor * scaleFactor / 10000).toFixed(2);
             let totalStr = `Периметр: ${(perimeter/100).toFixed(2)} м (${perimeter} см)   |   Площадь: ${areaM2} м²`;
 
-            // Вычисляем экранные координаты под чертежом
             let screenPos = toScreen(cx, maxY + 35 / camera.zoom);
             let boxX = screenPos.x, boxY = screenPos.y;
 
             ctx.save();
             ctx.font = '13px Arial';
 
-            // Разделение длинных строк на несколько линий
             let sideLines = [], curLine = "Стороны: ";
             sidesStrArr.forEach((s, idx) => {
                 let item = s + (idx < sidesStrArr.length - 1 ? ", " : "");
@@ -580,7 +691,6 @@
             let boxHeight = allTextLines.length * lineHeight + boxPadding * 2;
             let rectX = boxX - boxWidth / 2, rectY = boxY;
 
-            // Отрисовка белой карточки-плашки
             ctx.shadowColor = 'rgba(0,0,0,0.12)';
             ctx.shadowBlur = 8;
             ctx.fillStyle = '#ffffff';
@@ -597,7 +707,6 @@
             ctx.shadowColor = 'transparent';
             ctx.stroke();
 
-            // Текст внутри карточки
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
 
@@ -678,7 +787,7 @@
                     let text = edges[i].lengthCm !== null ? edges[i].lengthCm : '~'+Math.round(Math.hypot(points[nxt].x-points[i].x, points[nxt].y-points[i].y)*scaleFactor);
                     let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
                     
-                    ctx.font = 'bold 13px Arial'; // Красный размер
+                    ctx.font = 'bold 13px Arial';
                     let w = ctx.measureText(text).width;
                     ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-4, mY-9, w+8, 18);
                     ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX-w/2-4, mY-9, w+8, 18);
@@ -697,13 +806,13 @@
                 ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI*2);
                 ctx.fill(); ctx.stroke();
 
-                ctx.fillStyle = '#000000'; // Черные крупные буквы
+                ctx.fillStyle = '#000000';
                 ctx.font = 'bold 18px Arial'; 
                 ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
                 ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
             });
 
-            // Отрисовка сводной таблицы на самом холсте под фигурой
+            // Таблица под фигурой
             drawSummaryCardOnCanvas();
         }
     </script>
