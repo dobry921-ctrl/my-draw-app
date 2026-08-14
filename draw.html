@@ -3,69 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Замер потолков (Точная геометрия)</title>
+    <title>ПРО Замер потолков</title>
     <style>
         :root {
             --bg-color: #f0f2f5;
             --top-bg: #ffffff;
             --primary: #0066cc;
-            --primary-hover: #0052a3;
             --accent: #e67e22;
             --danger: #dc3545;
             --success: #28a745;
             --text-dark: #333333;
-            --line-color: #2c3e50;
+            --dim-red: #ff0000;
         }
         
         body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-dark);
             overflow: hidden; 
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            height: 100dvh;
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
         }
 
         /* Верхняя панель */
         #top-bar {
             background-color: var(--top-bg);
             padding: 10px 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: flex; justify-content: space-between; align-items: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            z-index: 10;
+            z-index: 50;
         }
 
-        .title-info {
-            font-size: 0.85rem;
-            color: #666;
-        }
-
-        .title-info strong {
-            color: var(--text-dark);
-            font-size: 1.1rem;
-            display: block;
-        }
-
-        .top-buttons {
-            display: flex;
-            gap: 10px;
-        }
+        .title-info { font-size: 0.85rem; color: #666; }
+        .title-info strong { color: var(--text-dark); font-size: 1.1rem; display: block; }
+        .top-buttons { display: flex; gap: 8px; }
 
         .btn {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            cursor: pointer;
+            background-color: var(--primary); color: white;
+            border: none; padding: 8px 14px; border-radius: 6px;
+            font-size: 0.9rem; font-weight: 500; cursor: pointer;
             touch-action: manipulation;
         }
         .btn:active { opacity: 0.8; }
@@ -75,146 +52,62 @@
 
         /* Холст */
         #canvas-container {
-            flex-grow: 1;
-            position: relative;
-            touch-action: none; 
-            width: 100%;
+            flex-grow: 1; position: relative;
+            touch-action: none; width: 100%; height: 100%;
         }
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
+        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 
-        /* Кнопка "Замкнуть фигуру" */
+        /* Кнопка "Замкнуть" */
         #close-btn {
-            position: absolute;
-            bottom: 25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: var(--success);
-            color: white;
-            padding: 12px 28px;
-            font-size: 1.05rem;
-            font-weight: bold;
-            border-radius: 30px;
-            border: none;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
-            display: none;
-            z-index: 100;
-            cursor: pointer;
-            touch-action: manipulation;
-            white-space: nowrap;
+            position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
+            background-color: var(--success); color: white;
+            padding: 12px 28px; font-size: 1.05rem; font-weight: bold;
+            border-radius: 30px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            display: none; z-index: 40; cursor: pointer; white-space: nowrap;
         }
 
-        /* Компактная нижняя панель ввода сторон */
-        #bottom-input-bar {
-            background-color: var(--top-bg);
-            padding: 10px 15px;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-            display: none; 
-            flex-direction: row;
-            align-items: center;
-            gap: 10px;
-            z-index: 10;
+        /* Нижние панели (ввод и диагонали) */
+        .bottom-panel {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background-color: var(--top-bg); box-shadow: 0 -4px 15px rgba(0,0,0,0.15);
+            display: none; flex-direction: column; z-index: 100;
+            padding: 15px; box-sizing: border-box;
+            border-top-left-radius: 12px; border-top-right-radius: 12px;
         }
+        .bottom-panel.active { display: flex; }
 
-        #bottom-input-bar.active {
-            display: flex;
-        }
-
-        #side-label {
-            font-weight: bold;
-            color: var(--text-dark);
-            white-space: nowrap;
-            font-size: 1.1rem;
-        }
-
+        /* Ввод сторон */
+        #input-row { display: flex; align-items: center; gap: 10px; width: 100%; }
+        #side-label { font-weight: bold; font-size: 1.1rem; white-space: nowrap; }
         #side-input {
-            flex-grow: 1;
-            background-color: #f8f9fa;
-            border: 1px solid #ced4da;
-            color: var(--text-dark);
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 1.1rem;
-            outline: none;
-            min-width: 0;
+            flex-grow: 1; background: #f8f9fa; border: 1px solid #ced4da;
+            padding: 10px; border-radius: 6px; font-size: 1.1rem; min-width: 0;
         }
-        #side-input:focus { border-color: var(--primary); }
+        .btn-next { background-color: var(--accent); padding: 10px 20px; white-space: nowrap; }
 
-        .btn-next {
-            background-color: var(--accent);
-            padding: 10px 20px;
-            white-space: nowrap;
+        /* Диагонали и результаты */
+        .panel-title { font-weight: bold; font-size: 1.1rem; margin-bottom: 10px; }
+        .grid-list {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 8px; max-height: 30vh; overflow-y: auto; padding-bottom: 10px;
         }
-
-        /* Панель выбора диагоналей (для фигуры > 6 углов) */
-        #diagonals-panel {
-            background-color: var(--top-bg);
-            padding: 12px 15px;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.15);
-            display: none;
-            flex-direction: column;
-            gap: 10px;
-            max-height: 40vh;
-            z-index: 20;
-        }
-
-        #diagonals-panel.active {
-            display: flex;
-        }
-
-        .diag-title {
-            font-weight: bold;
-            font-size: 1rem;
-            color: var(--text-dark);
-        }
-
-        .diag-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-            gap: 8px;
-            overflow-y: auto;
-            max-height: 25vh;
-            padding: 5px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            border: 1px solid #e0e0e0;
-        }
-
         .diag-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.95rem;
-            background: white;
-            padding: 6px 8px;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-            cursor: pointer;
+            display: flex; align-items: center; gap: 6px; font-size: 0.95rem;
+            background: #f8f9fa; padding: 8px; border-radius: 6px; border: 1px solid #ddd;
         }
-
-        .diag-item input {
-            cursor: pointer;
-        }
+        
+        #results-content { max-height: 40vh; overflow-y: auto; font-size: 0.95rem; margin-bottom: 15px; line-height: 1.5; }
+        .res-section { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 5px; margin-bottom: 10px; }
+        .res-total { background: #eef2f5; padding: 10px; border-radius: 6px; margin-top: 10px; }
 
         #toast {
-            position: absolute;
-            top: 65px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.75);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            pointer-events: none;
-            text-align: center;
-            width: 85%;
-            max-width: 350px;
-            z-index: 5;
+            position: absolute; top: 75px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.75); color: white; padding: 8px 16px;
+            border-radius: 20px; font-size: 0.85rem; pointer-events: none;
+            text-align: center; width: 90%; max-width: 400px; z-index: 50; display: none;
         }
+
+        .share-btn { width: 100%; padding: 12px; font-size: 1.1rem; background-color: #0088cc; display: flex; justify-content: center; gap: 10px; align-items: center; }
     </style>
 </head>
 <body>
@@ -230,479 +123,458 @@
         </div>
     </div>
 
-    <div id="toast">Тапайте по экрану для создания углов. Нажмите на точку A или зеленую кнопку, чтобы замкнуть.</div>
+    <div id="toast"></div>
 
     <div id="canvas-container">
         <canvas id="appCanvas"></canvas>
         <button id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
     </div>
 
-    <!-- Ввод размеров сторон -->
-    <div id="bottom-input-bar">
-        <div id="side-label">A-B =</div>
-        <input type="number" inputmode="decimal" id="side-input" placeholder="см">
-        <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
+    <!-- Ввод сторон -->
+    <div id="bottom-input-bar" class="bottom-panel">
+        <div id="input-row">
+            <div id="side-label">A-B =</div>
+            <input type="number" inputmode="decimal" id="side-input" placeholder="см">
+            <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
+        </div>
     </div>
 
-    <!-- Панель выбора диагоналей (> 6 углов) -->
-    <div id="diagonals-panel">
-        <div class="diag-title">Выберите нужные диагонали для расчета:</div>
-        <div class="diag-list" id="diag-list-container"></div>
-        <button class="btn btn-success" onclick="finishDiagonalsSelection()">Завершить чертеж</button>
+    <!-- Выбор диагоналей -->
+    <div id="diagonals-panel" class="bottom-panel">
+        <div class="panel-title">Выберите диагонали (свыше 6 углов):</div>
+        <div class="grid-list" id="diag-list-container"></div>
+        <button class="btn btn-success" style="width:100%; margin-top:10px; padding:12px;" onclick="finishDiagonals()">Построить чертеж</button>
+    </div>
+
+    <!-- Результаты -->
+    <div id="results-panel" class="bottom-panel">
+        <div class="panel-title">Результаты замера:</div>
+        <div id="results-content"></div>
+        <button class="btn share-btn" onclick="exportAndShare()">
+            <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            Поделиться / Сохранить PNG
+        </button>
     </div>
 
     <script>
         const canvas = document.getElementById('appCanvas');
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('canvas-container');
-        const bottomBar = document.getElementById('bottom-input-bar');
-        const sideLabel = document.getElementById('side-label');
-        const sideInput = document.getElementById('side-input');
-        const diagonalsPanel = document.getElementById('diagonals-panel');
-        const diagListContainer = document.getElementById('diag-list-container');
         const statusText = document.getElementById('status-text');
-        const toast = document.getElementById('toast');
-        const closeBtn = document.getElementById('close-btn');
-        const undoBtn = document.getElementById('undo-btn');
-
-        const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        let points = [];
-        let edges = []; 
-        let availableDiagonals = [];
-        let selectedDiagonals = []; // Хранит выбранные диагонали с рассчитанными длинами
-
-        let isClosed = false;
-        let scaleFactor = 1; 
-        let currentInputEdge = 0; 
+        
+        let points = [], edges = [], availableDiagonals = [], selectedDiagonals = [];
+        let isClosed = false, scaleFactor = 1, currentInputEdge = 0;
         let state = 'DRAWING'; // DRAWING, INPUT_SIDES, SELECT_DIAGONALS, DONE
+        
+        // Камера для зума и панорамирования
+        let camera = { x: 0, y: 0, zoom: 1 };
 
         function resizeCanvas() {
-            canvas.width = container.clientWidth || window.innerWidth;
-            canvas.height = container.clientHeight || window.innerHeight;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
             draw();
         }
         window.addEventListener('resize', resizeCanvas);
-        setTimeout(resizeCanvas, 100);
+        setTimeout(resizeCanvas, 50);
 
         function showToast(msg, duration = 3000) {
-            toast.innerText = msg;
-            toast.style.display = 'block';
-            if(duration > 0) {
-                setTimeout(() => { 
-                    if(state === 'DRAWING') toast.style.display = 'none'; 
-                }, duration);
-            }
+            const t = document.getElementById('toast');
+            t.innerText = msg; t.style.display = 'block';
+            if(duration > 0) setTimeout(() => { t.style.display = 'none'; }, duration);
         }
+        showToast("Тапайте для создания углов. Замкните, нажав на 1-ю точку.", 4000);
 
-        // --- ПРОВЕРКА ПЕРЕСЕЧЕНИЙ ЛИНИЙ ---
-        function ccw(A, B, C) {
-            return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
-        }
-        function doIntersect(p1, p2, p3, p4) {
-            return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
+        // --- ПРЕОБРАЗОВАНИЯ КООРДИНАТ ---
+        function toWorld(sx, sy) { return { x: (sx - camera.x) / camera.zoom, y: (sy - camera.y) / camera.zoom }; }
+        function toScreen(wx, wy) { return { x: wx * camera.zoom + camera.x, y: wy * camera.zoom + camera.y }; }
+
+        // --- ДВИЖОК УПРАВЛЕНИЯ (Multi-touch / Mouse) ---
+        let activePointers = [];
+        let isDragging = false, lastPanPos = null, initialPinchDist = null, initialZoom = 1;
+
+        canvas.addEventListener('pointerdown', e => {
+            activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
+            if (activePointers.length === 1) {
+                lastPanPos = { x: e.clientX, y: e.clientY };
+                isDragging = false;
+            } else if (activePointers.length === 2) {
+                initialPinchDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
+                initialZoom = camera.zoom;
+            }
+        });
+
+        canvas.addEventListener('pointermove', e => {
+            let idx = activePointers.findIndex(p => p.id === e.pointerId);
+            if(idx !== -1) { activePointers[idx].x = e.clientX; activePointers[idx].y = e.clientY; }
+
+            if (activePointers.length === 1) {
+                let dx = e.clientX - lastPanPos.x, dy = e.clientY - lastPanPos.y;
+                if (Math.hypot(dx, dy) > 5) isDragging = true;
+                if (isDragging && state !== 'DRAWING_IGNORE_PAN') { // Разрешаем пан всегда
+                    camera.x += dx; camera.y += dy;
+                    lastPanPos = { x: e.clientX, y: e.clientY };
+                    draw();
+                }
+            } else if (activePointers.length === 2) {
+                isDragging = true;
+                let currentDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
+                if (initialPinchDist) {
+                    let newZoom = initialZoom * (currentDist / initialPinchDist);
+                    camera.zoom = Math.max(0.2, Math.min(newZoom, 10));
+                    draw();
+                }
+            }
+        });
+
+        const handlePointerEnd = (e) => {
+            let idx = activePointers.findIndex(p => p.id === e.pointerId);
+            if(idx !== -1) {
+                // Если это был простой клик (без перетаскивания)
+                if (activePointers.length === 1 && !isDragging) {
+                    let rect = canvas.getBoundingClientRect();
+                    let worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                    handleCanvasTap(worldPos);
+                }
+                activePointers.splice(idx, 1);
+            }
+            if(activePointers.length < 2) initialPinchDist = null;
+            if(activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
+        };
+        canvas.addEventListener('pointerup', handlePointerEnd);
+        canvas.addEventListener('pointercancel', handlePointerEnd);
+        canvas.addEventListener('pointerout', handlePointerEnd);
+
+        // Зум колесиком (ПК)
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            let rect = canvas.getBoundingClientRect();
+            let mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
+            let worldX = (mouseX - camera.x) / camera.zoom;
+            let worldY = (mouseY - camera.y) / camera.zoom;
+            
+            let zoomDelta = e.deltaY > 0 ? 0.85 : 1.15;
+            camera.zoom = Math.max(0.2, Math.min(camera.zoom * zoomDelta, 10));
+            
+            camera.x = mouseX - worldX * camera.zoom;
+            camera.y = mouseY - worldY * camera.zoom;
+            draw();
+        }, {passive: false});
+
+        // --- ЛОГИКА ЧЕРЧЕНИЯ ---
+        function getLetter(i) {
+            const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            return i < 26 ? A[i] : A[Math.floor(i/26)-1] + A[i%26];
         }
 
         function checkIntersectionValid(newPoint, isClosing = false) {
-            if (points.length < 2) return true;
+            if(points.length < 2) return true;
+            const ccw = (A,B,C) => (C.y-A.y)*(B.x-A.x) > (B.y-A.y)*(C.x-A.x);
+            const isec = (p1,p2,p3,p4) => (ccw(p1,p3,p4)!==ccw(p2,p3,p4)) && (ccw(p1,p2,p3)!==ccw(p1,p2,p4));
             
-            const lastPoint = points[points.length - 1];
-            let limit = isClosing ? points.length - 2 : points.length - 1;
+            let lastP = points[points.length-1];
+            let limit = isClosing ? points.length-2 : points.length-1;
             
-            for (let i = 0; i < limit; i++) {
-                const p1 = points[i];
-                const p2 = points[i+1];
-                
-                if (p2 === lastPoint) continue;
-                if (isClosing && p1 === newPoint) continue;
-
-                if (doIntersect(lastPoint, newPoint, p1, p2)) {
-                    return false; 
-                }
+            for(let i=0; i<limit; i++) {
+                if (isClosing && points[i] === newPoint) continue;
+                if (isec(lastP, newPoint, points[i], points[i+1])) return false;
             }
             return true;
         }
 
-        function getLetter(index) {
-            if (index < 26) return ALPHABET[index];
-            return ALPHABET[Math.floor(index / 26) - 1] + ALPHABET[index % 26];
-        }
-
-        // --- ПОСТАНОВКА ТОЧЕК И РУЧНОЕ ЗАМЫКАНИЕ ---
-        canvas.addEventListener('pointerdown', (e) => {
+        function handleCanvasTap(worldPos) {
             if (state !== 'DRAWING') return;
-            
-            const rect = canvas.getBoundingClientRect();
-            const pos = { 
-                x: e.clientX - rect.left, 
-                y: e.clientY - rect.top 
-            };
 
-            // Проверка замыкания при тапе на первую точку A (радиус 35px)
+            // Замыкание по клику на первую точку (радиус захвата 40px с учетом зума)
             if (points.length >= 3) {
-                const distToFirst = Math.hypot(pos.x - points[0].x, pos.y - points[0].y);
-                if (distToFirst < 35) {
-                    closePolygon();
-                    return;
-                }
+                let distToFirst = Math.hypot(worldPos.x - points[0].x, worldPos.y - points[0].y) * camera.zoom;
+                if (distToFirst < 40) { closePolygon(); return; }
             }
 
-            // Проверка на пересечение линий
-            if (!checkIntersectionValid(pos)) {
-                showToast("Линии не должны пересекаться!", 2000);
-                return;
-            }
-
-            points.push({ x: pos.x, y: pos.y, letter: getLetter(points.length) });
-            updateUI();
-            draw();
-        });
-
-        // Защита клика кнопки "Замкнуть" от передачи события на холст
-        closeBtn.addEventListener('pointerdown', (e) => {
-            e.stopPropagation();
-        });
-
-        function undoPoint() {
-            if (state !== 'DRAWING' || points.length === 0) return;
-            points.pop();
-            updateUI();
-            draw();
+            if (!checkIntersectionValid(worldPos)) { showToast("Пересечение линий запрещено!", 2000); return; }
+            
+            points.push({ x: worldPos.x, y: worldPos.y, letter: getLetter(points.length) });
+            updateUI(); draw();
         }
 
-        function updateUI() {
-            closeBtn.style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
-            undoBtn.style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
-        }
+        function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); } }
 
         function closePolygon() {
             if (points.length < 3) return;
-            
-            if (!checkIntersectionValid(points[0], true)) {
-                showToast("Замыкание невозможно: линия пересекает чертеж!", 2000);
-                return;
-            }
+            if (!checkIntersectionValid(points[0], true)) { showToast("Ошибка: пересечение!", 2000); return; }
 
-            isClosed = true;
-            state = 'INPUT_SIDES';
+            isClosed = true; state = 'INPUT_SIDES';
             statusText.innerText = 'Ввод размеров';
-            toast.style.display = 'none';
+            document.getElementById('toast').style.display = 'none';
             updateUI();
             
-            edges = [];
-            for (let i = 0; i < points.length; i++) {
-                let nextIdx = (i + 1) % points.length;
-                edges.push({
-                    startIdx: i,
-                    endIdx: nextIdx,
-                    label: `${points[i].letter}-${points[nextIdx].letter}`,
-                    lengthCm: null 
-                });
-            }
+            edges = points.map((p, i) => {
+                let nxt = (i+1)%points.length;
+                return { startIdx: i, endIdx: nxt, label: `${p.letter}-${points[nxt].letter}`, lengthCm: null };
+            });
 
             currentInputEdge = 0;
-            bottomBar.classList.add('active');
+            document.getElementById('bottom-input-bar').classList.add('active');
             updateInputUI();
         }
 
-        function updateInputUI() {
-            const edge = edges[currentInputEdge];
-            sideLabel.innerText = `${edge.label} =`;
-            sideInput.value = '';
-            sideInput.focus();
-            draw(); 
+        function updateUI() {
+            document.getElementById('close-btn').style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
+            document.getElementById('undo-btn').style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
         }
 
-        // --- ТОЧНЫЙ АЛГОРИТМ СОХРАНЕНИЯ ПРЯМЫХ УГЛОВ (90°) ---
-        function snapAngle(angle) {
-            let deg = angle * (180 / Math.PI);
-            if (deg < 0) deg += 360;
-            let nearest = Math.round(deg / 90) * 90;
-            let diff = Math.abs(deg - nearest);
-            if (diff <= 22.5) { // Привязка к 0, 90, 180, 270 градусов
-                return (nearest % 360) * (Math.PI / 180);
-            }
-            return angle;
+        function updateInputUI() {
+            document.getElementById('side-label').innerText = `${edges[currentInputEdge].label} =`;
+            document.getElementById('side-input').value = '';
+            document.getElementById('side-input').focus();
+            autoFitCamera(); // Фокус на весь чертеж
+            draw();
+        }
+
+        // --- КОРРЕКЦИЯ ПРЯМЫХ УГЛОВ (90°) И МАСШТАБА ---
+        function snapAngle(ang) {
+            let deg = ang * 180/Math.PI; if(deg<0) deg+=360;
+            let near = Math.round(deg/90)*90;
+            return (Math.abs(deg-near) <= 20) ? (near%360)*Math.PI/180 : ang;
         }
 
         function reconstructPolygon() {
-            if (points.length < 3 || scaleFactor === 1) return;
-
-            let N = points.length;
-            let edgeVectors = [];
-
-            for (let i = 0; i < N; i++) {
-                let nextIdx = (i + 1) % N;
-                let p1 = points[i];
-                let p2 = points[nextIdx];
-                let dx = p2.x - p1.x;
-                let dy = p2.y - p1.y;
-                let origAngle = Math.atan2(dy, dx);
-                let snapped = snapAngle(origAngle);
-                
-                let targetLenCm = edges[i].lengthCm !== null ? edges[i].lengthCm : Math.hypot(dx, dy) * scaleFactor;
-                let targetLenPx = targetLenCm / scaleFactor;
-
-                edgeVectors.push({
-                    vx: Math.cos(snapped) * targetLenPx,
-                    vy: Math.sin(snapped) * targetLenPx
-                });
-            }
-
-            // Коррекция невязки замкнутого контура
-            let sumX = 0, sumY = 0;
-            for (let v of edgeVectors) {
-                sumX += v.vx;
-                sumY += v.vy;
-            }
-
-            let errX = sumX / N;
-            let errY = sumY / N;
-
-            for (let i = 0; i < N - 1; i++) {
-                let vxCorrected = edgeVectors[i].vx - errX;
-                let vyCorrected = edgeVectors[i].vy - errY;
-                points[i + 1].x = points[i].x + vxCorrected;
-                points[i + 1].y = points[i].y + vyCorrected;
+            if (scaleFactor === 1) return;
+            let edgeVec = edges.map((e, i) => {
+                let dx = points[e.endIdx].x - points[e.startIdx].x, dy = points[e.endIdx].y - points[e.startIdx].y;
+                let ang = snapAngle(Math.atan2(dy, dx));
+                let lenPx = (e.lengthCm !== null ? e.lengthCm : Math.hypot(dx,dy)*scaleFactor) / scaleFactor;
+                return { vx: Math.cos(ang)*lenPx, vy: Math.sin(ang)*lenPx };
+            });
+            
+            let errX = edgeVec.reduce((s,v)=>s+v.vx,0)/points.length;
+            let errY = edgeVec.reduce((s,v)=>s+v.vy,0)/points.length;
+            for(let i=0; i<points.length-1; i++) {
+                points[i+1].x = points[i].x + edgeVec[i].vx - errX;
+                points[i+1].y = points[i].y + edgeVec[i].vy - errY;
             }
         }
 
         function saveSideAndNext() {
-            let valStr = sideInput.value.replace(',', '.');
-            const val = parseFloat(valStr);
-            
-            if (isNaN(val) || val <= 0) {
-                alert("Пожалуйста, введите корректное число");
-                return;
-            }
+            let val = parseFloat(document.getElementById('side-input').value.replace(',','.'));
+            if (isNaN(val) || val <= 0) { alert("Введите корректное число"); return; }
 
             edges[currentInputEdge].lengthCm = val;
-
             if (currentInputEdge === 0) {
-                const pt1 = points[edges[0].startIdx];
-                const pt2 = points[edges[0].endIdx];
-                const pixelDist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y);
-                scaleFactor = val / pixelDist; 
+                let dx = points[edges[0].endIdx].x - points[edges[0].startIdx].x;
+                let dy = points[edges[0].endIdx].y - points[edges[0].startIdx].y;
+                scaleFactor = val / Math.hypot(dx, dy);
             }
-
             reconstructPolygon();
             currentInputEdge++;
 
             if (currentInputEdge >= edges.length) {
-                bottomBar.classList.remove('active');
-                
-                // ЕСЛИ УГЛОВ БОЛЕЕ 6 — ВКЛЮЧАЕМ ВЫБОР ДИАГОНАЛЕЙ
-                if (points.length > 6) {
-                    initDiagonalsSelection();
-                } else {
-                    finishAll();
-                }
-            } else {
-                updateInputUI();
-            }
+                document.getElementById('bottom-input-bar').classList.remove('active');
+                if (points.length > 6) initDiagonals(); else showFinalResults();
+            } else { updateInputUI(); }
         }
 
-        // --- ЛОГИКА ДИАГОНАЛЕЙ (для фигуры > 6 углов) ---
-        function initDiagonalsSelection() {
-            state = 'SELECT_DIAGONALS';
-            statusText.innerText = 'Выбор диагоналей';
-            showToast("Фигура содержит более 6 углов. Выберите необходимые диагонали.", 0);
-
+        function initDiagonals() {
+            state = 'SELECT_DIAGONALS'; statusText.innerText = 'Диагонали';
             availableDiagonals = [];
-            let N = points.length;
-
-            for (let i = 0; i < N; i++) {
-                for (let j = i + 2; j < N; j++) {
-                    if (i === 0 && j === N - 1) continue; // Исключаем смежные стороны
-                    availableDiagonals.push({
-                        p1: i,
-                        p2: j,
-                        label: `${points[i].letter}-${points[j].letter}`
-                    });
+            for (let i = 0; i < points.length; i++) {
+                for (let j = i + 2; j < points.length; j++) {
+                    if (i === 0 && j === points.length - 1) continue;
+                    availableDiagonals.push({ p1: i, p2: j, label: `${points[i].letter}-${points[j].letter}` });
                 }
             }
+            const cont = document.getElementById('diag-list-container');
+            cont.innerHTML = availableDiagonals.map((d, idx) => 
+                `<label class="diag-item"><input type="checkbox" onchange="toggleDiag(${idx}, this.checked)"> ${d.label}</label>`
+            ).join('');
+            document.getElementById('diagonals-panel').classList.add('active');
+            autoFitCamera(); draw();
+        }
 
-            // Заполнение UI списка
-            diagListContainer.innerHTML = '';
-            availableDiagonals.forEach((d, index) => {
-                const item = document.createElement('label');
-                item.className = 'diag-item';
-                item.innerHTML = `<input type="checkbox" onchange="toggleDiagonal(${index}, this.checked)"> ${d.label}`;
-                diagListContainer.appendChild(item);
+        window.toggleDiag = function(idx, checked) {
+            let d = availableDiagonals[idx];
+            if(checked) selectedDiagonals.push(d);
+            else selectedDiagonals = selectedDiagonals.filter(x => x.label !== d.label);
+            draw();
+        };
+
+        window.finishDiagonals = function() {
+            document.getElementById('diagonals-panel').classList.remove('active');
+            showFinalResults();
+        };
+
+        function showFinalResults() {
+            state = 'DONE'; statusText.innerText = 'Готово';
+            
+            let perimeter = 0;
+            let html = `<b>Стороны:</b><div class="res-section">`;
+            edges.forEach(e => {
+                let len = e.lengthCm !== null ? e.lengthCm : Math.round(Math.hypot(points[e.endIdx].x-points[e.startIdx].x, points[e.endIdx].y-points[e.startIdx].y)*scaleFactor);
+                perimeter += len; html += `<span>${e.label} = ${len}</span>`;
             });
+            html += `</div>`;
 
-            diagonalsPanel.classList.add('active');
-            draw();
-        }
-
-        function toggleDiagonal(index, isChecked) {
-            const diag = availableDiagonals[index];
-            if (isChecked) {
-                selectedDiagonals.push(diag);
-            } else {
-                selectedDiagonals = selectedDiagonals.filter(d => !(d.p1 === diag.p1 && d.p2 === diag.p2));
+            if(selectedDiagonals.length > 0) {
+                html += `<b>Диагонали:</b><div class="res-section">`;
+                selectedDiagonals.forEach(d => {
+                    let len = Math.round(Math.hypot(points[d.p2].x-points[d.p1].x, points[d.p2].y-points[d.p1].y)*scaleFactor);
+                    html += `<span>${d.label} = ${len}</span>`;
+                });
+                html += `</div>`;
             }
-            draw();
+
+            // Площадь (Гаусс)
+            let areaPx = 0;
+            for(let i=0; i<points.length; i++) {
+                let p1 = points[i], p2 = points[(i+1)%points.length];
+                areaPx += (p1.x * p2.y - p2.x * p1.y);
+            }
+            let areaM2 = (Math.abs(areaPx/2) * scaleFactor * scaleFactor / 10000).toFixed(2);
+
+            html += `<div class="res-total">
+                <div><b>Периметр:</b> ${(perimeter/100).toFixed(2)} м (${perimeter} см)</div>
+                <div style="margin-top:5px;"><b>Площадь:</b> ${areaM2} м²</div>
+            </div>`;
+
+            document.getElementById('results-content').innerHTML = html;
+            document.getElementById('results-panel').classList.add('active');
+            autoFitCamera(); draw();
         }
 
-        function finishDiagonalsSelection() {
-            diagonalsPanel.classList.remove('active');
-            finishAll();
-        }
-
-        function finishAll() {
-            state = 'DONE';
-            statusText.innerText = 'Готово';
-            showToast('Чертеж полностью сформирован.', 0);
-            draw();
+        // Фокус камеры так, чтобы вся фигура была по центру
+        function autoFitCamera() {
+            if(points.length === 0) return;
+            let minX = Math.min(...points.map(p=>p.x)), maxX = Math.max(...points.map(p=>p.x));
+            let minY = Math.min(...points.map(p=>p.y)), maxY = Math.max(...points.map(p=>p.y));
+            let cx = (minX + maxX)/2, cy = (minY + maxY)/2;
+            
+            // Отступы, чтобы панель результатов не перекрывала чертеж
+            let padX = 100, padY = 250; 
+            let scaleX = canvas.width / ((maxX - minX) + padX);
+            let scaleY = canvas.height / ((maxY - minY) + padY);
+            
+            camera.zoom = Math.max(0.2, Math.min(scaleX, scaleY));
+            camera.x = canvas.width/2 - cx * camera.zoom;
+            // Сдвигаем центр чуть выше, если открыты панели
+            camera.y = canvas.height/2.5 - cy * camera.zoom; 
         }
 
         function resetAll() {
-            points = [];
-            edges = [];
-            availableDiagonals = [];
-            selectedDiagonals = [];
-            isClosed = false;
-            state = 'DRAWING';
-            scaleFactor = 1;
-            statusText.innerText = 'Черчение контура';
-            bottomBar.classList.remove('active');
-            diagonalsPanel.classList.remove('active');
-            updateUI();
-            showToast('Тапайте по экрану для создания углов.', 0);
-            draw();
+            points = []; edges = []; availableDiagonals = []; selectedDiagonals = [];
+            isClosed = false; scaleFactor = 1; state = 'DRAWING';
+            camera = {x:0, y:0, zoom:1};
+            statusText.innerText = 'Черчение';
+            document.querySelectorAll('.bottom-panel').forEach(p => p.classList.remove('active'));
+            updateUI(); draw();
+        }
+
+        // Экспорт PNG + Шаринг
+        async function exportAndShare() {
+            autoFitCamera(); draw(); // Отрисовка начисто для скриншота
+
+            canvas.toBlob(async (blob) => {
+                if(!blob) return;
+                let file = new File([blob], "Zamer.png", { type: "image/png" });
+                
+                if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
+                    try {
+                        await navigator.share({ files: [file], title: 'Чертеж', text: 'Замер потолка (отчет)' });
+                    } catch(e) { console.log(e); }
+                } else {
+                    // Fallback для ПК или старых браузеров
+                    let url = URL.createObjectURL(blob);
+                    let a = document.createElement('a');
+                    a.href = url; a.download = "Zamer_Potolka.png";
+                    a.click(); URL.revokeObjectURL(url);
+                }
+            }, 'image/png');
         }
 
         // --- ОТРИСОВКА ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Сетка
-            ctx.strokeStyle = '#e0e0e0';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-            for (let y = 0; y < canvas.height; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+            // Сетка фона (двигается с камерой)
+            ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
+            let gridSize = 30 * camera.zoom;
+            if (gridSize > 10) { // Не рисуем, если слишком мелко
+                let oX = camera.x % gridSize, oY = camera.y % gridSize;
+                for (let x=oX; x<canvas.width; x+=gridSize) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+                for (let y=oY; y<canvas.height; y+=gridSize) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+            }
 
             if (points.length === 0) return;
 
-            // Заливка контура
+            // Полигон (заливка)
             ctx.beginPath();
-            ctx.moveTo(points[0].x, points[0].y);
-            for (let i = 1; i < points.length; i++) {
-                ctx.lineTo(points[i].x, points[i].y);
+            let start = toScreen(points[0].x, points[0].y);
+            ctx.moveTo(start.x, start.y);
+            for(let i=1; i<points.length; i++) {
+                let pt = toScreen(points[i].x, points[i].y);
+                ctx.lineTo(pt.x, pt.y);
             }
-            if (isClosed) {
-                ctx.lineTo(points[0].x, points[0].y);
-                ctx.fillStyle = 'rgba(0, 102, 204, 0.08)';
-                ctx.fill();
-            }
+            if(isClosed) { ctx.lineTo(start.x, start.y); ctx.fillStyle = 'rgba(0,102,204,0.06)'; ctx.fill(); }
 
-            // Отрисовка ВЫБРАННЫХ ДИАГОНАЛЕЙ (с расчетом длин)
+            // Выбранные диагонали
             if (selectedDiagonals.length > 0) {
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([5, 5]);
-                ctx.strokeStyle = '#e67e22';
-
+                ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.strokeStyle = 'var(--dim-red)';
                 selectedDiagonals.forEach(d => {
-                    const pt1 = points[d.p1];
-                    const pt2 = points[d.p2];
+                    let s1 = toScreen(points[d.p1].x, points[d.p1].y), s2 = toScreen(points[d.p2].x, points[d.p2].y);
+                    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
 
-                    ctx.beginPath();
-                    ctx.moveTo(pt1.x, pt1.y);
-                    ctx.lineTo(pt2.x, pt2.y);
-                    ctx.stroke();
-
-                    // Вычисление длины диагонали
-                    const pDist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y);
-                    const lengthCm = Math.round(pDist * scaleFactor);
-                    const labelText = `${d.label} = ${lengthCm} см`;
-
-                    const midX = (pt1.x + pt2.x) / 2;
-                    const midY = (pt1.y + pt2.y) / 2;
-
+                    let len = Math.round(Math.hypot(points[d.p2].x-points[d.p1].x, points[d.p2].y-points[d.p1].y)*scaleFactor);
+                    let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
+                    
+                    // Текст диагонали
                     ctx.font = 'bold 12px Arial';
-                    const textWidth = ctx.measureText(labelText).width;
-
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(midX - textWidth/2 - 3, midY - 8, textWidth + 6, 16);
-                    ctx.strokeStyle = '#e67e22';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(midX - textWidth/2 - 3, midY - 8, textWidth + 6, 16);
-
-                    ctx.fillStyle = '#e67e22';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(labelText, midX, midY);
+                    let w = ctx.measureText(len).width;
+                    ctx.fillStyle = '#fff'; ctx.fillRect(mX-w/2-2, mY-8, w+4, 16);
+                    ctx.fillStyle = 'var(--dim-red)'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(len, mX, mY);
                 });
-
                 ctx.setLineDash([]);
             }
 
-            // Отрисовка СТЕН (линий)
-            for (let i = 0; i < points.length; i++) {
-                let nextIdx = (i + 1) % points.length;
-                if (!isClosed && nextIdx === 0) continue;
-
-                ctx.beginPath();
-                ctx.moveTo(points[i].x, points[i].y);
-                ctx.lineTo(points[nextIdx].x, points[nextIdx].y);
-
-                if (state === 'INPUT_SIDES' && i === edges[currentInputEdge].startIdx) {
-                    ctx.strokeStyle = '#e67e22'; 
-                    ctx.lineWidth = 4;
+            // Стороны
+            for(let i=0; i<points.length; i++) {
+                let nxt = (i+1)%points.length;
+                if(!isClosed && nxt === 0) continue;
+                
+                let s1 = toScreen(points[i].x, points[i].y), s2 = toScreen(points[nxt].x, points[nxt].y);
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                
+                if (state==='INPUT_SIDES' && i===edges[currentInputEdge].startIdx) {
+                    ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
                 } else {
-                    ctx.strokeStyle = '#2c3e50'; 
-                    ctx.lineWidth = 2.5;
+                    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
                 }
                 ctx.stroke();
-                
-                // Отображение размеров стен
-                if (isClosed) {
-                    const edge = edges[i];
-                    let text = '';
-                    
-                    if (edge.lengthCm !== null) {
-                        text = edge.lengthCm + '';
-                    } else if (scaleFactor !== 1) {
-                        const pDist = Math.hypot(points[nextIdx].x - points[i].x, points[nextIdx].y - points[i].y);
-                        text = '~' + Math.round(pDist * scaleFactor);
-                    }
 
-                    if (text !== '') {
-                        const midX = (points[i].x + points[nextIdx].x) / 2;
-                        const midY = (points[i].y + points[nextIdx].y) / 2;
-                        
-                        ctx.font = 'bold 15px Arial';
-                        const textWidth = ctx.measureText(text).width;
-                        
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
-                        ctx.strokeStyle = '#cccccc';
-                        ctx.lineWidth = 1;
-                        ctx.strokeRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
-                        
-                        ctx.fillStyle = edge.lengthCm !== null ? '#e67e22' : '#333333';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(text, midX, midY);
-                    }
+                if (isClosed) {
+                    let text = edges[i].lengthCm !== null ? edges[i].lengthCm : '~'+Math.round(Math.hypot(points[nxt].x-points[i].x, points[nxt].y-points[i].y)*scaleFactor);
+                    let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
+                    
+                    ctx.font = 'bold 14px Arial'; // МЕНЬШЕ И КРАСНЫЙ (Для размеров)
+                    let w = ctx.measureText(text).width;
+                    ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-4, mY-10, w+8, 20);
+                    ctx.strokeStyle = '#dddddd'; ctx.lineWidth = 1; ctx.strokeRect(mX-w/2-4, mY-10, w+8, 20);
+                    
+                    ctx.fillStyle = edges[i].lengthCm !== null ? 'var(--dim-red)' : '#777'; 
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, mX, mY);
                 }
             }
 
-            // Отрисовка УГЛОВ (точек)
-            points.forEach((p, index) => {
+            // Точки и Буквы
+            points.forEach((p, idx) => {
+                let sp = toScreen(p.x, p.y);
                 ctx.beginPath();
-                ctx.fillStyle = (index === 0 && !isClosed) ? '#28a745' : '#ffffff';
-                ctx.strokeStyle = '#2c3e50';
-                ctx.lineWidth = 2;
-                ctx.arc(p.x, p.y, (index === 0 && !isClosed) ? 8 : 6, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
+                ctx.fillStyle = (idx === 0 && !isClosed) ? 'var(--success)' : '#ffffff';
+                ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
+                ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI*2);
+                ctx.fill(); ctx.stroke();
 
-                ctx.fillStyle = '#333333';
-                ctx.font = 'bold 16px Arial';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(p.letter, p.x + 8, p.y - 8);
+                ctx.fillStyle = '#111111'; // БОЛЬШИЕ ЧЕРНЫЕ (Для букв)
+                ctx.font = 'bold 18px Arial'; 
+                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
             });
         }
     </script>
