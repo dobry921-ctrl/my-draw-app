@@ -93,6 +93,19 @@
             background: #f8f9fa; padding: 8px; border-radius: 6px; border: 1px solid #ddd;
         }
 
+        .diag-buttons-grid {
+            display: grid; grid-template-columns: repeat(3, minmax(90px, 1fr));
+            gap: 8px; max-height: 35vh; overflow-y: auto; padding-bottom: 4px;
+        }
+        .diag-select-btn {
+            border: 1px solid #c9c9c9; background: #f8f9fa; color: #222;
+            border-radius: 8px; padding: 10px 6px; font-weight: 700; cursor: pointer;
+            min-height: 42px; touch-action: manipulation;
+        }
+        .diag-select-btn.selected {
+            background: #0066cc; color: #fff; border-color: #0066cc;
+        }
+
         .mat-selector { display: flex; gap: 8px; margin-bottom: 12px; }
         .mat-btn {
             flex: 1; padding: 10px; border: 1px solid #ccc; background: #f8f9fa;
@@ -159,15 +172,12 @@
 
     <!-- Выбор диагоналей -->
     <div id="diagonals-panel" class="bottom-panel">
-        <div class="panel-title">Диагонали</div>
+        <div class="panel-title">Выберите диагонали</div>
         <div style="font-size:0.92rem; color:#555; margin-bottom:8px;">
-            Нажмите на первую точку внутри фигуры, затем на вторую точку.
-            Повторное нажатие на ту же пару удаляет диагональ.
+            Можно выбрать сразу несколько диагоналей. Нажимайте на кнопки с обозначениями диагоналей.
         </div>
-        <div id="diag-selection-info" class="diag-item" style="margin-bottom:8px;">
-            Первая точка не выбрана.
-        </div>
-        <div class="grid-list" id="diag-list-container"></div>
+        <div id="diag-list-container" class="diag-buttons-grid"></div>
+        <div id="diag-selected-info" class="diag-item" style="margin-top:8px;">Выбрано: 0</div>
         <button class="btn btn-success" style="width:100%; margin-top:10px; padding:12px;" onclick="finishDiagonals()">Далее</button>
     </div>
 
@@ -201,7 +211,6 @@
         let points = [], edges = [], availableDiagonals = [], selectedDiagonals = [];
         let isClosed = false, scaleFactor = 1, currentInputEdge = 0;
         let selectedMaterial = 'Мат', selectedColor = 'Белый';
-        let diagonalFirstVertex = null;
         let state = 'DRAWING'; // DRAWING, INPUT_SIDES, SELECT_DIAGONALS, SELECT_MATERIAL, DONE
         
         let camera = { x: 0, y: 0, zoom: 1 };
@@ -377,90 +386,34 @@
             }
 
             if (state === 'SELECT_DIAGONALS') {
-                if (!points.length) return;
-
-                let nearest = -1;
-                let bestDist = Infinity;
-                const hitRadius = 28 / camera.zoom;
-                points.forEach((p, idx) => {
-                    const d = Math.hypot(worldPos.x - p.x, worldPos.y - p.y);
-                    if (d <= hitRadius && d < bestDist) {
-                        bestDist = d;
-                        nearest = idx;
-                    }
-                });
-
-                if (nearest < 0) {
-                    showToast("Нажмите точно на точку вершины.", 1800);
-                    return;
-                }
-
-                if (diagonalFirstVertex === null) {
-                    diagonalFirstVertex = nearest;
-                    updateDiagonalSelectionUI();
-                    draw();
-                    return;
-                }
-
-                if (nearest === diagonalFirstVertex) {
-                    diagonalFirstVertex = null;
-                    updateDiagonalSelectionUI();
-                    draw();
-                    return;
-                }
-
-                const i = Math.min(diagonalFirstVertex, nearest);
-                const j = Math.max(diagonalFirstVertex, nearest);
-                const n = points.length;
-                const isAdjacent = (j - i === 1) || (i === 0 && j === n - 1);
-
-                if (isAdjacent) {
-                    showToast("Диагональ должна соединять не соседние вершины.", 2200);
-                    return;
-                }
-
-                const existingIndex = selectedDiagonals.findIndex(d => d.p1 === i && d.p2 === j);
-                if (existingIndex >= 0) {
-                    selectedDiagonals.splice(existingIndex, 1);
-                    showToast(`Диагональ ${points[i].letter}-${points[j].letter} удалена.`, 1600);
-                } else {
-                    selectedDiagonals.push({
-                        p1: i,
-                        p2: j,
-                        label: `${points[i].letter}-${points[j].letter}`
-                    });
-                    showToast(`Диагональ ${points[i].letter}-${points[j].letter} добавлена.`, 1600);
-                }
-
-                diagonalFirstVertex = null;
-                updateDiagonalSelectionUI();
-                draw();
+                return;
             }
         }
 
-        function updateDiagonalSelectionUI() {
-            const info = document.getElementById('diag-selection-info');
-            const list = document.getElementById('diag-list-container');
-            if (!info || !list) return;
-
-            if (diagonalFirstVertex === null) {
-                info.innerText = 'Первая точка не выбрана.';
+        function toggleDiagonalByIndex(idx) {
+            const d = availableDiagonals[idx];
+            if (!d) return;
+            const existing = selectedDiagonals.findIndex(x => x.p1 === d.p1 && x.p2 === d.p2);
+            if (existing >= 0) {
+                selectedDiagonals.splice(existing, 1);
             } else {
-                info.innerText = `Выбрана точка ${points[diagonalFirstVertex].letter}. Теперь нажмите вторую точку.`;
+                selectedDiagonals.push({ ...d });
             }
+            updateDiagonalSelectionUI();
+            draw();
+        }
 
-            if (selectedDiagonals.length === 0) {
-                list.innerHTML = '<div class="diag-item">Диагонали пока не выбраны.</div>';
-                return;
-            }
+        function updateDiagonalSelectionUI() {
+            const list = document.getElementById('diag-list-container');
+            const info = document.getElementById('diag-selected-info');
+            if (!list || !info) return;
 
-            list.innerHTML = selectedDiagonals.map((d, idx) => {
-                const len = Math.round(Math.hypot(
-                    points[d.p2].x - points[d.p1].x,
-                    points[d.p2].y - points[d.p1].y
-                ) * scaleFactor);
-                return `<div class="diag-item" style="justify-content:space-between;">${idx + 1}. ${d.label} = ${len} см</div>`;
+            list.innerHTML = availableDiagonals.map((d, idx) => {
+                const selected = selectedDiagonals.some(x => x.p1 === d.p1 && x.p2 === d.p2);
+                return `<button type="button" class="diag-select-btn ${selected ? 'selected' : ''}" onclick="toggleDiagonalByIndex(${idx})">${selected ? '✓ ' : ''}${d.label}</button>`;
             }).join('');
+
+            info.innerText = `Выбрано диагоналей: ${selectedDiagonals.length}`;
         }
 
         function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); } }
@@ -642,8 +595,6 @@
             state = 'SELECT_DIAGONALS';
             statusText.innerText = 'Выбор диагоналей';
             availableDiagonals = [];
-            diagonalFirstVertex = null;
-
             for (let i = 0; i < points.length; i++) {
                 for (let j = i + 2; j < points.length; j++) {
                     if (i === 0 && j === points.length - 1) continue;
@@ -658,7 +609,6 @@
         }
 
         window.finishDiagonals = function() {
-            diagonalFirstVertex = null;
             document.getElementById('diagonals-panel').classList.remove('active');
             openMaterialPanel();
         };
@@ -792,7 +742,6 @@
 
         function resetAll() {
             points = []; edges = []; availableDiagonals = []; selectedDiagonals = [];
-            diagonalFirstVertex = null;
             isClosed = false; scaleFactor = 1; state = 'DRAWING';
             camera = {x:0, y:0, zoom:1};
             statusText.innerText = 'Черчение';
