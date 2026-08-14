@@ -118,6 +118,7 @@
         }
 
         .share-btn { width: 100%; padding: 12px; font-size: 1.05rem; background-color: #0088cc; display: flex; justify-content: center; gap: 8px; align-items: center; margin-top: 5px; }
+        .send-btn { background-color: #28a745; }
     </style>
 </head>
 <body>
@@ -174,9 +175,12 @@
 
     <!-- Итоговая панель отправки -->
     <div id="results-panel" class="bottom-panel">
+        <button class="btn send-btn" style="width:100%; padding:12px; margin-bottom:8px;" onclick="sendToBot()">
+            📤 Отправить в бот
+        </button>
         <button class="btn share-btn" onclick="exportAndShare()">
             <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-            Отправить PDF / PNG
+            Экспорт PNG / PDF
         </button>
     </div>
 
@@ -360,7 +364,6 @@
                 let angle = Math.atan2(dy, dx) * (180 / Math.PI);
                 let normAngle = (angle + 360) % 360;
 
-                // Если угол близковат к 0/90/180/270 (погрешность до 20 градусов), делаем его строго H или V
                 let isH = (normAngle <= 20 || normAngle >= 340 || (normAngle >= 160 && normAngle <= 200));
                 let isV = ((normAngle >= 70 && normAngle <= 110) || (normAngle >= 250 && normAngle <= 290));
 
@@ -373,7 +376,6 @@
                 }
             }
 
-            // Корректируем начальные координаты под прямые углы
             for (let iter = 0; iter < 5; iter++) {
                 for (let i = 0; i < edges.length; i++) {
                     let p1 = points[edges[i].startIdx];
@@ -402,7 +404,6 @@
                 return { startIdx: i, endIdx: nxt, label: `${p.letter}-${points[nxt].letter}`, lengthCm: null, type: 'FREE' };
             });
 
-            // Выравниваем почти прямые углы
             snapOrthogonalGeometry();
 
             currentInputEdge = 0;
@@ -432,13 +433,12 @@
             }
         }
 
-        // --- УМНЫЙ АЛГОРИТМ ПЕРЕСЧЕТА ФИГУРЫ (С ЗАЩИТОЙ ОТ ПЕРЕСЕЧЕНИЙ И СОХРАНЕНИЕМ ГЕОМЕТРИИ) ---
+        // --- УМНЫЙ АЛГОРИТМ ПЕРЕСЧЕТА ФИГУРЫ ---
         function adjustShapeToLengths() {
             if (scaleFactor === 1 || points.length < 3) return true;
 
             let oldPoints = points.map(p => ({ ...p }));
 
-            // Фиксируем начальные направления для неортогональных (произвольных) граней
             let initialEdgeAngles = edges.map((e) => {
                 let p1 = points[e.startIdx], p2 = points[e.endIdx];
                 return Math.atan2(p2.y - p1.y, p2.x - p1.x);
@@ -457,7 +457,7 @@
                         if (currentDist < 1e-4) currentDist = 1e-4;
                         let diff = targetDist - currentDist;
                         let sign = (p2.x >= p1.x) ? 1 : -1;
-                        p1.y = p2.y; // Жестко держим прямые углы
+                        p1.y = p2.y;
                         if (e.startIdx !== 0) p1.x -= sign * diff * 0.5;
                         if (e.endIdx !== 0) p2.x += sign * diff * 0.5;
                     } else if (e.type === 'V') {
@@ -465,11 +465,10 @@
                         if (currentDist < 1e-4) currentDist = 1e-4;
                         let diff = targetDist - currentDist;
                         let sign = (p2.y >= p1.y) ? 1 : -1;
-                        p1.x = p2.x; // Жестко держим прямые углы
+                        p1.x = p2.x;
                         if (e.startIdx !== 0) p1.y -= sign * diff * 0.5;
                         if (e.endIdx !== 0) p2.y += sign * diff * 0.5;
                     } else {
-                        // Произвольные углы (6-угольники, треугольники и т.д.)
                         let dx = p2.x - p1.x, dy = p2.y - p1.y;
                         let currentDist = Math.hypot(dx, dy);
                         if (currentDist < 1e-4) continue;
@@ -487,9 +486,8 @@
                 }
             }
 
-            // ПРОВЕРКА: Не вызвало ли изменение размера самопересечение сторон?
             if (hasSelfIntersection(points)) {
-                points = oldPoints; // Откатываем координаты обратно
+                points = oldPoints;
                 return false;
             }
 
@@ -511,7 +509,7 @@
 
             let success = adjustShapeToLengths();
             if (!success) {
-                edges[currentInputEdge].lengthCm = oldVal; // Возвращаем прежний размер
+                edges[currentInputEdge].lengthCm = oldVal;
                 showToast("Ошибка: этот размер приводит к пересечению сторон! Измените значение.", 4000);
                 return;
             }
@@ -577,6 +575,43 @@
             autoFitCamera(); draw();
         }
 
+        // ----- НОВАЯ ФУНКЦИЯ ОТПРАВКИ В БОТ -----
+        function sendToBot() {
+            if (!isClosed || points.length < 3) {
+                showToast("Сначала замкните фигуру и введите все размеры!", 3000);
+                return;
+            }
+
+            // Собираем точки в формате {x, y}
+            const pts = points.map(p => ({ x: p.x, y: p.y }));
+            // Собираем длины сторон в том же порядке (сторона i соединяет точку i и i+1)
+            const sides = edges.map(e => e.lengthCm);
+            if (sides.some(s => s === null || s <= 0)) {
+                showToast("Не все стороны имеют корректные размеры!", 3000);
+                return;
+            }
+
+            const payload = {
+                type: 'drawing',
+                points: pts,
+                sides_cm: sides,
+                material: selectedMaterial,
+                color: selectedColor
+            };
+
+            try {
+                const data = JSON.stringify(payload);
+                if (window.Telegram && window.Telegram.WebApp) {
+                    window.Telegram.WebApp.sendData(data);
+                    window.Telegram.WebApp.close();
+                } else {
+                    showToast("Ошибка: не удалось отправить данные в бот.", 3000);
+                }
+            } catch (e) {
+                showToast("Ошибка отправки: " + e.message, 3000);
+            }
+        }
+
         function autoFitCamera() {
             if(points.length === 0) return;
             let minX = Math.min(...points.map(p=>p.x)), maxX = Math.max(...points.map(p=>p.x));
@@ -603,7 +638,7 @@
             updateUI(); draw();
         }
 
-        // --- ЭКСПОРТ PNG / PDF С ОТРЕСОВАННЫМ ОТЧЕТОМ НА КАРТИНКЕ ---
+        // --- ЭКСПОРТ PNG / PDF (для ручного сохранения) ---
         async function exportAndShare() {
             autoFitCamera(); draw();
 
@@ -624,7 +659,7 @@
             }, 'image/png');
         }
 
-        // --- ОТРЕСОВКА ТАБЛИЦЫ ОТЧЕТА НА ХОЛСТЕ ПРЯМО ПОД ФИГУРОЙ ---
+        // --- ОТРИСОВКА ТАБЛИЦЫ ОТЧЕТА НА ХОЛСТЕ ---
         function drawSummaryCardOnCanvas() {
             if (state !== 'DONE' && state !== 'SELECT_MATERIAL') return;
 
@@ -814,6 +849,11 @@
 
             // Таблица под фигурой
             drawSummaryCardOnCanvas();
+        }
+
+        // Инициализация Telegram WebApp
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
         }
     </script>
 </body>
