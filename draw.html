@@ -28,7 +28,6 @@
             display: flex; flex-direction: column;
         }
 
-        /* Верхняя панель */
         #top-bar {
             background-color: var(--top-bg);
             padding: 10px 15px;
@@ -52,14 +51,12 @@
         .btn-success { background-color: var(--success); }
         .btn-outline { background: transparent; color: var(--text-dark); border: 1px solid #ccc; }
 
-        /* Холст */
         #canvas-container {
             flex-grow: 1; position: relative;
             touch-action: none; width: 100%; height: 100%;
         }
         canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 
-        /* Кнопка "Замкнуть" */
         #close-btn {
             position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
             background-color: var(--success); color: white;
@@ -68,7 +65,6 @@
             display: none; z-index: 40; cursor: pointer; white-space: nowrap;
         }
 
-        /* Нижние панели */
         .bottom-panel {
             position: absolute; bottom: 0; left: 0; width: 100%;
             background-color: var(--top-bg); box-shadow: 0 -4px 15px rgba(0,0,0,0.15);
@@ -78,7 +74,6 @@
         }
         .bottom-panel.active { display: flex; }
 
-        /* Ввод сторон */
         #input-row { display: flex; align-items: center; gap: 8px; width: 100%; }
         #side-label { font-weight: bold; font-size: 1.1rem; white-space: nowrap; }
         #side-input {
@@ -87,7 +82,6 @@
         }
         .btn-next { background-color: var(--accent); padding: 10px 18px; white-space: nowrap; }
 
-        /* Диагонали и результаты */
         .panel-title { font-weight: bold; font-size: 1.05rem; margin-bottom: 10px; }
         .grid-list {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -98,7 +92,6 @@
             background: #f8f9fa; padding: 8px; border-radius: 6px; border: 1px solid #ddd;
         }
 
-        /* Выбор материала и цвета */
         .mat-selector { display: flex; gap: 8px; margin-bottom: 12px; }
         .mat-btn {
             flex: 1; padding: 10px; border: 1px solid #ccc; background: #f8f9fa;
@@ -117,13 +110,13 @@
             text-align: center; width: 90%; max-width: 420px; z-index: 200; display: none;
         }
 
-        /* Новая кнопка "Отправить" */
         .send-btn {
             width: 100%; padding: 14px; font-size: 1.1rem;
             background-color: #28a745; color: white; border: none;
             border-radius: 8px; font-weight: bold; cursor: pointer;
         }
         .send-btn:active { opacity: 0.85; }
+        .send-btn:disabled { background-color: #aaa; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -178,9 +171,9 @@
         <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Сформировать чертеж</button>
     </div>
 
-    <!-- Итоговая панель с одной кнопкой "Отправить" -->
+    <!-- Итоговая панель -->
     <div id="results-panel" class="bottom-panel">
-        <button class="send-btn" onclick="sendToBot()">📤 Отправить</button>
+        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить</button>
     </div>
 
     <script>
@@ -195,6 +188,11 @@
         let state = 'DRAWING'; // DRAWING, INPUT_SIDES, SELECT_DIAGONALS, SELECT_MATERIAL, DONE
         
         let camera = { x: 0, y: 0, zoom: 1 };
+
+        // --- Проверка наличия Telegram WebApp ---
+        function isTelegramWebApp() {
+            return !!(window.Telegram && window.Telegram.WebApp);
+        }
 
         function resizeCanvas() {
             canvas.width = container.clientWidth;
@@ -295,7 +293,7 @@
             draw();
         }, {passive: false});
 
-        // --- ПРОВЕРКА ПЕРЕСЕЧЕНИЙ ЛИНИЙ ---
+        // --- ПРОВЕРКА ПЕРЕСЕЧЕНИЙ ---
         function doIntersect(p1, p2, p3, p4) {
             if ((Math.hypot(p1.x-p3.x, p1.y-p3.y) < 1e-4) || (Math.hypot(p1.x-p4.x, p1.y-p4.y) < 1e-4) ||
                 (Math.hypot(p2.x-p3.x, p2.y-p3.y) < 1e-4) || (Math.hypot(p2.x-p4.x, p2.y-p4.y) < 1e-4)) {
@@ -352,7 +350,7 @@
 
         function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); } }
 
-        // --- ВЫРАВНИВАНИЕ ПРЯМЫХ УГЛОВ (ORTHOGONAL SNAP) ---
+        // --- ВЫРАВНИВАНИЕ ПРЯМЫХ УГЛОВ ---
         function snapOrthogonalGeometry() {
             if (points.length < 3) return;
 
@@ -432,7 +430,7 @@
             }
         }
 
-        // --- УМНЫЙ АЛГОРИТМ ПЕРЕСЧЕТА ФИГУРЫ ---
+        // --- АЛГОРИТМ ПЕРЕСЧЕТА ФИГУРЫ ---
         function adjustShapeToLengths() {
             if (scaleFactor === 1 || points.length < 3) return true;
 
@@ -576,17 +574,21 @@
 
         // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ (ИСПРАВЛЕННАЯ) -----
         function sendToBot() {
+            const sendBtn = document.getElementById('send-btn');
+            sendBtn.disabled = true;
+
             if (!isClosed || points.length < 3) {
                 showToast("Сначала замкните фигуру и введите все размеры!", 3000);
+                sendBtn.disabled = false;
                 return;
             }
 
-            // Собираем точки в формате {x, y}
+            // Собираем точки и стороны
             const pts = points.map(p => ({ x: p.x, y: p.y }));
-            // Собираем длины сторон в том же порядке (сторона i соединяет точку i и i+1)
             const sides = edges.map(e => e.lengthCm);
             if (sides.some(s => s === null || s <= 0)) {
                 showToast("Не все стороны имеют корректные размеры!", 3000);
+                sendBtn.disabled = false;
                 return;
             }
 
@@ -601,18 +603,20 @@
             try {
                 const data = JSON.stringify(payload);
                 // Проверяем наличие Telegram WebApp
-                if (window.Telegram && window.Telegram.WebApp) {
+                if (isTelegramWebApp()) {
+                    // Отправляем данные и закрываем окно
                     window.Telegram.WebApp.sendData(data);
                     window.Telegram.WebApp.close();
                 } else {
-                    // Если WebApp не доступен, пробуем отправить через обычный пост-запрос (для отладки)
-                    // Но в реальном боте это не нужно, просто показываем ошибку
-                    showToast("Ошибка: Telegram WebApp не инициализирован.", 3000);
-                    console.error("Telegram WebApp не найден");
+                    // Если WebApp не доступен, показываем сообщение и предлагаем открыть через бота
+                    showToast("Ошибка: приложение должно быть открыто через Telegram. Нажмите кнопку в боте заново.", 5000);
+                    console.error("Telegram WebApp не найден. Данные:", data);
+                    sendBtn.disabled = false;
                 }
             } catch (e) {
-                showToast("Ошибка отправки: " + e.message, 3000);
+                showToast("Ошибка отправки: " + e.message, 4000);
                 console.error(e);
+                sendBtn.disabled = false;
             }
         }
 
@@ -642,7 +646,7 @@
             updateUI(); draw();
         }
 
-        // --- ОТРИСОВКА ТАБЛИЦЫ ОТЧЕТА НА ХОЛСТЕ ---
+        // --- ОТРИСОВКА ТАБЛИЦЫ ОТЧЕТА ---
         function drawSummaryCardOnCanvas() {
             if (state !== 'DONE' && state !== 'SELECT_MATERIAL') return;
 
@@ -743,11 +747,10 @@
             ctx.restore();
         }
 
-        // --- ГЛАВНАЯ ФУНКЦИЯ ОТРИСОВКИ ---
+        // --- ГЛАВНАЯ ОТРИСОВКА ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Сетка
             ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
             let gridSize = 30 * camera.zoom;
             if (gridSize > 8) {
@@ -758,7 +761,6 @@
 
             if (points.length === 0) return;
 
-            // Заливка контура
             ctx.beginPath();
             let start = toScreen(points[0].x, points[0].y);
             ctx.moveTo(start.x, start.y);
@@ -768,7 +770,6 @@
             }
             if(isClosed) { ctx.lineTo(start.x, start.y); ctx.fillStyle = 'rgba(0,102,204,0.07)'; ctx.fill(); }
 
-            // Диагонали
             if (selectedDiagonals.length > 0) {
                 ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#d32f2f';
                 selectedDiagonals.forEach(d => {
@@ -786,7 +787,6 @@
                 ctx.setLineDash([]);
             }
 
-            // Стороны и их размеры
             for(let i=0; i<points.length; i++) {
                 let nxt = (i+1)%points.length;
                 if(!isClosed && nxt === 0) continue;
@@ -815,7 +815,6 @@
                 }
             }
 
-            // Точки углов и Буквы
             points.forEach((p, idx) => {
                 let sp = toScreen(p.x, p.y);
                 ctx.beginPath();
@@ -830,12 +829,11 @@
                 ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
             });
 
-            // Таблица под фигурой
             drawSummaryCardOnCanvas();
         }
 
-        // Инициализация Telegram WebApp
-        if (window.Telegram && window.Telegram.WebApp) {
+        // --- ИНИЦИАЛИЗАЦИЯ ---
+        if (isTelegramWebApp()) {
             window.Telegram.WebApp.ready();
             console.log("Telegram WebApp готов");
         } else {
