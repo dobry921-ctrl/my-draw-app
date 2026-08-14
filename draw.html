@@ -117,8 +117,13 @@
             text-align: center; width: 90%; max-width: 420px; z-index: 200; display: none;
         }
 
-        .share-btn { width: 100%; padding: 12px; font-size: 1.05rem; background-color: #0088cc; display: flex; justify-content: center; gap: 8px; align-items: center; margin-top: 5px; }
-        .send-btn { background-color: #28a745; }
+        /* Новая кнопка "Отправить" */
+        .send-btn {
+            width: 100%; padding: 14px; font-size: 1.1rem;
+            background-color: #28a745; color: white; border: none;
+            border-radius: 8px; font-weight: bold; cursor: pointer;
+        }
+        .send-btn:active { opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -173,15 +178,9 @@
         <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Сформировать чертеж</button>
     </div>
 
-    <!-- Итоговая панель отправки -->
+    <!-- Итоговая панель с одной кнопкой "Отправить" -->
     <div id="results-panel" class="bottom-panel">
-        <button class="btn send-btn" style="width:100%; padding:12px; margin-bottom:8px;" onclick="sendToBot()">
-            📤 Отправить в бот
-        </button>
-        <button class="btn share-btn" onclick="exportAndShare()">
-            <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-            Экспорт PNG / PDF
-        </button>
+        <button class="send-btn" onclick="sendToBot()">📤 Отправить</button>
     </div>
 
     <script>
@@ -575,7 +574,7 @@
             autoFitCamera(); draw();
         }
 
-        // ----- НОВАЯ ФУНКЦИЯ ОТПРАВКИ В БОТ -----
+        // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ (ИСПРАВЛЕННАЯ) -----
         function sendToBot() {
             if (!isClosed || points.length < 3) {
                 showToast("Сначала замкните фигуру и введите все размеры!", 3000);
@@ -601,14 +600,19 @@
 
             try {
                 const data = JSON.stringify(payload);
+                // Проверяем наличие Telegram WebApp
                 if (window.Telegram && window.Telegram.WebApp) {
                     window.Telegram.WebApp.sendData(data);
                     window.Telegram.WebApp.close();
                 } else {
-                    showToast("Ошибка: не удалось отправить данные в бот.", 3000);
+                    // Если WebApp не доступен, пробуем отправить через обычный пост-запрос (для отладки)
+                    // Но в реальном боте это не нужно, просто показываем ошибку
+                    showToast("Ошибка: Telegram WebApp не инициализирован.", 3000);
+                    console.error("Telegram WebApp не найден");
                 }
             } catch (e) {
                 showToast("Ошибка отправки: " + e.message, 3000);
+                console.error(e);
             }
         }
 
@@ -636,27 +640,6 @@
             statusText.innerText = 'Черчение';
             document.querySelectorAll('.bottom-panel').forEach(p => p.classList.remove('active'));
             updateUI(); draw();
-        }
-
-        // --- ЭКСПОРТ PNG / PDF (для ручного сохранения) ---
-        async function exportAndShare() {
-            autoFitCamera(); draw();
-
-            canvas.toBlob(async (blob) => {
-                if(!blob) return;
-                let file = new File([blob], "Zamer_Potolka.png", { type: "image/png" });
-                
-                if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
-                    try {
-                        await navigator.share({ files: [file], title: 'Чертеж потолка', text: 'Замер потолка (готовый отчет)' });
-                    } catch(e) { console.log(e); }
-                } else {
-                    let url = URL.createObjectURL(blob);
-                    let a = document.createElement('a');
-                    a.href = url; a.download = "Zamer_Potolka.png";
-                    a.click(); URL.revokeObjectURL(url);
-                }
-            }, 'image/png');
         }
 
         // --- ОТРИСОВКА ТАБЛИЦЫ ОТЧЕТА НА ХОЛСТЕ ---
@@ -854,6 +837,9 @@
         // Инициализация Telegram WebApp
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
+            console.log("Telegram WebApp готов");
+        } else {
+            console.warn("Telegram WebApp не доступен (работа в обычном браузере)");
         }
     </script>
 </body>
