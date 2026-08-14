@@ -117,6 +117,13 @@
         }
         .send-btn:active { opacity: 0.85; }
         .send-btn:disabled { background-color: #aaa; cursor: not-allowed; }
+
+        .copy-btn {
+            width: 100%; padding: 10px; font-size: 0.9rem;
+            background-color: #6c757d; color: white; border: none;
+            border-radius: 8px; cursor: pointer; margin-top: 8px;
+        }
+        .copy-btn:active { opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -174,6 +181,7 @@
     <!-- Итоговая панель -->
     <div id="results-panel" class="bottom-panel">
         <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить</button>
+        <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (для отладки)</button>
     </div>
 
     <script>
@@ -572,7 +580,7 @@
             autoFitCamera(); draw();
         }
 
-        // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ (ИСПРАВЛЕННАЯ) -----
+        // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ -----
         function sendToBot() {
             const sendBtn = document.getElementById('send-btn');
             sendBtn.disabled = true;
@@ -583,7 +591,6 @@
                 return;
             }
 
-            // Собираем точки и стороны
             const pts = points.map(p => ({ x: p.x, y: p.y }));
             const sides = edges.map(e => e.lengthCm);
             if (sides.some(s => s === null || s <= 0)) {
@@ -602,15 +609,15 @@
 
             try {
                 const data = JSON.stringify(payload);
-                // Проверяем наличие Telegram WebApp
                 if (isTelegramWebApp()) {
-                    // Отправляем данные и закрываем окно
                     window.Telegram.WebApp.sendData(data);
                     window.Telegram.WebApp.close();
                 } else {
-                    // Если WebApp не доступен, показываем сообщение и предлагаем открыть через бота
-                    showToast("Ошибка: приложение должно быть открыто через Telegram. Нажмите кнопку в боте заново.", 5000);
-                    console.error("Telegram WebApp не найден. Данные:", data);
+                    showToast(
+                        "❌ Ошибка: страница должна быть открыта через Telegram. " +
+                        "Нажмите кнопку «Нарисовать чертёж» в боте.", 
+                        5000
+                    );
                     sendBtn.disabled = false;
                 }
             } catch (e) {
@@ -618,6 +625,36 @@
                 console.error(e);
                 sendBtn.disabled = false;
             }
+        }
+
+        // ----- КОПИРОВАНИЕ ДАННЫХ ДЛЯ ОТЛАДКИ -----
+        function copyData() {
+            if (!isClosed || points.length < 3) {
+                showToast("Сначала замкните фигуру и введите все размеры!", 3000);
+                return;
+            }
+            const pts = points.map(p => ({ x: p.x, y: p.y }));
+            const sides = edges.map(e => e.lengthCm);
+            const payload = {
+                type: 'drawing',
+                points: pts,
+                sides_cm: sides,
+                material: selectedMaterial,
+                color: selectedColor
+            };
+            const data = JSON.stringify(payload, null, 2);
+            navigator.clipboard.writeText(data).then(() => {
+                showToast("✅ Данные скопированы в буфер обмена", 2000);
+            }).catch(() => {
+                // fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = data;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast("✅ Данные скопированы", 2000);
+            });
         }
 
         function autoFitCamera() {
@@ -838,6 +875,7 @@
             console.log("Telegram WebApp готов");
         } else {
             console.warn("Telegram WebApp не доступен (работа в обычном браузере)");
+            showToast("⚠️ Откройте приложение через Telegram", 4000);
         }
     </script>
 </body>
