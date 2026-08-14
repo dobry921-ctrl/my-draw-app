@@ -2,139 +2,213 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Прототип построения потолков (Easy Ceiling)</title>
+    <!-- Мета-тег для запрета зумирования на мобильных устройствах -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Мобильный замер потолков</title>
     <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --primary: #007acc;
+            --primary-hover: #005f9e;
+            --accent: #e67e22;
+            --danger: #d13438;
+            --text: #ffffff;
+            --sheet-bg: #252526;
+        }
+        
         body {
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            height: 100vh;
-            background-color: #1e1e1e;
-            color: #fff;
-        }
-        #sidebar {
-            width: 320px;
-            background-color: #2d2d30;
-            padding: 20px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            overflow: hidden; /* Отключаем прокрутку страницы */
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            height: 100vh;
+            height: 100dvh; /* Для iOS Safari */
+        }
+
+        /* Верхняя панель управления */
+        #top-bar {
+            background-color: #2d2d30;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
             z-index: 10;
         }
+
+        .title-info {
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+
+        .title-info strong {
+            color: var(--primary);
+            font-size: 1.1rem;
+            display: block;
+        }
+
+        .btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .btn-danger { background-color: var(--danger); }
+
+        /* Холст */
         #canvas-container {
             flex-grow: 1;
             position: relative;
-            overflow: hidden;
-            background-color: #1e1e1e;
-            cursor: crosshair;
+            touch-action: none; /* Отключаем жесты браузера на холсте */
         }
         canvas {
             display: block;
+            width: 100%;
+            height: 100%;
         }
-        h2 {
-            margin-top: 0;
-            font-size: 1.2rem;
-            color: #007acc;
-        }
-        .btn {
-            background-color: #007acc;
-            color: white;
-            border: none;
-            padding: 10px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-        .btn:hover {
-            background-color: #005f9e;
-        }
-        .btn-danger {
-            background-color: #d13438;
-        }
-        .btn-danger:hover {
-            background-color: #a82a2d;
-        }
-        .btn-warning {
-            background-color: #e67e22;
-        }
-        .btn-warning:hover {
-            background-color: #cf711f;
-        }
-        .info-panel {
-            background-color: #3e3e42;
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-        .info-panel p {
-            margin: 5px 0;
+
+        /* Всплывающая шторка на пол-экрана */
+        #bottom-sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50vh;
+            background-color: var(--sheet-bg);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.5);
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 20;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+            box-sizing: border-box;
+            padding: 20px;
         }
-        .instructions {
+
+        #bottom-sheet.active {
+            transform: translateY(0);
+        }
+
+        .sheet-header {
+            text-align: center;
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+
+        .input-group label {
+            font-size: 1.1rem;
+            color: var(--accent);
+        }
+
+        .input-group input {
+            background-color: #3e3e42;
+            border: 1px solid #555;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1.5rem;
+            text-align: center;
+            outline: none;
+        }
+
+        .input-group input:focus {
+            border-color: var(--accent);
+        }
+
+        .btn-next {
+            background-color: var(--accent);
+            padding: 15px;
+            font-size: 1.2rem;
+            border-radius: 10px;
+            width: 100%;
+        }
+        
+        #instruction-toast {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 16px;
+            border-radius: 20px;
             font-size: 0.85rem;
-            color: #cccccc;
-            line-height: 1.5;
-            background: #252526;
-            padding: 10px;
-            border-left: 3px solid #007acc;
-        }
-        .instructions-diag {
-            border-left: 3px solid #e67e22;
+            pointer-events: none;
+            text-align: center;
+            width: 80%;
+            z-index: 5;
         }
     </style>
 </head>
 <body>
 
-    <div id="sidebar">
-        <h2>Построение потолка</h2>
-        
-        <div class="instructions">
-            <strong>1. Контур:</strong><br>
-            Кликайте, чтобы ставить углы. Для завершения кликните на первую точку (станет зеленой).
+    <div id="top-bar">
+        <div class="title-info">
+            <strong>Замер потолка</strong>
+            <span id="status-text">Черчение контура</span>
         </div>
-        
-        <div class="instructions instructions-diag">
-            <strong>2. Диагонали (Замер):</strong><br>
-            После завершения контура кликните на один угол, затем на другой, чтобы провести диагональ.
-        </div>
-
-        <button class="btn btn-warning" onclick="clearDiagonals()">Удалить диагонали</button>
-        <button class="btn btn-danger" onclick="clearCanvas()">Очистить всё</button>
-
-        <div class="info-panel">
-            <strong>Параметры потолка:</strong>
-            <p><span>Периметр:</span> <span id="perimeter-val">0.00 м</span></p>
-            <p><span>Площадь:</span> <span id="area-val">0.00 м²</span></p>
-            <p><span>Углов:</span> <span id="corners-val">0</span></p>
-            <p><span>Диагоналей:</span> <span id="diagonals-val">0</span></p>
-        </div>
+        <button class="btn btn-danger" onclick="resetAll()">Сброс</button>
     </div>
 
+    <div id="instruction-toast">Тапайте по экрану, чтобы задать углы комнаты. Для завершения нажмите на первую точку.</div>
+
     <div id="canvas-container">
-        <canvas id="draftCanvas"></canvas>
+        <canvas id="appCanvas"></canvas>
+    </div>
+
+    <!-- Всплывающая шторка ввода размеров -->
+    <div id="bottom-sheet">
+        <div class="sheet-header">Ввод размеров сторон</div>
+        <div class="input-group">
+            <label id="side-label">Сторона A-B =</label>
+            <input type="number" inputmode="numeric" id="side-input" placeholder="Введите в см">
+        </div>
+        <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
     </div>
 
     <script>
-        const canvas = document.getElementById('draftCanvas');
+        const canvas = document.getElementById('appCanvas');
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('canvas-container');
+        const bottomSheet = document.getElementById('bottom-sheet');
+        const sideLabel = document.getElementById('side-label');
+        const sideInput = document.getElementById('side-input');
+        const statusText = document.getElementById('status-text');
+        const toast = document.getElementById('instruction-toast');
 
-        // Масштаб: 1 пиксель = 2 см (для визуализации)
-        const PIXEL_TO_METER = 0.02; 
+        // Алфавит для обозначения углов (A, B, C, D...)
+        const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
         let points = [];
-        let diagonals = [];
+        let edges = []; // { startIdx, endIdx, label, lengthCm }
         let isClosed = false;
-        let mousePos = { x: 0, y: 0 };
-        let selectedPointIndex = null; // Для построения диагоналей
+        let scaleFactor = 1; // Для адаптации масштаба чертежа
 
-        const CLOSE_TOLERANCE = 15; // Радиус прилипания/клика
+        let currentInputEdge = 0; // Индекс стороны, которую сейчас вводим
+        let state = 'DRAWING'; // DRAWING, INPUT_SIDES, DONE
 
+        const TOUCH_TOLERANCE = 30; // Увеличенный радиус для пальцев (touch)
+
+        // Инициализация холста
         function resizeCanvas() {
             canvas.width = container.clientWidth;
             canvas.height = container.clientHeight;
@@ -142,256 +216,240 @@
         }
         window.addEventListener('resize', resizeCanvas);
 
-        canvas.addEventListener('mousemove', (e) => {
+        // Получение координат с учетом тапов и мыши
+        function getPointerPos(e) {
             const rect = canvas.getBoundingClientRect();
-            mousePos.x = e.clientX - rect.left;
-            mousePos.y = e.clientY - rect.top;
-            draw(); // Перерисовываем для отображения линии к курсору
-        });
-
-        canvas.addEventListener('mousedown', (e) => {
-            // РЕЖИМ 2: ПОСТРОЕНИЕ ДИАГОНАЛЕЙ (после замыкания)
-            if (isClosed) {
-                let clickedIndex = -1;
-                // Ищем, по какому углу кликнули
-                for(let i = 0; i < points.length; i++) {
-                    if(Math.hypot(mousePos.x - points[i].x, mousePos.y - points[i].y) < CLOSE_TOLERANCE) {
-                        clickedIndex = i;
-                        break;
-                    }
-                }
-
-                if (clickedIndex !== -1) {
-                    if (selectedPointIndex === null) {
-                        // Выбираем первую точку для диагонали
-                        selectedPointIndex = clickedIndex;
-                    } else if (selectedPointIndex === clickedIndex) {
-                        // Отменяем выбор, если кликнули на ту же точку
-                        selectedPointIndex = null; 
-                    } else {
-                        // Проверяем, не является ли линия соседней стеной
-                        const isAdjacent = Math.abs(selectedPointIndex - clickedIndex) === 1 || 
-                                           Math.abs(selectedPointIndex - clickedIndex) === points.length - 1;
-                        
-                        if (!isAdjacent) {
-                            // Проверяем, нет ли уже такой диагонали
-                            const exists = diagonals.some(d => 
-                                (d.p1 === selectedPointIndex && d.p2 === clickedIndex) ||
-                                (d.p2 === selectedPointIndex && d.p1 === clickedIndex)
-                            );
-
-                            if (!exists) {
-                                diagonals.push({ p1: selectedPointIndex, p2: clickedIndex });
-                                updateMetricsUI();
-                            }
-                        }
-                        // Сбрасываем выбор после создания
-                        selectedPointIndex = null; 
-                    }
-                } else {
-                    // Клик в пустоту сбрасывает выбор
-                    selectedPointIndex = null;
-                }
-                draw();
-                return;
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
             }
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
 
-            // РЕЖИМ 1: РИСОВАНИЕ КОНТУРА
-            if (points.length > 2) {
-                const distToFirst = Math.hypot(mousePos.x - points[0].x, mousePos.y - points[0].y);
-                if (distToFirst < CLOSE_TOLERANCE) {
-                    isClosed = true;
-                    calculateMetrics();
-                    draw();
+        // Обработка касаний (работает и на телефоне, и мышкой)
+        canvas.addEventListener('pointerdown', (e) => {
+            if (state !== 'DRAWING') return;
+            e.preventDefault();
+
+            const pos = getPointerPos(e);
+
+            // Проверка на замыкание контура
+            if (points.length >= 3) {
+                const distToFirst = Math.hypot(pos.x - points[0].x, pos.y - points[0].y);
+                if (distToFirst < TOUCH_TOLERANCE) {
+                    closePolygon();
                     return;
                 }
             }
 
-            points.push({ x: mousePos.x, y: mousePos.y });
-            updateMetricsUI();
+            // Добавление точки (назначаем букву)
+            points.push({ 
+                x: pos.x, 
+                y: pos.y, 
+                letter: getLetter(points.length) 
+            });
             draw();
         });
 
-        function clearCanvas() {
+        // Функция генерации имени угла (A, B, C... AA, AB...)
+        function getLetter(index) {
+            if (index < 26) return ALPHABET[index];
+            return ALPHABET[Math.floor(index / 26) - 1] + ALPHABET[index % 26];
+        }
+
+        // Замыкание контура и переход к вводу размеров
+        function closePolygon() {
+            isClosed = true;
+            state = 'INPUT_SIDES';
+            statusText.innerText = 'Ввод размеров';
+            toast.style.display = 'none';
+            
+            // Формируем список сторон
+            edges = [];
+            for (let i = 0; i < points.length; i++) {
+                let nextIdx = (i + 1) % points.length;
+                edges.push({
+                    startIdx: i,
+                    endIdx: nextIdx,
+                    label: `${points[i].letter}-${points[nextIdx].letter}`,
+                    lengthCm: null // Пока не задано
+                });
+            }
+
+            currentInputEdge = 0;
+            draw();
+            openBottomSheet();
+        }
+
+        function openBottomSheet() {
+            bottomSheet.classList.add('active');
+            updateBottomSheetUI();
+        }
+
+        function updateBottomSheetUI() {
+            const edge = edges[currentInputEdge];
+            sideLabel.innerText = `Сторона ${edge.label} =`;
+            sideInput.value = '';
+            sideInput.focus();
+            draw(); // Перерисовываем, чтобы подсветить активную сторону
+        }
+
+        // Нажатие кнопки "Далее"
+        function saveSideAndNext() {
+            const val = parseFloat(sideInput.value);
+            if (isNaN(val) || val <= 0) {
+                alert("Пожалуйста, введите корректное число больше 0");
+                return;
+            }
+
+            // Сохраняем введенный размер (в см)
+            edges[currentInputEdge].lengthCm = val;
+
+            // "Адаптация" чертежа под введенные размеры (базовое масштабирование по первой стороне)
+            if (currentInputEdge === 0) {
+                const pt1 = points[edges[0].startIdx];
+                const pt2 = points[edges[0].endIdx];
+                const pixelDist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y);
+                // Задаем коэффициент: сколько сантиметров в 1 пикселе
+                scaleFactor = val / pixelDist; 
+            }
+
+            currentInputEdge++;
+
+            // Если ввели все стороны
+            if (currentInputEdge >= edges.length) {
+                bottomSheet.classList.remove('active');
+                state = 'DONE';
+                statusText.innerText = 'Чертеж готов';
+                toast.innerText = 'Размеры заданы. Чертеж адаптирован.';
+                toast.style.display = 'block';
+                draw();
+            } else {
+                updateBottomSheetUI();
+            }
+        }
+
+        function resetAll() {
             points = [];
-            diagonals = [];
+            edges = [];
             isClosed = false;
-            selectedPointIndex = null;
-            document.getElementById('perimeter-val').innerText = '0.00 м';
-            document.getElementById('area-val').innerText = '0.00 м²';
-            updateMetricsUI();
+            state = 'DRAWING';
+            scaleFactor = 1;
+            statusText.innerText = 'Черчение контура';
+            toast.innerText = 'Тапайте по экрану, чтобы задать углы комнаты.';
+            toast.style.display = 'block';
+            bottomSheet.classList.remove('active');
             draw();
         }
 
-        function clearDiagonals() {
-            diagonals = [];
-            selectedPointIndex = null;
-            updateMetricsUI();
-            draw();
-        }
-
-        function drawGrid() {
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 50) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            }
-            for (let y = 0; y < canvas.height; y += 50) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-            }
-        }
-
+        // Отрисовка
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawGrid();
+
+            // Сетка
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+            for (let y = 0; y < canvas.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
 
             if (points.length === 0) return;
 
-            // 1. Заливка и контур стен
+            // Рисуем заливку
             ctx.beginPath();
             ctx.moveTo(points[0].x, points[0].y);
             for (let i = 1; i < points.length; i++) {
                 ctx.lineTo(points[i].x, points[i].y);
             }
-            
             if (isClosed) {
                 ctx.lineTo(points[0].x, points[0].y);
-                ctx.fillStyle = 'rgba(0, 122, 204, 0.15)';
+                ctx.fillStyle = 'rgba(0, 122, 204, 0.2)';
                 ctx.fill();
-            } else {
-                ctx.lineTo(mousePos.x, mousePos.y); // Линия прицела
-            }
-            
-            ctx.strokeStyle = '#007acc';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            // 2. Отрисовка сохраненных диагоналей
-            if (isClosed) {
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([5, 5]); // Пунктир
-                
-                diagonals.forEach(d => {
-                    const pt1 = points[d.p1];
-                    const pt2 = points[d.p2];
-                    
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#e67e22'; // Оранжевый цвет
-                    ctx.moveTo(pt1.x, pt1.y);
-                    ctx.lineTo(pt2.x, pt2.y);
-                    ctx.stroke();
-
-                    // Текст длины диагонали
-                    const dist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y) * PIXEL_TO_METER;
-                    const midX = (pt1.x + pt2.x) / 2;
-                    const midY = (pt1.y + pt2.y) / 2;
-                    
-                    ctx.fillStyle = '#e67e22';
-                    ctx.font = 'bold 13px Arial';
-                    ctx.textAlign = 'center';
-                    
-                    // Делаем подложку под текст для читаемости
-                    const text = dist.toFixed(2) + ' м';
-                    const textWidth = ctx.measureText(text).width;
-                    ctx.fillStyle = '#1e1e1e';
-                    ctx.fillRect(midX - textWidth/2 - 2, midY - 12, textWidth + 4, 16);
-                    
-                    ctx.fillStyle = '#e67e22';
-                    ctx.fillText(text, midX, midY);
-                });
-                ctx.setLineDash([]); // Возврат к сплошной линии
             }
 
-            // 3. Линия-предпросмотр для строящейся диагонали
-            if (isClosed && selectedPointIndex !== null) {
-                const startPt = points[selectedPointIndex];
+            // Рисуем линии (стороны)
+            for (let i = 0; i < points.length; i++) {
+                let nextIdx = (i + 1) % points.length;
+                if (!isClosed && nextIdx === 0) continue;
+
                 ctx.beginPath();
-                ctx.setLineDash([5, 5]);
-                ctx.strokeStyle = 'rgba(230, 126, 34, 0.6)'; // Полупрозрачный оранжевый
-                ctx.moveTo(startPt.x, startPt.y);
-                ctx.lineTo(mousePos.x, mousePos.y);
+                ctx.moveTo(points[i].x, points[i].y);
+                ctx.lineTo(points[nextIdx].x, points[nextIdx].y);
+
+                // Подсветка активной стороны, которую сейчас вводим
+                if (state === 'INPUT_SIDES' && i === edges[currentInputEdge].startIdx) {
+                    ctx.strokeStyle = '#e67e22'; // Оранжевый для текущей стороны
+                    ctx.lineWidth = 4;
+                } else {
+                    ctx.strokeStyle = '#007acc';
+                    ctx.lineWidth = 2;
+                }
                 ctx.stroke();
-                ctx.setLineDash([]);
-            }
-
-            // 4. Длины стен (размеры)
-            if (points.length > 1) {
-                ctx.fillStyle = '#fff';
-                ctx.font = '14px Arial';
-                ctx.textAlign = 'center';
                 
-                for (let i = 0; i < points.length; i++) {
-                    let nextIdx = i + 1;
-                    if (nextIdx === points.length) {
-                        if (!isClosed) continue;
-                        nextIdx = 0;
+                // Вывод длины стороны поверх линии
+                if (isClosed) {
+                    const edge = edges[i];
+                    let text = '';
+                    
+                    // Если пользователь ввел размер - показываем его, иначе примерный
+                    if (edge.lengthCm !== null) {
+                        text = edge.lengthCm + ' см';
+                    } else if (scaleFactor !== 1) {
+                        // Адаптивный размер, если ввели хотя бы первую сторону
+                        const pDist = Math.hypot(points[nextIdx].x - points[i].x, points[nextIdx].y - points[i].y);
+                        text = '~' + Math.round(pDist * scaleFactor) + ' см';
                     }
-                    
-                    const p1 = points[i];
-                    const p2 = points[nextIdx];
-                    
-                    const distPixels = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-                    const distMeters = (distPixels * PIXEL_TO_METER).toFixed(2) + ' м';
-                    const midX = (p1.x + p2.x) / 2;
-                    const midY = (p1.y + p2.y) / 2;
-                    
-                    // Подложка под текст периметра
-                    const textWidth = ctx.measureText(distMeters).width;
-                    ctx.fillStyle = 'rgba(30, 30, 30, 0.7)';
-                    ctx.fillRect(midX - textWidth/2 - 2, midY - 22, textWidth + 4, 16);
 
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText(distMeters, midX, midY - 10);
+                    if (text !== '') {
+                        const midX = (points[i].x + points[nextIdx].x) / 2;
+                        const midY = (points[i].y + points[nextIdx].y) / 2;
+                        
+                        ctx.font = 'bold 14px Arial';
+                        const textWidth = ctx.measureText(text).width;
+                        
+                        // Подложка текста
+                        ctx.fillStyle = 'rgba(30, 30, 30, 0.8)';
+                        ctx.fillRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
+                        
+                        // Текст (оранжевый если ввели, белый если еще нет)
+                        ctx.fillStyle = edge.lengthCm !== null ? '#e67e22' : '#ffffff';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(text, midX, midY);
+                    }
                 }
             }
 
-            // 5. Отрисовка углов (точек)
+            // Рисуем углы (точки) и их буквенные обозначения
             points.forEach((p, index) => {
                 ctx.beginPath();
                 
-                if (!isClosed && index === 0 && points.length > 2) {
-                    // Подсветка для замыкания
-                    const dist = Math.hypot(mousePos.x - p.x, mousePos.y - p.y);
-                    ctx.fillStyle = dist < CLOSE_TOLERANCE ? '#00ff00' : '#ffcc00';
-                    ctx.arc(p.x, p.y, dist < CLOSE_TOLERANCE ? 8 : 5, 0, Math.PI * 2);
-                } else if (isClosed && selectedPointIndex === index) {
-                    // Подсветка выбранной точки для диагонали
-                    ctx.fillStyle = '#e67e22';
+                // Анимация/подсветка первой точки для замыкания
+                if (!isClosed && index === 0 && points.length >= 3) {
+                    ctx.fillStyle = '#00ff00';
                     ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-                    // Добавим пульсирующее кольцо
-                    ctx.lineWidth = 2;
-                    ctx.strokeStyle = '#e67e22';
-                    ctx.stroke();
                 } else {
-                    // Обычная точка
                     ctx.fillStyle = '#ffcc00';
-                    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
                 }
                 ctx.fill();
+
+                // Отрисовка букв углов (A, B, C...)
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText(p.letter, p.x + 10, p.y - 10);
             });
         }
 
-        function calculateMetrics() {
-            let perimeterPixels = 0;
-            let areaPixels = 0; 
-
-            for (let i = 0; i < points.length; i++) {
-                let j = (i + 1) % points.length;
-                perimeterPixels += Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
-                areaPixels += points[i].x * points[j].y - points[j].x * points[i].y;
-            }
-
-            areaPixels = Math.abs(areaPixels / 2);
-
-            document.getElementById('perimeter-val').innerText = (perimeterPixels * PIXEL_TO_METER).toFixed(2) + ' м';
-            document.getElementById('area-val').innerText = (areaPixels * (PIXEL_TO_METER * PIXEL_TO_METER)).toFixed(2) + ' м²';
-        }
-
-        function updateMetricsUI() {
-            document.getElementById('corners-val').innerText = points.length;
-            document.getElementById('diagonals-val').innerText = diagonals.length;
-        }
-
+        // Инициализация при старте
         resizeCanvas();
     </script>
 </body>
