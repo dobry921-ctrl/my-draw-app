@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
     <title>ПРО Замер потолков</title>
     <style>
         :root {
@@ -197,46 +198,17 @@
         
         let camera = { x: 0, y: 0, zoom: 1 };
 
-        // --- Улучшенная проверка Telegram WebApp ---
+        // --- Telegram WebApp ---
         function getTelegramWebApp() {
-            // Пытаемся получить объект Telegram.WebApp
-            if (window.Telegram && window.Telegram.WebApp) {
-                return window.Telegram.WebApp;
-            }
-            // Если не найден, пробуем через window.parent (для iframe)
-            try {
-                if (window.parent && window.parent.Telegram && window.parent.Telegram.WebApp) {
-                    return window.parent.Telegram.WebApp;
-                }
-            } catch (e) {}
-            return null;
+            return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
         }
 
-        function isTelegramWebApp() {
-            return getTelegramWebApp() !== null;
-        }
-
-        // Функция отправки данных
-        function sendDataToBot(data) {
+        function requireTelegramWebApp() {
             const webApp = getTelegramWebApp();
-            if (webApp) {
-                webApp.sendData(data);
-                webApp.close();
-                return true;
-            } else {
-                // Попытка отправить через postMessage (для некоторых случаев)
-                try {
-                    if (window.parent) {
-                        window.parent.postMessage({
-                            type: 'web_app_data',
-                            data: data
-                        }, '*');
-                        // Не закрываем окно, так как неизвестно, обработает ли родитель
-                        return true;
-                    }
-                } catch (e) {}
-                return false;
+            if (!webApp) {
+                throw new Error("Telegram WebApp API недоступен. Откройте Draw через кнопку Telegram.");
             }
+            return webApp;
         }
 
         function resizeCanvas() {
@@ -617,85 +589,97 @@
             autoFitCamera(); draw();
         }
 
-        // ----- ФУНКЦИЯ ОТПРАВКИ В БОТ (ИСПРАВЛЕННАЯ) -----
+        function buildPayload() {
+            // Внутренние координаты Draw хранятся в условных единицах canvas.
+            // scaleFactor = сантиметров на одну условную единицу.
+            // Бот хранит координаты в метрах, поэтому переводим cm -> m.
+            const pointsCm = points.map(p => ({
+                x: p.x * scaleFactor,
+                y: p.y * scaleFactor
+            }));
+
+            const pointsM = pointsCm.map(p => ({
+                x: p.x / 100,
+                y: p.y / 100
+            }));
+
+            const sides = edges.map(e => Number(e.lengthCm));
+            const diagonals = selectedDiagonals.map(d => [d.p1, d.p2]);
+
+            return {
+                type: 'drawing',
+                version: 2,
+                points: pointsM,
+                sides_cm: sides,
+                diagonals: diagonals,
+                material: selectedMaterial,
+                color: selectedColor
+            };
+        }
+
         function sendToBot() {
             const sendBtn = document.getElementById('send-btn');
             sendBtn.disabled = true;
 
-            if (!isClosed || points.length < 3) {
-                showToast("Сначала замкните фигуру и введите все размеры!", 3000);
-                sendBtn.disabled = false;
-                return;
-            }
-
-            const pts = points.map(p => ({ x: p.x, y: p.y }));
-            const sides = edges.map(e => e.lengthCm);
-            if (sides.some(s => s === null || s <= 0)) {
-                showToast("Не все стороны имеют корректные размеры!", 3000);
-                sendBtn.disabled = false;
-                return;
-            }
-
-            const payload = {
-                type: 'drawing',
-                points: pts,
-                sides_cm: sides,
-                material: selectedMaterial,
-                color: selectedColor
-            };
-
             try {
-                const data = JSON.stringify(payload);
-                const webApp = getTelegramWebApp();
-                if (webApp) {
-                    webApp.sendData(data);
-                    webApp.close();
-                } else {
-                    // Пробуем альтернативный способ
-                    const sent = sendDataToBot(data);
-                    if (!sent) {
-                        showToast(
-                            "❌ Ошибка: не удалось отправить данные. Проверьте подключение или используйте кнопку «Скопировать данные».", 
-                            5000
-                        );
-                        sendBtn.disabled = false;
-                    }
+                if (!isClosed || points.length < 3) {
+                    throw new Error("Сначала замкните фигуру и введите все размеры.");
                 }
+
+                const sides = edges.map(e => Number(e.lengthCm));
+                if (sides.some(s => !Number.isFinite(s) || s <= 0)) {
+                    throw new Error("Не все стороны имеют корректные размеры.");
+                }
+
+                if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+                    throw new Error("Не удалось определить масштаб фигуры.");
+                }
+
+                const payload = buildPayload();
+                const data = JSON.stringify(payload);
+
+                // Telegram.WebApp.sendData принимает строку; для этого режима
+                // не используем postMessage и не вызываем внешние HTTP-запросы.
+                const byteLength = new TextEncoder().encode(data).length;
+                if (byteLength > 4096) {
+                    throw new Error(`Данные слишком большие (${byteLength} байт). Максимум Telegram — 4096 байт.`);
+                }
+
+                const webApp = requireTelegramWebApp();
+                if (typeof webApp.sendData !== 'function') {
+                    throw new Error("Telegram.WebApp.sendData недоступен в этом режиме запуска.");
+                }
+
+                console.log('Отправка чертежа:', payload);
+                webApp.sendData(data);
             } catch (e) {
-                showToast("Ошибка отправки: " + e.message, 4000);
-                console.error(e);
+                console.error('Ошибка отправки:', e);
+                showToast("❌ " + e.message, 5000);
                 sendBtn.disabled = false;
             }
         }
 
-        // ----- КОПИРОВАНИЕ ДАННЫХ ДЛЯ ОТЛАДКИ -----
         function copyData() {
-            if (!isClosed || points.length < 3) {
-                showToast("Сначала замкните фигуру и введите все размеры!", 3000);
-                return;
+            try {
+                if (!isClosed || points.length < 3) {
+                    throw new Error("Сначала замкните фигуру и введите все размеры.");
+                }
+                const payload = buildPayload();
+                const data = JSON.stringify(payload, null, 2);
+                navigator.clipboard.writeText(data).then(() => {
+                    showToast("✅ Данные скопированы в буфер обмена", 2000);
+                }).catch(() => {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = data;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showToast("✅ Данные скопированы", 2000);
+                });
+            } catch (e) {
+                showToast("❌ " + e.message, 4000);
             }
-            const pts = points.map(p => ({ x: p.x, y: p.y }));
-            const sides = edges.map(e => e.lengthCm);
-            const payload = {
-                type: 'drawing',
-                points: pts,
-                sides_cm: sides,
-                material: selectedMaterial,
-                color: selectedColor
-            };
-            const data = JSON.stringify(payload, null, 2);
-            navigator.clipboard.writeText(data).then(() => {
-                showToast("✅ Данные скопированы в буфер обмена", 2000);
-            }).catch(() => {
-                // fallback
-                const textarea = document.createElement('textarea');
-                textarea.value = data;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                showToast("✅ Данные скопированы", 2000);
-            });
         }
 
         function autoFitCamera() {
@@ -914,10 +898,15 @@
         const webApp = getTelegramWebApp();
         if (webApp) {
             webApp.ready();
-            console.log("Telegram WebApp готов");
+            if (typeof webApp.expand === 'function') webApp.expand();
+            console.log("Telegram WebApp готов", {
+                version: webApp.version,
+                platform: webApp.platform,
+                initDataLength: (webApp.initData || '').length
+            });
         } else {
             console.warn("Telegram WebApp не доступен");
-            showToast("⚠️ Откройте приложение через Telegram", 4000);
+            showToast("⚠️ Откройте Draw через кнопку Telegram", 5000);
         }
     </script>
 </body>
