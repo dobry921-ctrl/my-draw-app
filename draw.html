@@ -1,398 +1,741 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Прототип построения потолков (Easy Ceiling)</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            height: 100vh;
-            background-color: #1e1e1e;
-            color: #fff;
-        }
-        #sidebar {
-            width: 320px;
-            background-color: #2d2d30;
-            padding: 20px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            z-index: 10;
-        }
-        #canvas-container {
-            flex-grow: 1;
-            position: relative;
-            overflow: hidden;
-            background-color: #1e1e1e;
-            cursor: crosshair;
-        }
-        canvas {
-            display: block;
-        }
-        h2 {
-            margin-top: 0;
-            font-size: 1.2rem;
-            color: #007acc;
-        }
-        .btn {
-            background-color: #007acc;
-            color: white;
-            border: none;
-            padding: 10px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-        .btn:hover {
-            background-color: #005f9e;
-        }
-        .btn-danger {
-            background-color: #d13438;
-        }
-        .btn-danger:hover {
-            background-color: #a82a2d;
-        }
-        .btn-warning {
-            background-color: #e67e22;
-        }
-        .btn-warning:hover {
-            background-color: #cf711f;
-        }
-        .info-panel {
-            background-color: #3e3e42;
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-        .info-panel p {
-            margin: 5px 0;
-            display: flex;
-            justify-content: space-between;
-        }
-        .instructions {
-            font-size: 0.85rem;
-            color: #cccccc;
-            line-height: 1.5;
-            background: #252526;
-            padding: 10px;
-            border-left: 3px solid #007acc;
-        }
-        .instructions-diag {
-            border-left: 3px solid #e67e22;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Ceiling Designer — редактор чертежа</title>
+<style>
+:root{--bg:#f4f6f8;--panel:#fff;--line:#d9dee5;--text:#17202a;--muted:#6b7280;--accent:#2563eb;--accent2:#1d4ed8;--danger:#dc2626;--green:#059669}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--text);background:var(--bg);overflow:hidden}
+button,input{font:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:7px;padding:8px 11px}
+button:hover{background:#f5f7fa}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.primary:hover{background:var(--accent2)}
+button.danger{color:var(--danger)}
+.app{height:100%;display:flex;flex-direction:column}
+.topbar{height:54px;background:#20252b;color:#fff;display:flex;align-items:center;padding:0 12px;gap:8px;flex:0 0 auto}
+.brand{font-weight:700;margin-right:12px;white-space:nowrap}
+.topbar button{background:#30363d;color:#fff;border-color:#454c54;padding:7px 10px}
+.topbar button:hover{background:#3b424a}
+.spacer{flex:1}
+.modebar{height:50px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px;gap:8px;flex:0 0 auto}
+.modebar button.active{background:#e8efff;color:var(--accent);border-color:#b9cdfc;font-weight:700}
+.hint{font-size:12px;color:var(--muted);margin-left:10px}
+.workspace{min-height:0;flex:1;display:flex}
+.canvasWrap{position:relative;flex:1;min-width:0;background:#eef1f4}
+#canvas{display:block;width:100%;height:100%;touch-action:none}
+.side{width:350px;background:#fff;border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:300px}
+.sideHead{padding:14px 15px 10px;border-bottom:1px solid var(--line);font-weight:700}
+.sideBody{padding:12px;overflow:auto}
+.section{margin-bottom:18px}
+.section h3{font-size:13px;margin:0 0 9px}
+.row{display:flex;gap:7px;align-items:center;margin:7px 0}
+.row label{font-size:12px;color:var(--muted);min-width:95px}
+.row input{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px}
+.row input:focus{outline:2px solid #dbe7ff;border-color:#8fb0f7}
+.card{border:1px solid var(--line);border-radius:8px;padding:9px;margin-bottom:8px}
+.card.selected{border-color:#8fb0f7;background:#f7faff}
+.dim{display:grid;grid-template-columns:55px 1fr 82px;gap:7px;align-items:center;font-size:13px}
+.dim .name{font-weight:700}
+.dim input{width:100%;padding:6px;border:1px solid var(--line);border-radius:5px}
+.small{font-size:11px;color:var(--muted);line-height:1.4}
+.stat{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.stat div{background:#f7f8fa;border-radius:7px;padding:9px}
+.stat b{display:block;font-size:14px;margin-top:3px}
+.toolbarBottom{position:absolute;left:12px;bottom:12px;display:flex;gap:6px;flex-wrap:wrap;max-width:70%}
+.toolbarBottom button{box-shadow:0 2px 7px #0002}
+.badge{position:absolute;right:12px;bottom:12px;background:#fff;border:1px solid var(--line);padding:7px 9px;border-radius:7px;font-size:12px;box-shadow:0 2px 7px #0001}
+.empty{padding:25px 8px;text-align:center;color:var(--muted);font-size:13px;line-height:1.5}
+@media(max-width:800px){
+ .side{width:310px;min-width:280px}
+ .brand{display:none}
+ .hint{display:none}
+}
+@media(max-width:650px){
+ .workspace{display:block;position:relative}
+ .canvasWrap{height:62%}
+ .side{width:100%;height:38%;border-left:0;border-top:1px solid var(--line)}
+ .topbar{overflow:auto}
+}
+</style>
 </head>
 <body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">CEILING DESIGNER</div>
+    <button id="newBtn">Новый</button>
+    <button id="undoBtn">↶ Отменить</button>
+    <button id="redoBtn">↷ Повторить</button>
+    <button id="deleteBtn">Удалить</button>
+    <button id="fitBtn">По размеру</button>
+    <button id="saveBtn">Сохранить</button>
+    <button id="loadBtn">Открыть</button>
+    <input id="fileInput" type="file" accept=".json,application/json" hidden>
+    <div class="spacer"></div>
+    <span id="zoomLabel">100%</span>
+  </div>
 
-    <div id="sidebar">
-        <h2>Построение потолка</h2>
-        
-        <div class="instructions">
-            <strong>1. Контур:</strong><br>
-            Кликайте, чтобы ставить углы. Для завершения кликните на первую точку (станет зеленой).
-        </div>
-        
-        <div class="instructions instructions-diag">
-            <strong>2. Диагонали (Замер):</strong><br>
-            После завершения контура кликните на один угол, затем на другой, чтобы провести диагональ.
-        </div>
+  <div class="modebar">
+    <button id="drawMode" class="active">Чертёж</button>
+    <button id="dimsMode">Размеры</button>
+    <span class="hint" id="modeHint">Кликните по полю, чтобы добавлять точки. Двойной клик или «Замкнуть» завершает контур.</span>
+  </div>
 
-        <button class="btn btn-warning" onclick="clearDiagonals()">Удалить диагонали</button>
-        <button class="btn btn-danger" onclick="clearCanvas()">Очистить всё</button>
-
-        <div class="info-panel">
-            <strong>Параметры потолка:</strong>
-            <p><span>Периметр:</span> <span id="perimeter-val">0.00 м</span></p>
-            <p><span>Площадь:</span> <span id="area-val">0.00 м²</span></p>
-            <p><span>Углов:</span> <span id="corners-val">0</span></p>
-            <p><span>Диагоналей:</span> <span id="diagonals-val">0</span></p>
-        </div>
+  <div class="workspace">
+    <div class="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div class="toolbarBottom">
+        <button id="closeBtn" class="primary">Замкнуть контур</button>
+        <button id="cancelBtn">Отменить точку</button>
+        <button id="panBtn">Перемещение: ВЫКЛ</button>
+        <button id="gridBtn">Сетка: ВКЛ</button>
+      </div>
+      <div class="badge" id="status">Готово</div>
     </div>
 
-    <div id="canvas-container">
-        <canvas id="draftCanvas"></canvas>
-    </div>
+    <aside class="side">
+      <div class="sideHead" id="sideTitle">Параметры чертежа</div>
+      <div class="sideBody" id="sideBody"></div>
+    </aside>
+  </div>
+</div>
 
-    <script>
-        const canvas = document.getElementById('draftCanvas');
-        const ctx = canvas.getContext('2d');
-        const container = document.getElementById('canvas-container');
+<script>
+(() => {
+'use strict';
 
-        // Масштаб: 1 пиксель = 2 см (для визуализации)
-        const PIXEL_TO_METER = 0.02; 
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const sideBody = document.getElementById('sideBody');
+const sideTitle = document.getElementById('sideTitle');
+const statusEl = document.getElementById('status');
+const zoomLabel = document.getElementById('zoomLabel');
 
-        let points = [];
-        let diagonals = [];
-        let isClosed = false;
-        let mousePos = { x: 0, y: 0 };
-        let selectedPointIndex = null; // Для построения диагоналей
+let W=0,H=0,dpr=1;
+let mode='draw';
+let drawing=true;
+let panMode=false;
+let grid=true;
+let selectedPoint=-1;
+let selectedSegment=-1;
+let mouse={x:0,y:0};
+let drag=null;
+let history=[], future=[];
+let state={
+  points:[],
+  closed:false,
+  zoom:1,
+  ox:0,
+  oy:0
+};
 
-        const CLOSE_TOLERANCE = 15; // Радиус прилипания/клика
+const initial = {
+  points: [],
+  closed:false,
+  zoom:1,
+  ox:0,
+  oy:0
+};
 
-        function resizeCanvas() {
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
-            draw();
-        }
-        window.addEventListener('resize', resizeCanvas);
+function cloneState(){
+  return JSON.parse(JSON.stringify(state));
+}
+function pushHistory(){
+  history.push(cloneState());
+  if(history.length>80) history.shift();
+  future=[];
+  updateButtons();
+}
+function restore(s){
+  state=JSON.parse(JSON.stringify(s));
+  selectedPoint=-1;
+  selectedSegment=-1;
+  render();
+  updatePanel();
+}
+function undo(){
+  if(!history.length)return;
+  future.push(cloneState());
+  restore(history.pop());
+}
+function redo(){
+  if(!future.length)return;
+  history.push(cloneState());
+  restore(future.pop());
+}
+function updateButtons(){
+  document.getElementById('undoBtn').disabled=!history.length;
+  document.getElementById('redoBtn').disabled=!future.length;
+}
 
-        canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            mousePos.x = e.clientX - rect.left;
-            mousePos.y = e.clientY - rect.top;
-            draw(); // Перерисовываем для отображения линии к курсору
-        });
+function resize(){
+  const r=canvas.getBoundingClientRect();
+  dpr=window.devicePixelRatio||1;
+  W=r.width; H=r.height;
+  canvas.width=Math.max(1,Math.round(W*dpr));
+  canvas.height=Math.max(1,Math.round(H*dpr));
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  render();
+}
+window.addEventListener('resize',resize);
 
-        canvas.addEventListener('mousedown', (e) => {
-            // РЕЖИМ 2: ПОСТРОЕНИЕ ДИАГОНАЛЕЙ (после замыкания)
-            if (isClosed) {
-                let clickedIndex = -1;
-                // Ищем, по какому углу кликнули
-                for(let i = 0; i < points.length; i++) {
-                    if(Math.hypot(mousePos.x - points[i].x, mousePos.y - points[i].y) < CLOSE_TOLERANCE) {
-                        clickedIndex = i;
-                        break;
-                    }
-                }
+function worldToScreen(p){
+  return {x:p.x*state.zoom+state.ox, y:p.y*state.zoom+state.oy};
+}
+function screenToWorld(x,y){
+  return {x:(x-state.ox)/state.zoom,y:(y-state.oy)/state.zoom};
+}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function midpoint(a,b){return {x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+function angle(a,b){return Math.atan2(b.y-a.y,b.x-a.x)}
+function fmt(n){
+  return Number(n).toFixed(1).replace('.0','');
+}
+function letters(i){
+  let s='';
+  i++;
+  while(i>0){i--;s=String.fromCharCode(65+i%26)+s;i=Math.floor(i/26)}
+  return s;
+}
+function polygonArea(){
+  if(state.points.length<3)return 0;
+  let s=0;
+  for(let i=0;i<state.points.length;i++){
+    const a=state.points[i],b=state.points[(i+1)%state.points.length];
+    s+=a.x*b.y-b.x*a.y;
+  }
+  return Math.abs(s)/2;
+}
+function perimeter(){
+  if(state.points.length<2)return 0;
+  let s=0;
+  for(let i=0;i<state.points.length-1;i++)s+=distance(state.points[i],state.points[i+1]);
+  if(state.closed && state.points.length>2)s+=distance(state.points.at(-1),state.points[0]);
+  return s;
+}
 
-                if (clickedIndex !== -1) {
-                    if (selectedPointIndex === null) {
-                        // Выбираем первую точку для диагонали
-                        selectedPointIndex = clickedIndex;
-                    } else if (selectedPointIndex === clickedIndex) {
-                        // Отменяем выбор, если кликнули на ту же точку
-                        selectedPointIndex = null; 
-                    } else {
-                        // Проверяем, не является ли линия соседней стеной
-                        const isAdjacent = Math.abs(selectedPointIndex - clickedIndex) === 1 || 
-                                           Math.abs(selectedPointIndex - clickedIndex) === points.length - 1;
-                        
-                        if (!isAdjacent) {
-                            // Проверяем, нет ли уже такой диагонали
-                            const exists = diagonals.some(d => 
-                                (d.p1 === selectedPointIndex && d.p2 === clickedIndex) ||
-                                (d.p2 === selectedPointIndex && d.p1 === clickedIndex)
-                            );
+function drawGrid(){
+  if(!grid)return;
+  ctx.save();
+  ctx.fillStyle='#eef1f4';
+  ctx.fillRect(0,0,W,H);
+  const stepWorld=100;
+  let step=stepWorld*state.zoom;
+  let actual=stepWorld;
+  while(step<18){step*=2;actual*=2}
+  while(step>150){step/=2;actual/=2}
+  const ox=((state.ox%step)+step)%step;
+  const oy=((state.oy%step)+step)%step;
+  ctx.strokeStyle='#dfe3e8';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let x=ox;x<W;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,H)}
+  for(let y=oy;y<H;y+=step){ctx.moveTo(0,y);ctx.lineTo(W,y)}
+  ctx.stroke();
+  ctx.fillStyle='#8b949e';
+  ctx.font='10px Arial';
+  for(let x=ox;x<W;x+=step) if(x>25)ctx.fillText(String(Math.round((x-state.ox)/state.zoom)),x+2,14);
+  for(let y=oy;y<H;y+=step) if(y>15)ctx.fillText(String(Math.round((y-state.oy)/state.zoom)),3,y-3);
+  ctx.restore();
+}
 
-                            if (!exists) {
-                                diagonals.push({ p1: selectedPointIndex, p2: clickedIndex });
-                                updateMetricsUI();
-                            }
-                        }
-                        // Сбрасываем выбор после создания
-                        selectedPointIndex = null; 
-                    }
-                } else {
-                    // Клик в пустоту сбрасывает выбор
-                    selectedPointIndex = null;
-                }
-                draw();
-                return;
-            }
+function drawAxes(){
+  ctx.save();
+  ctx.strokeStyle='#c9ced5';
+  ctx.lineWidth=1;
+  ctx.setLineDash([5,5]);
+  ctx.beginPath();
+  ctx.moveTo(state.ox,0);ctx.lineTo(state.ox,H);
+  ctx.moveTo(0,state.oy);ctx.lineTo(W,state.oy);
+  ctx.stroke();
+  ctx.restore();
+}
 
-            // РЕЖИМ 1: РИСОВАНИЕ КОНТУРА
-            if (points.length > 2) {
-                const distToFirst = Math.hypot(mousePos.x - points[0].x, mousePos.y - points[0].y);
-                if (distToFirst < CLOSE_TOLERANCE) {
-                    isClosed = true;
-                    calculateMetrics();
-                    draw();
-                    return;
-                }
-            }
+function drawDimensions(){
+  if(state.points.length<2)return;
+  const n=state.points.length;
+  const segCount=state.closed?n-1:n-2+1;
+  const count=state.closed?n:n-1;
+  ctx.save();
+  ctx.font='12px Arial';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
 
-            points.push({ x: mousePos.x, y: mousePos.y });
-            updateMetricsUI();
-            draw();
-        });
+  for(let i=0;i<count;i++){
+    const j=(i+1)%n;
+    if(!state.closed && j>=n)continue;
+    const a=worldToScreen(state.points[i]), b=worldToScreen(state.points[j]);
+    const len=distance(state.points[i],state.points[j]);
+    const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1;
+    const nx=-dy/L,ny=dx/L;
+    const off=22;
+    const p1={x:a.x+nx*off,y:a.y+ny*off};
+    const p2={x:b.x+nx*off,y:b.y+ny*off};
+    ctx.strokeStyle=i===selectedSegment?'#2563eb':'#8c959f';
+    ctx.lineWidth=i===selectedSegment?2:1;
+    ctx.beginPath();
+    ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
+    ctx.stroke();
+    const tick=4;
+    ctx.beginPath();
+    ctx.moveTo(p1.x-nx*tick,p1.y-ny*tick);ctx.lineTo(p1.x+nx*tick,p1.y+ny*tick);
+    ctx.moveTo(p2.x-nx*tick,p2.y-ny*tick);ctx.lineTo(p2.x+nx*tick,p2.y+ny*tick);
+    ctx.stroke();
+    let tx=(p1.x+p2.x)/2,ty=(p1.y+p2.y)/2;
+    let rot=Math.atan2(dy,dx);
+    if(rot>Math.PI/2||rot<-Math.PI/2)rot+=Math.PI;
+    ctx.save();
+    ctx.translate(tx,ty);ctx.rotate(rot);
+    const text=fmt(len)+' см';
+    const tw=ctx.measureText(text).width+12;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(-tw/2,-9,tw,18);
+    ctx.fillStyle=i===selectedSegment?'#2563eb':'#374151';
+    ctx.fillText(text,0,0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
 
-        function clearCanvas() {
-            points = [];
-            diagonals = [];
-            isClosed = false;
-            selectedPointIndex = null;
-            document.getElementById('perimeter-val').innerText = '0.00 м';
-            document.getElementById('area-val').innerText = '0.00 м²';
-            updateMetricsUI();
-            draw();
-        }
+function drawPolygon(){
+  const pts=state.points.map(worldToScreen);
+  if(!pts.length)return;
+  ctx.save();
+  if(pts.length>=3){
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);
+    if(state.closed)ctx.closePath();
+    ctx.fillStyle='rgba(37,99,235,.055)';
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);
+  if(state.closed)ctx.closePath();
+  ctx.strokeStyle='#1f2937';
+  ctx.lineWidth=2.2;
+  ctx.stroke();
 
-        function clearDiagonals() {
-            diagonals = [];
-            selectedPointIndex = null;
-            updateMetricsUI();
-            draw();
-        }
+  if(drawing && pts.length){
+    ctx.strokeStyle='#2563eb';
+    ctx.lineWidth=1.5;
+    ctx.setLineDash([6,5]);
+    ctx.beginPath();
+    ctx.moveTo(pts.at(-1).x,pts.at(-1).y);
+    ctx.lineTo(mouse.x,mouse.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
-        function drawGrid() {
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 50) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            }
-            for (let y = 0; y < canvas.height; y += 50) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-            }
-        }
+  pts.forEach((p,i)=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,i===selectedPoint?8:6,0,Math.PI*2);
+    ctx.fillStyle=i===selectedPoint?'#2563eb':'#fff';
+    ctx.fill();
+    ctx.strokeStyle='#1f2937';
+    ctx.lineWidth=2;
+    ctx.stroke();
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawGrid();
+    ctx.fillStyle='#111827';
+    ctx.font='bold 12px Arial';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText(letters(i),p.x,p.y-16);
+  });
+  ctx.restore();
+}
 
-            if (points.length === 0) return;
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawGrid();
+  drawAxes();
+  drawPolygon();
+  if(mode==='dims')drawDimensions();
+  zoomLabel.textContent=Math.round(state.zoom*100)+'%';
+  statusEl.textContent=state.closed?'Контур замкнут':(state.points.length?'Построение: '+state.points.length+' точек':'Готово');
+}
 
-            // 1. Заливка и контур стен
-            ctx.beginPath();
-            ctx.moveTo(points[0].x, points[0].y);
-            for (let i = 1; i < points.length; i++) {
-                ctx.lineTo(points[i].x, points[i].y);
-            }
-            
-            if (isClosed) {
-                ctx.lineTo(points[0].x, points[0].y);
-                ctx.fillStyle = 'rgba(0, 122, 204, 0.15)';
-                ctx.fill();
-            } else {
-                ctx.lineTo(mousePos.x, mousePos.y); // Линия прицела
-            }
-            
-            ctx.strokeStyle = '#007acc';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+function findPoint(x,y){
+  for(let i=state.points.length-1;i>=0;i--){
+    const p=worldToScreen(state.points[i]);
+    if(Math.hypot(p.x-x,p.y-y)<=12)return i;
+  }
+  return -1;
+}
+function pointToSegmentDistance(p,a,b){
+  const vx=b.x-a.x,vy=b.y-a.y;
+  const wx=p.x-a.x,wy=p.y-a.y;
+  const c1=vx*wx+vy*wy;
+  if(c1<=0)return Math.hypot(p.x-a.x,p.y-a.y);
+  const c2=vx*vx+vy*vy;
+  if(c2<=c1)return Math.hypot(p.x-b.x,p.y-b.y);
+  const t=c1/c2;
+  return Math.hypot(p.x-(a.x+t*vx),p.y-(a.y+t*vy));
+}
+function findSegment(x,y){
+  const p=screenToWorld(x,y),n=state.points.length;
+  const count=state.closed?n-1: n-1;
+  let best=-1,bestD=Infinity;
+  for(let i=0;i<count;i++){
+    const j=(i+1)%n;
+    if(!state.closed && j>=n)continue;
+    const d=pointToSegmentDistance(p,state.points[i],state.points[j]);
+    if(d<bestD){bestD=d;best=i}
+  }
+  return bestD*state.zoom<12?best:-1;
+}
 
-            // 2. Отрисовка сохраненных диагоналей
-            if (isClosed) {
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([5, 5]); // Пунктир
-                
-                diagonals.forEach(d => {
-                    const pt1 = points[d.p1];
-                    const pt2 = points[d.p2];
-                    
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#e67e22'; // Оранжевый цвет
-                    ctx.moveTo(pt1.x, pt1.y);
-                    ctx.lineTo(pt2.x, pt2.y);
-                    ctx.stroke();
+canvas.addEventListener('pointerdown',e=>{
+  const r=canvas.getBoundingClientRect();
+  const x=e.clientX-r.left,y=e.clientY-r.top;
+  mouse={x,y};
+  canvas.setPointerCapture(e.pointerId);
 
-                    // Текст длины диагонали
-                    const dist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y) * PIXEL_TO_METER;
-                    const midX = (pt1.x + pt2.x) / 2;
-                    const midY = (pt1.y + pt2.y) / 2;
-                    
-                    ctx.fillStyle = '#e67e22';
-                    ctx.font = 'bold 13px Arial';
-                    ctx.textAlign = 'center';
-                    
-                    // Делаем подложку под текст для читаемости
-                    const text = dist.toFixed(2) + ' м';
-                    const textWidth = ctx.measureText(text).width;
-                    ctx.fillStyle = '#1e1e1e';
-                    ctx.fillRect(midX - textWidth/2 - 2, midY - 12, textWidth + 4, 16);
-                    
-                    ctx.fillStyle = '#e67e22';
-                    ctx.fillText(text, midX, midY);
-                });
-                ctx.setLineDash([]); // Возврат к сплошной линии
-            }
+  if(panMode || e.button===1){
+    drag={type:'pan',x,y,ox:state.ox,oy:state.oy};
+    return;
+  }
 
-            // 3. Линия-предпросмотр для строящейся диагонали
-            if (isClosed && selectedPointIndex !== null) {
-                const startPt = points[selectedPointIndex];
-                ctx.beginPath();
-                ctx.setLineDash([5, 5]);
-                ctx.strokeStyle = 'rgba(230, 126, 34, 0.6)'; // Полупрозрачный оранжевый
-                ctx.moveTo(startPt.x, startPt.y);
-                ctx.lineTo(mousePos.x, mousePos.y);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
+  if(mode==='draw'){
+    const pidx=findPoint(x,y);
+    if(pidx>=0 && !state.closed){
+      if(pidx===0 && state.points.length>=3){
+        closeContour();
+        return;
+      }
+      drag={type:'point',idx:pidx};
+      selectedPoint=pidx;
+      render();
+      return;
+    }
+    if(!state.closed){
+      pushHistory();
+      state.points.push(screenToWorld(x,y));
+      selectedPoint=state.points.length-1;
+      render();
+      updatePanel();
+    } else {
+      selectedPoint=pidx;
+      selectedSegment=findSegment(x,y);
+      render();
+    }
+  } else {
+    selectedPoint=findPoint(x,y);
+    selectedSegment=findSegment(x,y);
+    render();
+    updatePanel();
+  }
+});
 
-            // 4. Длины стен (размеры)
-            if (points.length > 1) {
-                ctx.fillStyle = '#fff';
-                ctx.font = '14px Arial';
-                ctx.textAlign = 'center';
-                
-                for (let i = 0; i < points.length; i++) {
-                    let nextIdx = i + 1;
-                    if (nextIdx === points.length) {
-                        if (!isClosed) continue;
-                        nextIdx = 0;
-                    }
-                    
-                    const p1 = points[i];
-                    const p2 = points[nextIdx];
-                    
-                    const distPixels = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-                    const distMeters = (distPixels * PIXEL_TO_METER).toFixed(2) + ' м';
-                    const midX = (p1.x + p2.x) / 2;
-                    const midY = (p1.y + p2.y) / 2;
-                    
-                    // Подложка под текст периметра
-                    const textWidth = ctx.measureText(distMeters).width;
-                    ctx.fillStyle = 'rgba(30, 30, 30, 0.7)';
-                    ctx.fillRect(midX - textWidth/2 - 2, midY - 22, textWidth + 4, 16);
+canvas.addEventListener('pointermove',e=>{
+  const r=canvas.getBoundingClientRect();
+  const x=e.clientX-r.left,y=e.clientY-r.top;
+  mouse={x,y};
+  if(drag){
+    if(drag.type==='pan'){
+      state.ox=drag.ox+(x-drag.x);
+      state.oy=drag.oy+(y-drag.y);
+    }else if(drag.type==='point'){
+      state.points[drag.idx]=screenToWorld(x,y);
+    }
+    render();
+  }else render();
+});
+canvas.addEventListener('pointerup',()=>{
+  if(drag && drag.type==='point')pushHistoryAfterDrag();
+  drag=null;
+});
+function pushHistoryAfterDrag(){
+  // The current state is already modified; the original state is not retained
+  // here, so moving a point is treated as a single immediate operation.
+  history.push(cloneState());
+  if(history.length>80)history.shift();
+  future=[];
+  updateButtons();
+}
+canvas.addEventListener('dblclick',()=>{
+  if(mode==='draw'&&!state.closed&&state.points.length>=3)closeContour();
+});
 
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText(distMeters, midX, midY - 10);
-                }
-            }
+function closeContour(){
+  if(state.points.length<3){alert('Нужно минимум 3 точки.');return}
+  pushHistory();
+  state.closed=true;
+  drawing=false;
+  selectedPoint=-1;
+  selectedSegment=-1;
+  fitToContent();
+  render();updatePanel();
+}
+function cancelPoint(){
+  if(!state.points.length||state.closed)return;
+  pushHistory();
+  state.points.pop();
+  selectedPoint=state.points.length-1;
+  render();updatePanel();
+}
+function newDrawing(){
+  if(state.points.length && !confirm('Создать новый чертёж? Текущий чертёж будет очищен.'))return;
+  history=[];future=[];
+  state=cloneState(initial);
+  state.ox=W/2;state.oy=H/2;
+  drawing=true;selectedPoint=-1;selectedSegment=-1;
+  mode='draw';
+  setModeButtons();
+  render();updatePanel();updateButtons();
+}
 
-            // 5. Отрисовка углов (точек)
-            points.forEach((p, index) => {
-                ctx.beginPath();
-                
-                if (!isClosed && index === 0 && points.length > 2) {
-                    // Подсветка для замыкания
-                    const dist = Math.hypot(mousePos.x - p.x, mousePos.y - p.y);
-                    ctx.fillStyle = dist < CLOSE_TOLERANCE ? '#00ff00' : '#ffcc00';
-                    ctx.arc(p.x, p.y, dist < CLOSE_TOLERANCE ? 8 : 5, 0, Math.PI * 2);
-                } else if (isClosed && selectedPointIndex === index) {
-                    // Подсветка выбранной точки для диагонали
-                    ctx.fillStyle = '#e67e22';
-                    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-                    // Добавим пульсирующее кольцо
-                    ctx.lineWidth = 2;
-                    ctx.strokeStyle = '#e67e22';
-                    ctx.stroke();
-                } else {
-                    // Обычная точка
-                    ctx.fillStyle = '#ffcc00';
-                    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-                }
-                ctx.fill();
-            });
-        }
+function fitToContent(){
+  if(!state.points.length)return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  state.points.forEach(p=>{minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)});
+  const ww=Math.max(100,maxX-minX),hh=Math.max(100,maxY-minY);
+  const pad=90;
+  state.zoom=Math.min((W-pad*2)/ww,(H-pad*2)/hh);
+  state.zoom=Math.max(.05,Math.min(8,state.zoom));
+  state.ox=W/2-(minX+maxX)/2*state.zoom;
+  state.oy=H/2-(minY+maxY)/2*state.zoom;
+}
 
-        function calculateMetrics() {
-            let perimeterPixels = 0;
-            let areaPixels = 0; 
+function setModeButtons(){
+  document.getElementById('drawMode').classList.toggle('active',mode==='draw');
+  document.getElementById('dimsMode').classList.toggle('active',mode==='dims');
+  document.getElementById('modeHint').textContent=mode==='draw'
+    ?'Кликните по полю, чтобы добавлять точки. Двойной клик или «Замкнуть» завершает контур.'
+    :'Выберите сторону или вершину. Ввод размера масштабирует выбранную сторону с сохранением формы.';
+}
+function updatePanel(){
+  if(mode==='draw'){
+    sideTitle.textContent='Параметры чертежа';
+    if(!state.points.length){
+      sideBody.innerHTML='<div class="empty">Начните построение на поле слева.<br><br>Точки будут автоматически обозначены A, B, C, D…</div>';
+      return;
+    }
+    sideBody.innerHTML=`
+      <div class="section">
+        <h3>Состояние</h3>
+        <div class="stat">
+          <div>Вершин<b>${state.points.length}</b></div>
+          <div>Статус<b>${state.closed?'Замкнут':'Открыт'}</b></div>
+          <div>Площадь<b>${fmt(polygonArea()/10000)} м²</b></div>
+          <div>Периметр<b>${fmt(perimeter()/100)} м</b></div>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Инструменты</h3>
+        <div class="row"><button class="primary" onclick="window.closeContour()">Замкнуть контур</button><button onclick="window.cancelPoint()">Удалить точку</button></div>
+        <div class="small">Единица измерения чертежа — сантиметр. При рисовании 1 единица = 1 см. Масштаб экрана не меняет реальные размеры.</div>
+      </div>
+      <div class="section">
+        <h3>Вершины</h3>
+        ${state.points.map((p,i)=>`
+          <div class="card ${i===selectedPoint?'selected':''}">
+            <div class="dim"><span class="name">${letters(i)}</span><input data-point="${i}" data-axis="x" value="${fmt(p.x)}"><input data-point="${i}" data-axis="y" value="${fmt(p.y)}"></div>
+          </div>`).join('')}
+      </div>`;
+    sideBody.querySelectorAll('input[data-point]').forEach(inp=>{
+      inp.addEventListener('change',()=>{
+        const i=+inp.dataset.point;
+        const axis=inp.dataset.axis;
+        const v=parseFloat(inp.value);
+        if(!Number.isFinite(v))return;
+        pushHistory();
+        state.points[i][axis]=v;
+        render();updatePanel();
+      });
+    });
+  } else {
+    sideTitle.textContent='Размеры';
+    if(!state.points.length){
+      sideBody.innerHTML='<div class="empty">Сначала создайте чертёж.</div>';return;
+    }
+    const n=state.points.length;
+    const count=state.closed?n:n-1;
+    let html=`
+      <div class="section">
+        <h3>Стороны</h3>
+        <div class="small">Введите реальный размер стороны в сантиметрах. Для первой версии редактора изменение размера масштабирует весь контур относительно центра выбранной стороны, сохраняя его пропорции.</div>
+      </div>`;
+    for(let i=0;i<count;i++){
+      const j=(i+1)%n;
+      const len=distance(state.points[i],state.points[j]);
+      html+=`<div class="card ${i===selectedSegment?'selected':''}">
+        <div class="dim"><span class="name">${letters(i)}–${letters(j)}</span>
+          <input type="number" step="0.1" min="0.1" data-seg="${i}" value="${fmt(len)}">
+          <button data-select="${i}">Выбрать</button>
+        </div>
+      </div>`;
+    }
+    html+=`
+      <div class="section">
+        <h3>Диагонали</h3>
+        <div class="small">Диагонали рассчитываются автоматически по текущей геометрии. Они доступны как контрольные размеры.</div>
+        ${buildDiagonalRows()}
+      </div>
+      <div class="section">
+        <h3>Итоги</h3>
+        <div class="stat">
+          <div>Площадь<b>${fmt(polygonArea()/10000)} м²</b></div>
+          <div>Периметр<b>${fmt(perimeter()/100)} м</b></div>
+        </div>
+      </div>`;
+    sideBody.innerHTML=html;
+    sideBody.querySelectorAll('input[data-seg]').forEach(inp=>{
+      inp.addEventListener('change',()=>{
+        const i=+inp.dataset.seg;
+        const target=parseFloat(inp.value);
+        if(!Number.isFinite(target)||target<=0)return;
+        setSegmentLength(i,target);
+      });
+    });
+    sideBody.querySelectorAll('button[data-select]').forEach(b=>{
+      b.addEventListener('click',()=>{
+        selectedSegment=+b.dataset.select;
+        selectedPoint=-1;
+        render();updatePanel();
+      });
+    });
+  }
+}
+function buildDiagonalRows(){
+  if(state.points.length<4)return '<div class="small">Для диагоналей нужно минимум 4 вершины.</div>';
+  let out='';
+  for(let gap=2;gap<state.points.length-1;gap++){
+    for(let i=0;i+gap<state.points.length;i++){
+      const j=i+gap;
+      if(gap===state.points.length-1)continue;
+      const len=distance(state.points[i],state.points[j]);
+      out+=`<div class="card"><div class="dim"><span class="name">${letters(i)}–${letters(j)}</span><span>${fmt(len)} см</span><span></span></div></div>`;
+    }
+  }
+  return out;
+}
 
-            for (let i = 0; i < points.length; i++) {
-                let j = (i + 1) % points.length;
-                perimeterPixels += Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
-                areaPixels += points[i].x * points[j].y - points[j].x * points[i].y;
-            }
+function setSegmentLength(i,target){
+  const n=state.points.length;
+  const j=(i+1)%n;
+  if(!state.closed && j>=n)return;
+  const a=state.points[i],b=state.points[j];
+  const old=distance(a,b);
+  if(old<1e-9)return;
+  pushHistory();
+  const factor=target/old;
+  const cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
+  // Scale the complete polygon around the midpoint of the selected side.
+  // This keeps the contour's angles and proportions while making the
+  // selected side exactly equal to the entered dimension.
+  state.points=state.points.map(p=>({
+    x:cx+(p.x-cx)*factor,
+    y:cy+(p.y-cy)*factor
+  }));
+  selectedSegment=i;
+  fitToContent();
+  render();updatePanel();
+}
 
-            areaPixels = Math.abs(areaPixels / 2);
+function setMode(m){
+  mode=m;
+  if(m==='draw')drawing=!state.closed;
+  else drawing=false;
+  setModeButtons();
+  render();updatePanel();
+}
+document.getElementById('drawMode').onclick=()=>setMode('draw');
+document.getElementById('dimsMode').onclick=()=>setMode('dims');
+document.getElementById('closeBtn').onclick=closeContour;
+document.getElementById('cancelBtn').onclick=cancelPoint;
+document.getElementById('undoBtn').onclick=undo;
+document.getElementById('redoBtn').onclick=redo;
+document.getElementById('newBtn').onclick=newDrawing;
+document.getElementById('fitBtn').onclick=()=>{fitToContent();render()};
+document.getElementById('panBtn').onclick=()=>{
+  panMode=!panMode;
+  document.getElementById('panBtn').textContent='Перемещение: '+(panMode?'ВКЛ':'ВЫКЛ');
+};
+document.getElementById('gridBtn').onclick=()=>{
+  grid=!grid;
+  document.getElementById('gridBtn').textContent='Сетка: '+(grid?'ВКЛ':'ВЫКЛ');
+  render();
+};
+document.getElementById('deleteBtn').onclick=()=>{
+  if(selectedPoint>=0){
+    pushHistory();
+    state.points.splice(selectedPoint,1);
+    if(state.points.length<3)state.closed=false;
+    selectedPoint=-1;
+  }else if(selectedSegment>=0 && state.points.length>2){
+    pushHistory();
+    const j=(selectedSegment+1)%state.points.length;
+    if(state.closed){
+      state.closed=false;
+      drawing=true;
+    }
+    state.points.splice(j,1);
+    selectedSegment=-1;
+  }
+  render();updatePanel();
+};
 
-            document.getElementById('perimeter-val').innerText = (perimeterPixels * PIXEL_TO_METER).toFixed(2) + ' м';
-            document.getElementById('area-val').innerText = (areaPixels * (PIXEL_TO_METER * PIXEL_TO_METER)).toFixed(2) + ' м²';
-        }
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  const x=e.clientX-r.left,y=e.clientY-r.top;
+  const before=screenToWorld(x,y);
+  const factor=e.deltaY<0?1.1:.9;
+  state.zoom=Math.max(.05,Math.min(8,state.zoom*factor));
+  const after=worldToScreen(before);
+  state.ox+=x-after.x;
+  state.oy+=y-after.y;
+  render();
+},{passive:false});
 
-        function updateMetricsUI() {
-            document.getElementById('corners-val').innerText = points.length;
-            document.getElementById('diagonals-val').innerText = diagonals.length;
-        }
+document.getElementById('saveBtn').onclick=()=>{
+  const data={app:'CeilingDesigner',version:1,unit:'cm',state};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ceiling-drawing.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+document.getElementById('loadBtn').onclick=()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!data.state||!Array.isArray(data.state.points))throw new Error('Неверный файл');
+      pushHistory();
+      state=data.state;
+      state.zoom=Number(state.zoom)||1;
+      state.ox=Number(state.ox)||W/2;
+      state.oy=Number(state.oy)||H/2;
+      drawing=!state.closed;
+      fitToContent();
+      render();updatePanel();
+    }catch(err){alert('Не удалось открыть файл: '+err.message)}
+  };
+  reader.readAsText(f);
+  e.target.value='';
+};
 
-        resizeCanvas();
-    </script>
+window.closeContour=closeContour;
+window.cancelPoint=cancelPoint;
+
+function init(){
+  state.ox=window.innerWidth/2;
+  state.oy=Math.max(120,window.innerHeight/2);
+  resize();
+  updatePanel();
+  updateButtons();
+}
+init();
+
+})();
+</script>
 </body>
 </html>
