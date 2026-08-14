@@ -1,1080 +1,398 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Рисуйте чертёж</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прототип построения потолков (Easy Ceiling)</title>
     <style>
-        * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; }
         body {
-            background: #f0f2f5;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+            background-color: #1e1e1e;
+            color: #fff;
+        }
+        #sidebar {
+            width: 320px;
+            background-color: #2d2d30;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
             display: flex;
             flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: max(10px, env(safe-area-inset-top)) 10px max(16px, env(safe-area-inset-bottom));
-            overflow-y: auto;
-            overscroll-behavior: contain;
+            gap: 15px;
+            z-index: 10;
         }
-        #canvasWrap {
-            width: 100%;
-            max-width: 700px;
-            aspect-ratio: 1 / 1;
-            background: #fff;
-            border-radius: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.10);
-            overflow: hidden;
+        #canvas-container {
+            flex-grow: 1;
             position: relative;
-            flex: 0 0 auto;
+            overflow: hidden;
+            background-color: #1e1e1e;
+            cursor: crosshair;
         }
         canvas {
-            width: 100%;
-            height: 100%;
             display: block;
-            border-radius: 16px;
-            cursor: crosshair;
-            touch-action: none;
         }
-        .shape-hint {
-            width: 100%;
-            max-width: 700px;
-            margin-top: 8px;
-            padding: 9px 11px;
-            border-radius: 10px;
-            background: #fff;
-            font-size: 13px;
-            color: #555;
-            text-align: center;
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            color: #007acc;
         }
-        .tabs {
-            width: 100%;
-            max-width: 700px;
-            margin-top: 12px;
-            display: none;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            background: #fff;
-            padding: 5px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,.08);
-        }
-        .tabs.visible { display: grid; }
-        .tab-btn {
-            border: 0;
-            background: transparent;
-            border-radius: 9px;
-            padding: 11px 8px;
-            font-size: 15px;
-            font-weight: 700;
+        .btn {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 10px;
             cursor: pointer;
-            transition: background .2s, color .2s;
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: background 0.2s;
         }
-        .tab-btn.active { background: #3390ec; color: #fff; }
-        .tab-btn:not(.active):hover { background: #e9edf2; }
-
-        #dimensionsPanel {
-            width: 100%;
-            max-width: 700px;
-            margin-top: 12px;
-            background: #fff;
-            border-radius: 12px;
-            padding: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,.08);
-            display: none;
+        .btn:hover {
+            background-color: #005f9e;
         }
-        #dimensionsPanel.visible { display: block; }
-        .panel-title { font-weight: 700; margin-bottom: 8px; }
-
-        .side-input, .diag-input {
-            display: grid;
-            grid-template-columns: 1fr auto auto;
-            align-items: center;
-            gap: 8px;
-            padding: 7px 0;
-            border-bottom: 1px solid #eee;
+        .btn-danger {
+            background-color: #d13438;
         }
-        .side-input:last-child, .diag-input:last-child { border-bottom: 0; }
-        .side-input label, .diag-input label { font-weight: 600; font-size: 15px; }
-        .side-input input, .diag-input input {
-            width: 110px;
-            padding: 8px 10px;
-            font-size: 16px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            text-align: right;
-            background: #fff;
+        .btn-danger:hover {
+            background-color: #a82a2d;
         }
-        .side-input input:focus, .diag-input input:focus { border-color: #3390ec; outline: none; }
-        .side-input .unit, .diag-input .unit { font-size: 14px; color: #666; min-width: 24px; }
-
-        .toolbar {
+        .btn-warning {
+            background-color: #e67e22;
+        }
+        .btn-warning:hover {
+            background-color: #cf711f;
+        }
+        .info-panel {
+            background-color: #3e3e42;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .info-panel p {
+            margin: 5px 0;
             display: flex;
-            gap: 10px;
-            margin-top: 12px;
-            width: 100%;
-            max-width: 700px;
-            flex-wrap: wrap;
+            justify-content: space-between;
         }
-        .toolbar button {
-            padding: 13px 14px;
-            font-size: 16px;
-            border: 0;
-            border-radius: 10px;
-            flex: 1 1 30%;
-            cursor: pointer;
-            font-weight: 650;
-            min-width: 110px;
-            transition: opacity .2s;
+        .instructions {
+            font-size: 0.85rem;
+            color: #cccccc;
+            line-height: 1.5;
+            background: #252526;
+            padding: 10px;
+            border-left: 3px solid #007acc;
         }
-        .toolbar button:disabled { opacity: .42; cursor: not-allowed; }
-        .primary { background: #3390ec; color: #fff; }
-        .danger { background: #f55353; color: #fff; }
-        .success { background: #34a853; color: #fff; }
-        .warning { background: #f5a623; color: #fff; }
-
-        .info {
-            width: 100%;
-            max-width: 700px;
-            margin-top: 8px;
-            font-size: 14px;
-            color: #333;
-            text-align: center;
-            min-height: 20px;
-            line-height: 1.35;
-        }
-        .error-msg {
-            color: #d32f2f;
-            font-size: 13px;
-            margin-top: 8px;
-            display: none;
-        }
-        .error-msg.visible { display: block; }
-
-        @media (max-width: 480px) {
-            body { padding-left: 7px; padding-right: 7px; }
-            .toolbar { gap: 7px; }
-            .toolbar button { min-width: 0; padding: 12px 8px; font-size: 14px; }
-            .side-input input, .diag-input input { width: 100px; }
+        .instructions-diag {
+            border-left: 3px solid #e67e22;
         }
     </style>
 </head>
 <body>
 
-    <!-- Канвас -->
-    <div id="canvasWrap"><canvas id="canvas"></canvas></div>
-    <div class="shape-hint" id="shapeHint">Поставьте минимум 3 точки. Линии и заливка показывают форму фигуры сразу.</div>
+    <div id="sidebar">
+        <h2>Построение потолка</h2>
+        
+        <div class="instructions">
+            <strong>1. Контур:</strong><br>
+            Кликайте, чтобы ставить углы. Для завершения кликните на первую точку (станет зеленой).
+        </div>
+        
+        <div class="instructions instructions-diag">
+            <strong>2. Диагонали (Замер):</strong><br>
+            После завершения контура кликните на один угол, затем на другой, чтобы провести диагональ.
+        </div>
 
-    <!-- Вкладки -->
-    <div class="tabs" id="tabs">
-        <button class="tab-btn active" id="drawingTabBtn" type="button">📐 Чертёж</button>
-        <button class="tab-btn" id="dimensionsTabBtn" type="button">📏 Размеры</button>
+        <button class="btn btn-warning" onclick="clearDiagonals()">Удалить диагонали</button>
+        <button class="btn btn-danger" onclick="clearCanvas()">Очистить всё</button>
+
+        <div class="info-panel">
+            <strong>Параметры потолка:</strong>
+            <p><span>Периметр:</span> <span id="perimeter-val">0.00 м</span></p>
+            <p><span>Площадь:</span> <span id="area-val">0.00 м²</span></p>
+            <p><span>Углов:</span> <span id="corners-val">0</span></p>
+            <p><span>Диагоналей:</span> <span id="diagonals-val">0</span></p>
+        </div>
     </div>
 
-    <!-- Панель ввода размеров и диагоналей -->
-    <div id="dimensionsPanel">
-        <div class="panel-title">Введите длины сторон (см):</div>
-        <div id="sideInputs"></div>
-        <div class="panel-title" style="margin-top:12px;">Диагонали (опционально, см):</div>
-        <div id="diagInputs"></div>
-        <div class="error-msg" id="errorMsg"></div>
+    <div id="canvas-container">
+        <canvas id="draftCanvas"></canvas>
     </div>
 
-    <!-- Статус -->
-    <div class="info" id="status">Нажмите на холст, чтобы поставить точку</div>
+    <script>
+        const canvas = document.getElementById('draftCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
 
-    <!-- Кнопки -->
-    <div class="toolbar">
-        <button id="closeBtn" class="success" disabled>🔒 Замкнуть</button>
-        <button id="undoBtn" class="warning" disabled>↩ Отменить</button>
-        <button id="sendBtn" class="primary" disabled>✅ Отправить</button>
-        <button id="clearBtn" class="danger">🗑 Очистить</button>
-    </div>
+        // Масштаб: 1 пиксель = 2 см (для визуализации)
+        const PIXEL_TO_METER = 0.02; 
 
-<script>
-(function () {
-    'use strict';
+        let points = [];
+        let diagonals = [];
+        let isClosed = false;
+        let mousePos = { x: 0, y: 0 };
+        let selectedPointIndex = null; // Для построения диагоналей
 
-    const tg = window.Telegram?.WebApp || null;
-    if (tg) {
-        try {
-            tg.ready();
-            tg.expand();
-        } catch (_) {}
-    }
+        const CLOSE_TOLERANCE = 15; // Радиус прилипания/клика
 
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const statusEl = document.getElementById('status');
-    const closeBtn = document.getElementById('closeBtn');
-    const undoBtn = document.getElementById('undoBtn');
-    const sendBtn = document.getElementById('sendBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const sideInputs = document.getElementById('sideInputs');
-    const diagInputs = document.getElementById('diagInputs');
-    const errorMsg = document.getElementById('errorMsg');
-    const tabs = document.getElementById('tabs');
-    const drawingTabBtn = document.getElementById('drawingTabBtn');
-    const dimensionsTabBtn = document.getElementById('dimensionsTabBtn');
-    const dimensionsPanel = document.getElementById('dimensionsPanel');
-    const shapeHint = document.getElementById('shapeHint');
-
-    let points = [];
-    let isClosed = false;
-    let sideFields = [];
-    let diagFields = [];
-    let builtPoints = [];
-    let builtSides = [];
-    let builtDiagonals = [];
-    let resizeObserver = null;
-    let activeTab = 'drawing';
-
-    function getLabel(index) {
-        let n = index + 1;
-        let result = '';
-        while (n > 0) {
-            n--;
-            result = String.fromCharCode(65 + (n % 26)) + result;
-            n = Math.floor(n / 26);
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            draw();
         }
-        return result;
-    }
+        window.addEventListener('resize', resizeCanvas);
 
-    function showError(message) {
-        errorMsg.textContent = message;
-        errorMsg.classList.toggle('visible', Boolean(message));
-    }
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+            draw(); // Перерисовываем для отображения линии к курсору
+        });
 
-    function getCanvasSize() {
-        const rect = canvas.getBoundingClientRect();
-        return { width: rect.width, height: rect.height };
-    }
-
-    function resizeCanvas() {
-        const rect = canvas.getBoundingClientRect();
-        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
-        const width = Math.max(1, Math.round(rect.width));
-        const height = Math.max(1, Math.round(rect.height));
-
-        const targetWidth = Math.round(width * dpr);
-        const targetHeight = Math.round(height * dpr);
-
-        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-            canvas.width = targetWidth;
-            canvas.height = targetHeight;
-        }
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-        if (builtPoints.length >= 3) drawBuilt();
-        else drawSketch();
-    }
-
-    // ---- Построение по длинам и диагоналям (Easy Ceiling style) ----
-    function buildFromSidesAndDiagonals(sketchPts, sidesCm, diagCm) {
-        // sidesCm: массив длин сторон [n]
-        // diagCm: объект { "i_j": длина } для некоторых пар (i,j)
-        const n = sidesCm.length;
-        if (n < 3) throw new Error('Минимум 3 стороны.');
-
-        // Проверка на прямоугольник
-        if (n === 4) {
-            const a = sidesCm[0], b = sidesCm[1], c = sidesCm[2], d = sidesCm[3];
-            if (Math.abs(a - c) < 0.001 && Math.abs(b - d) < 0.001) {
-                // Строим прямоугольник без наклона
-                return buildRectangle([a, b]);
-            }
-        }
-
-        // Проверка на ортогональность (все углы близки к 90°)
-        let isOrthogonal = true;
-        const angleTolerance = 8 * Math.PI / 180; // 8 градусов
-        for (let i = 0; i < n; i++) {
-            const prev = sketchPts[(i - 1 + n) % n];
-            const cur = sketchPts[i];
-            const next = sketchPts[(i + 1) % n];
-            const v1 = { x: cur.x - prev.x, y: cur.y - prev.y };
-            const v2 = { x: next.x - cur.x, y: next.y - cur.y };
-            const len1 = Math.hypot(v1.x, v1.y);
-            const len2 = Math.hypot(v2.x, v2.y);
-            if (len1 < 1e-6 || len2 < 1e-6) continue;
-            const dot = v1.x * v2.x + v1.y * v2.y;
-            const cosAngle = dot / (len1 * len2);
-            const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
-            const deviation = Math.abs(angle - Math.PI / 2);
-            if (deviation > angleTolerance && Math.abs(angle - Math.PI) > angleTolerance) {
-                isOrthogonal = false;
-                break;
-            }
-        }
-
-        if (isOrthogonal) {
-            try {
-                const turns = detectTurns(sketchPts);
-                return buildOrthogonalPolygon(sidesCm, turns);
-            } catch (e) {
-                // fallback to relaxation
-            }
-        }
-
-        // Если есть диагонали – используем триангуляцию
-        const diagKeys = Object.keys(diagCm);
-        if (diagKeys.length > 0) {
-            try {
-                return buildFromTriangulation(sketchPts, sidesCm, diagCm);
-            } catch (e) {
-                // fallback
-            }
-        }
-
-        // Общий случай – релаксация
-        return buildByRelaxation(sketchPts, sidesCm);
-    }
-
-    // Строит прямоугольник без наклона
-    function buildRectangle(sidesCm) {
-        const w = sidesCm[0];
-        const h = sidesCm[1];
-        const pts = [
-            { x: 0, y: 0 },
-            { x: w, y: 0 },
-            { x: w, y: h },
-            { x: 0, y: h }
-        ];
-        return pts.map(p => ({ x: p.x / 100, y: p.y / 100 }));
-    }
-
-    // Определяет повороты из эскиза
-    function detectTurns(sketchPts) {
-        const n = sketchPts.length;
-        const turns = [];
-        for (let i = 0; i < n; i++) {
-            const prev = sketchPts[(i - 1 + n) % n];
-            const cur = sketchPts[i];
-            const next = sketchPts[(i + 1) % n];
-            const v1 = { x: cur.x - prev.x, y: cur.y - prev.y };
-            const v2 = { x: next.x - cur.x, y: next.y - cur.y };
-            const cross = v1.x * v2.y - v1.y * v2.x;
-            if (Math.abs(cross) < 1e-6) {
-                turns.push(turns.length > 0 ? turns[turns.length - 1] : 1);
-            } else {
-                turns.push(cross > 0 ? 1 : -1);
-            }
-        }
-        return turns;
-    }
-
-    // Строит ортогональный многоугольник по длинам и поворотам
-    function buildOrthogonalPolygon(sidesCm, turns) {
-        const n = sidesCm.length;
-        const pts = [{ x: 0, y: 0 }];
-        let dir = { x: 1, y: 0 };
-        for (let i = 0; i < n; i++) {
-            const len = sidesCm[i];
-            const nextX = pts[i].x + dir.x * len;
-            const nextY = pts[i].y + dir.y * len;
-            pts.push({ x: nextX, y: nextY });
-            if (i < n - 1) {
-                const t = turns[i];
-                if (t === 1) dir = { x: -dir.y, y: dir.x };
-                else dir = { x: dir.y, y: -dir.x };
-            }
-        }
-        const last = pts[pts.length - 1];
-        const first = pts[0];
-        if (Math.hypot(last.x - first.x, last.y - first.y) > 0.01) {
-            throw new Error('Ортогональный многоугольник не замкнулся.');
-        }
-        pts.pop();
-        const minX = Math.min(...pts.map(p => p.x));
-        const minY = Math.min(...pts.map(p => p.y));
-        return pts.map(p => ({ x: (p.x - minX) / 100, y: (p.y - minY) / 100 }));
-    }
-
-    // Построение по триангуляции (с диагоналями)
-    function buildFromTriangulation(sketchPts, sidesCm, diagCm) {
-        const n = sidesCm.length;
-        // Используем эскиз для получения порядка вершин
-        // Строим последовательно: A(0,0), B(длина AB, 0)
-        const pts = [{ x: 0, y: 0 }];
-        const AB = sidesCm[0];
-        pts.push({ x: AB, y: 0 });
-
-        // Для каждой следующей вершины i (2..n-1) используем стороны и диагонали
-        for (let i = 2; i < n; i++) {
-            // Ищем диагональ от i до какой-то уже построенной вершины j (j < i)
-            let found = false;
-            for (let j = 0; j < i; j++) {
-                const key = `${j}_${i}`;
-                const revKey = `${i}_${j}`;
-                let diagLen = null;
-                if (diagCm[key] !== undefined) diagLen = diagCm[key];
-                else if (diagCm[revKey] !== undefined) diagLen = diagCm[revKey];
-                if (diagLen !== null && diagLen > 0) {
-                    // Строим вершину i, зная расстояние до j и до i-1 (сторона)
-                    const d1 = sidesCm[i-1]; // сторона от i-1 до i
-                    const d2 = diagLen;
-                    const A = pts[j];
-                    const B = pts[i-1];
-                    // Находим точки пересечения окружностей
-                    const dx = B.x - A.x;
-                    const dy = B.y - A.y;
-                    const distAB = Math.hypot(dx, dy);
-                    if (distAB < 1e-9) throw new Error('Совпадающие вершины.');
-                    const a = (d1*d1 - d2*d2 + distAB*distAB) / (2 * distAB);
-                    const h2 = d1*d1 - a*a;
-                    if (h2 < 0) throw new Error(`Невозможно построить треугольник (${j},${i-1},${i}).`);
-                    const h = Math.sqrt(h2);
-                    // Выбираем сторону, ближайшую к эскизу
-                    const x0 = A.x + a * dx / distAB;
-                    const y0 = A.y + a * dy / distAB;
-                    const x1 = x0 + h * (-dy / distAB);
-                    const y1 = y0 + h * (dx / distAB);
-                    const x2 = x0 - h * (-dy / distAB);
-                    const y2 = y0 - h * (dx / distAB);
-                    // Выбираем ту, которая ближе к эскизу
-                    const sx = sketchPts[i].x * 100; // эскиз в см
-                    const sy = sketchPts[i].y * 100;
-                    const d1_ = Math.hypot(x1 - sx, y1 - sy);
-                    const d2_ = Math.hypot(x2 - sx, y2 - sy);
-                    if (d1_ < d2_) {
-                        pts.push({ x: x1, y: y1 });
-                    } else {
-                        pts.push({ x: x2, y: y2 });
+        canvas.addEventListener('mousedown', (e) => {
+            // РЕЖИМ 2: ПОСТРОЕНИЕ ДИАГОНАЛЕЙ (после замыкания)
+            if (isClosed) {
+                let clickedIndex = -1;
+                // Ищем, по какому углу кликнули
+                for(let i = 0; i < points.length; i++) {
+                    if(Math.hypot(mousePos.x - points[i].x, mousePos.y - points[i].y) < CLOSE_TOLERANCE) {
+                        clickedIndex = i;
+                        break;
                     }
-                    found = true;
-                    break;
                 }
-            }
-            if (!found) {
-                // Если диагональ не найдена, используем только стороны (релаксация)
-                throw new Error('Недостаточно диагоналей для точного построения.');
-            }
-        }
 
-        // Проверяем замыкание (последняя сторона)
-        const last = pts[pts.length - 1];
-        const first_ = pts[0];
-        const dx = last.x - first_.x;
-        const dy = last.y - first_.y;
-        const dist = Math.hypot(dx, dy);
-        const target = sidesCm[n-1];
-        if (Math.abs(dist - target) > 0.5) {
-            throw new Error(`Последняя сторона не совпадает: ожидалось ${target}, получено ${dist.toFixed(1)}`);
-        }
+                if (clickedIndex !== -1) {
+                    if (selectedPointIndex === null) {
+                        // Выбираем первую точку для диагонали
+                        selectedPointIndex = clickedIndex;
+                    } else if (selectedPointIndex === clickedIndex) {
+                        // Отменяем выбор, если кликнули на ту же точку
+                        selectedPointIndex = null; 
+                    } else {
+                        // Проверяем, не является ли линия соседней стеной
+                        const isAdjacent = Math.abs(selectedPointIndex - clickedIndex) === 1 || 
+                                           Math.abs(selectedPointIndex - clickedIndex) === points.length - 1;
+                        
+                        if (!isAdjacent) {
+                            // Проверяем, нет ли уже такой диагонали
+                            const exists = diagonals.some(d => 
+                                (d.p1 === selectedPointIndex && d.p2 === clickedIndex) ||
+                                (d.p2 === selectedPointIndex && d.p1 === clickedIndex)
+                            );
 
-        // Переводим в метры и сдвигаем к нулю
-        const minX = Math.min(...pts.map(p => p.x));
-        const minY = Math.min(...pts.map(p => p.y));
-        return pts.map(p => ({ x: (p.x - minX) / 100, y: (p.y - minY) / 100 }));
-    }
-
-    // Релаксация (общий случай)
-    function buildByRelaxation(sketchPts, sidesCm) {
-        const n = sidesCm.length;
-        if (n < 3) throw new Error('Минимум 3 стороны.');
-
-        // Проверка неравенства многоугольника
-        const longest = Math.max(...sidesCm);
-        const sumOthers = sidesCm.reduce((a,b) => a+b, 0) - longest;
-        if (longest >= sumOthers - 1e-9) {
-            throw new Error('Самая длинная сторона слишком велика.');
-        }
-
-        // Масштабируем эскиз
-        let totalSketch = 0;
-        for (let i = 0; i < n; i++) {
-            const a = sketchPts[i];
-            const b = sketchPts[(i+1)%n];
-            totalSketch += Math.hypot(b.x - a.x, b.y - a.y);
-        }
-        const scale = sidesCm.reduce((a,b) => a+b, 0) / totalSketch;
-        let pts = sketchPts.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        const reference = pts.map(p => ({ ...p }));
-
-        const iterations = Math.min(5000, Math.max(1500, n * 400));
-        const shapeWeight = 0.0005;
-
-        for (let iter = 0; iter < iterations; iter++) {
-            for (let i = 1; i < n; i++) {
-                pts[i].x += (reference[i].x - pts[i].x) * shapeWeight;
-                pts[i].y += (reference[i].y - pts[i].y) * shapeWeight;
-            }
-
-            for (let i = 0; i < n; i++) {
-                const j = (i + 1) % n;
-                const a = pts[i], b = pts[j];
-                let dx = b.x - a.x;
-                let dy = b.y - a.y;
-                let dist = Math.hypot(dx, dy);
-                if (dist < 1e-9) {
-                    const angle = (2 * Math.PI * i) / n;
-                    dx = Math.cos(angle);
-                    dy = Math.sin(angle);
-                    dist = 1;
-                }
-                const target = sidesCm[i];
-                const correction = (dist - target) / dist;
-                const cx = dx * correction;
-                const cy = dy * correction;
-
-                if (i === 0) {
-                    b.x -= cx;
-                    b.y -= cy;
-                } else if (j === 0) {
-                    a.x += cx;
-                    a.y += cy;
+                            if (!exists) {
+                                diagonals.push({ p1: selectedPointIndex, p2: clickedIndex });
+                                updateMetricsUI();
+                            }
+                        }
+                        // Сбрасываем выбор после создания
+                        selectedPointIndex = null; 
+                    }
                 } else {
-                    a.x += cx * 0.5;
-                    a.y += cy * 0.5;
-                    b.x -= cx * 0.5;
-                    b.y -= cy * 0.5;
+                    // Клик в пустоту сбрасывает выбор
+                    selectedPointIndex = null;
+                }
+                draw();
+                return;
+            }
+
+            // РЕЖИМ 1: РИСОВАНИЕ КОНТУРА
+            if (points.length > 2) {
+                const distToFirst = Math.hypot(mousePos.x - points[0].x, mousePos.y - points[0].y);
+                if (distToFirst < CLOSE_TOLERANCE) {
+                    isClosed = true;
+                    calculateMetrics();
+                    draw();
+                    return;
                 }
             }
 
-            const ax = pts[0].x, ay = pts[0].y;
-            for (const p of pts) {
-                p.x -= ax;
-                p.y -= ay;
-            }
-
-            let maxErr = 0;
-            for (let i = 0; i < n; i++) {
-                const a = pts[i], b = pts[(i+1)%n];
-                const actual = Math.hypot(b.x - a.x, b.y - a.y);
-                maxErr = Math.max(maxErr, Math.abs(actual - sidesCm[i]));
-            }
-            if (maxErr < 0.0005) break;
-        }
-
-        // Дополнительная подгонка
-        for (let iter = 0; iter < 200; iter++) {
-            for (let i = 0; i < n; i++) {
-                const j = (i + 1) % n;
-                const a = pts[i], b = pts[j];
-                let dx = b.x - a.x;
-                let dy = b.y - a.y;
-                let dist = Math.hypot(dx, dy);
-                if (dist < 1e-9) {
-                    const angle = (2 * Math.PI * i) / n;
-                    dx = Math.cos(angle);
-                    dy = Math.sin(angle);
-                    dist = 1;
-                }
-                const target = sidesCm[i];
-                const correction = (dist - target) / dist;
-                const cx = dx * correction;
-                const cy = dy * correction;
-
-                if (i === 0) {
-                    b.x -= cx;
-                    b.y -= cy;
-                } else if (j === 0) {
-                    a.x += cx;
-                    a.y += cy;
-                } else {
-                    a.x += cx * 0.5;
-                    a.y += cy * 0.5;
-                    b.x -= cx * 0.5;
-                    b.y -= cy * 0.5;
-                }
-            }
-            const ax = pts[0].x, ay = pts[0].y;
-            for (const p of pts) {
-                p.x -= ax;
-                p.y -= ay;
-            }
-            let maxErr = 0;
-            for (let i = 0; i < n; i++) {
-                const a = pts[i], b = pts[(i+1)%n];
-                const actual = Math.hypot(b.x - a.x, b.y - a.y);
-                maxErr = Math.max(maxErr, Math.abs(actual - sidesCm[i]));
-            }
-            if (maxErr < 0.0001) break;
-        }
-
-        const minX = Math.min(...pts.map(p => p.x));
-        const minY = Math.min(...pts.map(p => p.y));
-        return pts.map(p => ({ x: (p.x - minX) / 100, y: (p.y - minY) / 100 }));
-    }
-
-    // ---- Отрисовка ----
-    function drawLivePolygon() {
-        if (points.length < 2) return;
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-        ctx.strokeStyle = '#3390ec';
-        ctx.lineWidth = 3;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.stroke();
-        ctx.restore();
-
-        points.forEach((p, i) => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#1a73e8';
-            ctx.fill();
-            ctx.fillStyle = '#000';
-            ctx.font = 'bold 14px system-ui';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText(getLabel(i), p.x, p.y - 10);
+            points.push({ x: mousePos.x, y: mousePos.y });
+            updateMetricsUI();
+            draw();
         });
-    }
 
-    function drawSketch() {
-        const { width, height } = getCanvasSize();
-        ctx.clearRect(0, 0, width, height);
-
-        if (points.length === 0) {
-            statusEl.textContent = 'Нажмите на холст, чтобы поставить точку';
-            closeBtn.disabled = true;
-            undoBtn.disabled = true;
-            sendBtn.disabled = true;
-            return;
+        function clearCanvas() {
+            points = [];
+            diagonals = [];
+            isClosed = false;
+            selectedPointIndex = null;
+            document.getElementById('perimeter-val').innerText = '0.00 м';
+            document.getElementById('area-val').innerText = '0.00 м²';
+            updateMetricsUI();
+            draw();
         }
 
-        drawLivePolygon();
+        function clearDiagonals() {
+            diagonals = [];
+            selectedPointIndex = null;
+            updateMetricsUI();
+            draw();
+        }
 
-        if (isClosed) {
-            if (points.length >= 3) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.moveTo(points[points.length-1].x, points[points.length-1].y);
+        function drawGrid() {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 50) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 50) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+
+            if (points.length === 0) return;
+
+            // 1. Заливка и контур стен
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            
+            if (isClosed) {
                 ctx.lineTo(points[0].x, points[0].y);
-                ctx.strokeStyle = '#3390ec';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-                ctx.closePath();
-                ctx.fillStyle = 'rgba(51,144,236,.10)';
+                ctx.fillStyle = 'rgba(0, 122, 204, 0.15)';
                 ctx.fill();
-                ctx.restore();
-            }
-
-            statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между вкладками.';
-            shapeHint.textContent = 'На вкладке «Чертёж» – форма, на «Размеры» – ввод длин и диагоналей.';
-            closeBtn.disabled = true;
-            if (!sideFields.length) buildInputs();
-            tabs.classList.add('visible');
-            if (activeTab === 'dimensions') {
-                dimensionsPanel.classList.add('visible');
             } else {
-                dimensionsPanel.classList.remove('visible');
+                ctx.lineTo(mousePos.x, mousePos.y); // Линия прицела
             }
-        } else {
-            statusEl.textContent = points.length >= 3
-                ? `Точек: ${points.length}. Замкните кнопкой.`
-                : `Точек: ${points.length}. Добавьте ещё ${3 - points.length} точ${points.length === 1 ? 'ку' : 'ки'}.`;
-            shapeHint.textContent = points.length >= 3
-                ? 'Нажмите "Замкнуть", чтобы зафиксировать.'
-                : 'Поставьте минимум 3 точки.';
-            closeBtn.disabled = points.length < 3;
-            tabs.classList.remove('visible');
-            dimensionsPanel.classList.remove('visible');
-            sideFields = [];
-            diagFields = [];
-            sideInputs.innerHTML = '';
-            diagInputs.innerHTML = '';
-            sendBtn.disabled = true;
-        }
+            
+            ctx.strokeStyle = '#007acc';
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
-        undoBtn.disabled = points.length === 0;
-        if (!isClosed) sendBtn.disabled = true;
-    }
-
-    function drawBuilt() {
-        if (builtPoints.length < 3) return;
-
-        const { width: w, height: h } = getCanvasSize();
-        ctx.clearRect(0, 0, w, h);
-
-        const xs = builtPoints.map(p => p.x);
-        const ys = builtPoints.map(p => p.y);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
-        const rangeX = Math.max(maxX - minX, 1e-9);
-        const rangeY = Math.max(maxY - minY, 1e-9);
-
-        const margin = 48;
-        const scale = Math.min(
-            (w - 2 * margin) / rangeX,
-            (h - 2 * margin) / rangeY
-        );
-        const offsetX = (w - rangeX * scale) / 2 - minX * scale;
-        const offsetY = (h - rangeY * scale) / 2 - minY * scale;
-
-        const screen = p => ({
-            x: p.x * scale + offsetX,
-            y: p.y * scale + offsetY
-        });
-
-        ctx.beginPath();
-        const first = screen(builtPoints[0]);
-        ctx.moveTo(first.x, first.y);
-        for (let i = 1; i < builtPoints.length; i++) {
-            const p = screen(builtPoints[i]);
-            ctx.lineTo(p.x, p.y);
-        }
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(26,115,232,.12)';
-        ctx.fill();
-        ctx.strokeStyle = '#1a73e8';
-        ctx.lineWidth = 3;
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-
-        const n = builtPoints.length;
-        for (let i = 0; i < n; i++) {
-            const p = screen(builtPoints[i]);
-            const p2 = screen(builtPoints[(i + 1) % n]);
-
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#1a73e8';
-            ctx.fill();
-
-            ctx.fillStyle = '#000';
-            ctx.font = 'bold 14px system-ui';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText(getLabel(i), p.x, p.y - 10);
-
-            const mx = (p.x + p2.x) / 2;
-            const my = (p.y + p2.y) / 2;
-            const dx = p2.x - p.x;
-            const dy = p2.y - p.y;
-            const len = Math.hypot(dx, dy);
-
-            if (len > 32) {
-                const nx = -dy / len * 14;
-                const ny = dx / len * 14;
-                ctx.fillStyle = '#d32f2f';
-                ctx.font = '12px system-ui';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(`${builtSides[i].toFixed(1)} см`, mx + nx, my + ny);
-            }
-        }
-
-        // Рисуем диагонали, если есть
-        if (builtDiagonals && builtDiagonals.length > 0) {
-            for (const d of builtDiagonals) {
-                const i = d.i, j = d.j;
-                const p1 = screen(builtPoints[i]);
-                const p2 = screen(builtPoints[j]);
-                ctx.save();
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.strokeStyle = '#2e7d32';
+            // 2. Отрисовка сохраненных диагоналей
+            if (isClosed) {
                 ctx.lineWidth = 1.5;
-                ctx.setLineDash([5, 5]);
-                ctx.stroke();
-                ctx.restore();
-                // Подпись диагонали
-                const mx = (p1.x + p2.x) / 2;
-                const my = (p1.y + p2.y) / 2;
-                const dx = p2.x - p1.x;
-                const dy = p2.y - p1.y;
-                const len = Math.hypot(dx, dy);
-                if (len > 32) {
-                    const nx = -dy / len * 14;
-                    const ny = dx / len * 14;
-                    ctx.fillStyle = '#2e7d32';
-                    ctx.font = '10px system-ui';
+                ctx.setLineDash([5, 5]); // Пунктир
+                
+                diagonals.forEach(d => {
+                    const pt1 = points[d.p1];
+                    const pt2 = points[d.p2];
+                    
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#e67e22'; // Оранжевый цвет
+                    ctx.moveTo(pt1.x, pt1.y);
+                    ctx.lineTo(pt2.x, pt2.y);
+                    ctx.stroke();
+
+                    // Текст длины диагонали
+                    const dist = Math.hypot(pt2.x - pt1.x, pt2.y - pt1.y) * PIXEL_TO_METER;
+                    const midX = (pt1.x + pt2.x) / 2;
+                    const midY = (pt1.y + pt2.y) / 2;
+                    
+                    ctx.fillStyle = '#e67e22';
+                    ctx.font = 'bold 13px Arial';
                     ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(`${d.label} = ${d.value.toFixed(1)} см`, mx + nx, my + ny);
+                    
+                    // Делаем подложку под текст для читаемости
+                    const text = dist.toFixed(2) + ' м';
+                    const textWidth = ctx.measureText(text).width;
+                    ctx.fillStyle = '#1e1e1e';
+                    ctx.fillRect(midX - textWidth/2 - 2, midY - 12, textWidth + 4, 16);
+                    
+                    ctx.fillStyle = '#e67e22';
+                    ctx.fillText(text, midX, midY);
+                });
+                ctx.setLineDash([]); // Возврат к сплошной линии
+            }
+
+            // 3. Линия-предпросмотр для строящейся диагонали
+            if (isClosed && selectedPointIndex !== null) {
+                const startPt = points[selectedPointIndex];
+                ctx.beginPath();
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = 'rgba(230, 126, 34, 0.6)'; // Полупрозрачный оранжевый
+                ctx.moveTo(startPt.x, startPt.y);
+                ctx.lineTo(mousePos.x, mousePos.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // 4. Длины стен (размеры)
+            if (points.length > 1) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                
+                for (let i = 0; i < points.length; i++) {
+                    let nextIdx = i + 1;
+                    if (nextIdx === points.length) {
+                        if (!isClosed) continue;
+                        nextIdx = 0;
+                    }
+                    
+                    const p1 = points[i];
+                    const p2 = points[nextIdx];
+                    
+                    const distPixels = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                    const distMeters = (distPixels * PIXEL_TO_METER).toFixed(2) + ' м';
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    
+                    // Подложка под текст периметра
+                    const textWidth = ctx.measureText(distMeters).width;
+                    ctx.fillStyle = 'rgba(30, 30, 30, 0.7)';
+                    ctx.fillRect(midX - textWidth/2 - 2, midY - 22, textWidth + 4, 16);
+
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(distMeters, midX, midY - 10);
                 }
             }
-        }
 
-        statusEl.textContent = '✅ Фигура построена. Можно отправлять.';
-        sendBtn.disabled = false;
-    }
-
-    function rebuildFigure() {
-        showError('');
-
-        // Считываем стороны
-        const sides = [];
-        for (const field of sideFields) {
-            const raw = field.input.value.trim().replace(',', '.');
-            const value = Number(raw);
-            if (!Number.isFinite(value) || value <= 0) {
-                showError('Заполните все поля сторон положительными числами.');
-                sendBtn.disabled = true;
-                return;
-            }
-            sides.push(value);
-        }
-
-        if (sides.length !== points.length) {
-            showError('Количество длин сторон не совпадает с количеством вершин.');
-            sendBtn.disabled = true;
-            return;
-        }
-
-        // Считываем диагонали
-        const diagObj = {};
-        for (const field of diagFields) {
-            const raw = field.input.value.trim().replace(',', '.');
-            if (raw === '') continue;
-            const value = Number(raw);
-            if (!Number.isFinite(value) || value <= 0) {
-                showError('Диагонали должны быть положительными числами (или пустыми).');
-                sendBtn.disabled = true;
-                return;
-            }
-            diagObj[field.key] = value;
-        }
-
-        try {
-            const result = buildFromSidesAndDiagonals(points, sides, diagObj);
-            builtPoints = result;
-            builtSides = sides.slice();
-            // Сохраняем диагонали для отрисовки
-            builtDiagonals = [];
-            for (const key in diagObj) {
-                const parts = key.split('_');
-                const i = parseInt(parts[0]);
-                const j = parseInt(parts[1]);
-                builtDiagonals.push({ i, j, value: diagObj[key], label: `${getLabel(i)}–${getLabel(j)}` });
-            }
-            drawBuilt();
-        } catch (e) {
-            builtPoints = [];
-            builtSides = [];
-            builtDiagonals = [];
-            sendBtn.disabled = true;
-            showError(e?.message || 'Не удалось построить фигуру.');
-            drawSketch();
-        }
-    }
-
-    function buildInputs() {
-        const n = points.length;
-        if (sideFields.length === n) return;
-
-        sideInputs.innerHTML = '';
-        diagInputs.innerHTML = '';
-        sideFields = [];
-        diagFields = [];
-
-        // Стороны
-        for (let i = 0; i < n; i++) {
-            const j = (i + 1) % n;
-            const div = document.createElement('div');
-            div.className = 'side-input';
-
-            const label = document.createElement('label');
-            label.textContent = `${getLabel(i)}–${getLabel(j)}`;
-
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.autocomplete = 'off';
-            input.inputMode = 'decimal';
-            input.placeholder = 'см';
-
-            const unit = document.createElement('span');
-            unit.className = 'unit';
-            unit.textContent = 'см';
-
-            div.append(label, input, unit);
-            sideInputs.appendChild(div);
-            sideFields.push({ input, label: `${getLabel(i)}–${getLabel(j)}` });
-
-            input.addEventListener('input', () => {
-                if (isClosed) rebuildFigure();
+            // 5. Отрисовка углов (точек)
+            points.forEach((p, index) => {
+                ctx.beginPath();
+                
+                if (!isClosed && index === 0 && points.length > 2) {
+                    // Подсветка для замыкания
+                    const dist = Math.hypot(mousePos.x - p.x, mousePos.y - p.y);
+                    ctx.fillStyle = dist < CLOSE_TOLERANCE ? '#00ff00' : '#ffcc00';
+                    ctx.arc(p.x, p.y, dist < CLOSE_TOLERANCE ? 8 : 5, 0, Math.PI * 2);
+                } else if (isClosed && selectedPointIndex === index) {
+                    // Подсветка выбранной точки для диагонали
+                    ctx.fillStyle = '#e67e22';
+                    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                    // Добавим пульсирующее кольцо
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#e67e22';
+                    ctx.stroke();
+                } else {
+                    // Обычная точка
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                }
+                ctx.fill();
             });
         }
 
-        // Диагонали (все пары несмежных)
-        for (let i = 0; i < n; i++) {
-            for (let j = i+2; j < n; j++) {
-                if (i === 0 && j === n-1) continue; // не диагональ (это сторона)
-                const div = document.createElement('div');
-                div.className = 'diag-input';
+        function calculateMetrics() {
+            let perimeterPixels = 0;
+            let areaPixels = 0; 
 
-                const label = document.createElement('label');
-                label.textContent = `${getLabel(i)}–${getLabel(j)}`;
-
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.autocomplete = 'off';
-                input.inputMode = 'decimal';
-                input.placeholder = 'см (опц.)';
-
-                const unit = document.createElement('span');
-                unit.className = 'unit';
-                unit.textContent = 'см';
-
-                div.append(label, input, unit);
-                diagInputs.appendChild(div);
-                const key = `${i}_${j}`;
-                diagFields.push({ input, key, label: `${getLabel(i)}–${getLabel(j)}` });
-
-                input.addEventListener('input', () => {
-                    if (isClosed) rebuildFigure();
-                });
+            for (let i = 0; i < points.length; i++) {
+                let j = (i + 1) % points.length;
+                perimeterPixels += Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
+                areaPixels += points[i].x * points[j].y - points[j].x * points[i].y;
             }
-        }
-    }
 
-    function addPoint(x, y) {
-        if (isClosed) return;
-        points.push({ x, y });
-        builtPoints = [];
-        builtSides = [];
-        builtDiagonals = [];
-        drawSketch();
-    }
+            areaPixels = Math.abs(areaPixels / 2);
 
-    function closeFigure() {
-        if (isClosed || points.length < 3) return;
-
-        for (let i = 0; i < points.length; i++) {
-            const a = points[i];
-            const b = points[(i + 1) % points.length];
-            if (Math.hypot(a.x - b.x, a.y - b.y) < 2) {
-                showError(`Слишком короткая сторона ${getLabel(i)}–${getLabel((i + 1) % points.length)}.`);
-                return;
-            }
+            document.getElementById('perimeter-val').innerText = (perimeterPixels * PIXEL_TO_METER).toFixed(2) + ' м';
+            document.getElementById('area-val').innerText = (areaPixels * (PIXEL_TO_METER * PIXEL_TO_METER)).toFixed(2) + ' м²';
         }
 
-        isClosed = true;
-        builtPoints = [];
-        builtSides = [];
-        builtDiagonals = [];
-        showError('');
-        drawSketch();
-        setActiveTab('dimensions');
-    }
-
-    function undoLastPoint() {
-        if (points.length === 0) return;
-        points.pop();
-        isClosed = false;
-        builtPoints = [];
-        builtSides = [];
-        builtDiagonals = [];
-        sideFields = [];
-        diagFields = [];
-        sideInputs.innerHTML = '';
-        diagInputs.innerHTML = '';
-        showError('');
-        tabs.classList.remove('visible');
-        dimensionsPanel.classList.remove('visible');
-        drawSketch();
-    }
-
-    function clearAll() {
-        if (points.length === 0) return;
-        if (!window.confirm('Удалить весь чертёж?')) return;
-        points = [];
-        isClosed = false;
-        sideFields = [];
-        diagFields = [];
-        builtPoints = [];
-        builtSides = [];
-        builtDiagonals = [];
-        sideInputs.innerHTML = '';
-        diagInputs.innerHTML = '';
-        showError('');
-        tabs.classList.remove('visible');
-        dimensionsPanel.classList.remove('visible');
-        drawSketch();
-    }
-
-    function getPointerPosition(event) {
-        const rect = canvas.getBoundingClientRect();
-        return {
-            x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
-            y: Math.max(0, Math.min(rect.height, event.clientY - rect.top))
-        };
-    }
-
-    canvas.addEventListener('pointerdown', event => {
-        if (isClosed) return;
-        event.preventDefault();
-        try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
-        const p = getPointerPosition(event);
-        addPoint(p.x, p.y);
-    });
-
-    function setActiveTab(tab) {
-        activeTab = tab;
-        const isDrawing = (tab === 'drawing');
-        drawingTabBtn.classList.toggle('active', isDrawing);
-        dimensionsTabBtn.classList.toggle('active', !isDrawing);
-        if (isDrawing) {
-            dimensionsPanel.classList.remove('visible');
-        } else {
-            if (isClosed) {
-                dimensionsPanel.classList.add('visible');
-                if (builtPoints.length >= 3) drawBuilt();
-                else if (isClosed) drawSketch();
-            }
+        function updateMetricsUI() {
+            document.getElementById('corners-val').innerText = points.length;
+            document.getElementById('diagonals-val').innerText = diagonals.length;
         }
+
         resizeCanvas();
-    }
-
-    drawingTabBtn.addEventListener('click', () => setActiveTab('drawing'));
-    dimensionsTabBtn.addEventListener('click', () => {
-        if (isClosed) setActiveTab('dimensions');
-    });
-
-    closeBtn.addEventListener('click', closeFigure);
-    undoBtn.addEventListener('click', undoLastPoint);
-    clearBtn.addEventListener('click', clearAll);
-
-    sendBtn.addEventListener('click', () => {
-        if (builtPoints.length < 3 || builtSides.length !== builtPoints.length) {
-            window.alert('Сначала введите корректные размеры и дождитесь построения фигуры.');
-            return;
-        }
-
-        const data = {
-            type: 'drawing',
-            version: 2,
-            units: 'm',
-            points: builtPoints.map(p => ({
-                x: Number(p.x.toFixed(6)),
-                y: Number(p.y.toFixed(6))
-            })),
-            sides_cm: builtSides.map(s => Number(s.toFixed(3)))
-        };
-
-        try {
-            if (tg) {
-                tg.sendData(JSON.stringify(data));
-                setTimeout(() => {
-                    try { tg.close(); } catch (_) {}
-                }, 350);
-            } else {
-                window.alert('Telegram WebApp не обнаружен.\nДанные:\n' + JSON.stringify(data, null, 2));
-            }
-        } catch (e) {
-            window.alert('Ошибка отправки: ' + (e?.message || e));
-        }
-    });
-
-    window.addEventListener('resize', resizeCanvas);
-    if ('ResizeObserver' in window) {
-        resizeObserver = new ResizeObserver(() => resizeCanvas());
-        resizeObserver.observe(document.getElementById('canvasWrap'));
-    }
-
-    resizeCanvas();
-    drawSketch();
-})();
-</script>
+    </script>
 </body>
 </html>
