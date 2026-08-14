@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Мобильный замер потолков (Адаптивный)</title>
+    <title>Универсальный замер потолков</title>
     <style>
         :root {
             --bg-color: #f0f2f5;
@@ -26,7 +26,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            height: 100dvh; 
+            height: 100dvh; /* Поддержка экранов мобильных браузеров */
         }
 
         /* Верхняя панель */
@@ -75,7 +75,8 @@
         #canvas-container {
             flex-grow: 1;
             position: relative;
-            touch-action: none; 
+            touch-action: none; /* Запрещает браузеру скроллить страницу при рисовании */
+            width: 100%;
         }
         canvas {
             display: block;
@@ -96,6 +97,7 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
             display: none;
             z-index: 5;
+            white-space: nowrap;
         }
 
         /* Компактная нижняя панель ввода */
@@ -118,6 +120,7 @@
             font-weight: bold;
             color: var(--text-dark);
             white-space: nowrap;
+            font-size: 1.1rem;
         }
 
         #side-input {
@@ -129,7 +132,7 @@
             border-radius: 6px;
             font-size: 1.1rem;
             outline: none;
-            min-width: 0;
+            min-width: 0; /* Чтобы инпут не вылезал за экран на узких дисплеях */
         }
         #side-input:focus { border-color: var(--primary); }
 
@@ -152,6 +155,7 @@
             pointer-events: none;
             text-align: center;
             width: 80%;
+            max-width: 300px;
             z-index: 5;
         }
     </style>
@@ -164,7 +168,7 @@
             <span id="status-text">Черчение контура</span>
         </div>
         <div class="top-buttons">
-            <button class="btn btn-outline" id="undo-btn" onclick="undoPoint()">Отмена</button>
+            <button class="btn btn-outline" id="undo-btn" onclick="undoPoint()" style="display: none;">Отмена</button>
             <button class="btn btn-danger" onclick="resetAll()">Сброс</button>
         </div>
     </div>
@@ -179,7 +183,7 @@
     <!-- Компактная панель ввода в одну строку -->
     <div id="bottom-input-bar">
         <div id="side-label">A-B =</div>
-        <input type="number" inputmode="numeric" id="side-input" placeholder="см">
+        <input type="number" inputmode="decimal" id="side-input" placeholder="см">
         <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
     </div>
 
@@ -199,16 +203,19 @@
         let points = [];
         let edges = []; 
         let isClosed = false;
-        let scaleFactor = 1; // см в 1 пикселе
+        let scaleFactor = 1; 
         let currentInputEdge = 0; 
-        let state = 'DRAWING'; // DRAWING, INPUT_SIDES, DONE
+        let state = 'DRAWING'; // Возможные состояния: DRAWING, INPUT_SIDES, DONE
 
+        // Установка размеров холста
         function resizeCanvas() {
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
+            canvas.width = container.clientWidth || window.innerWidth;
+            canvas.height = container.clientHeight || window.innerHeight;
             draw();
         }
         window.addEventListener('resize', resizeCanvas);
+        // Запуск ресайза при старте с небольшой задержкой для мобильных браузеров
+        setTimeout(resizeCanvas, 100);
 
         function showToast(msg, duration = 3000) {
             toast.innerText = msg;
@@ -230,21 +237,17 @@
             if (points.length < 2) return true;
             
             const lastPoint = points[points.length - 1];
-            // Проверяем новую линию (lastPoint -> newPoint) со всеми существующими линиями
-            // Если это замыкание, мы не проверяем пересечение с первой линией в её начале
-            
             let limit = isClosing ? points.length - 2 : points.length - 1;
             
             for (let i = 0; i < limit; i++) {
                 const p1 = points[i];
                 const p2 = points[i+1];
                 
-                // Смежные линии имеют общую точку, их не проверяем на классическое пересечение
                 if (p2 === lastPoint) continue;
                 if (isClosing && p1 === newPoint) continue;
 
                 if (doIntersect(lastPoint, newPoint, p1, p2)) {
-                    return false; // Найдено пересечение
+                    return false; 
                 }
             }
             return true;
@@ -256,14 +259,16 @@
             return ALPHABET[Math.floor(index / 26) - 1] + ALPHABET[index % 26];
         }
 
+        // pointerdown работает и для мыши, и для пальцев на всех платформах
         canvas.addEventListener('pointerdown', (e) => {
             if (state !== 'DRAWING') return;
-            e.preventDefault();
-
+            
             const rect = canvas.getBoundingClientRect();
-            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            let pos = { x: clientX - rect.left, y: clientY - rect.top };
+            // Получаем координаты относительно канваса
+            const pos = { 
+                x: e.clientX - rect.left, 
+                y: e.clientY - rect.top 
+            };
 
             // Проверка на пересечение
             if (!checkIntersectionValid(pos)) {
@@ -291,7 +296,6 @@
         function closePolygon() {
             if (points.length < 3) return;
             
-            // Проверяем, не пересекает ли замыкающая линия контур
             if (!checkIntersectionValid(points[0], true)) {
                 showToast("Замыкание невозможно: линия пересекает чертеж!", 2000);
                 return;
@@ -329,10 +333,8 @@
 
         // --- ФИЗИЧЕСКИЙ ДВИЖОК ДЛЯ АДАПТАЦИИ ЧЕРТЕЖА ---
         function adaptShape() {
-            if (scaleFactor === 1) return; // Масштаб еще не задан
+            if (scaleFactor === 1) return; 
             
-            // Выполняем итерации релаксации (система пружин)
-            // Пытаемся подогнать длины сторон под заданные, не меняя не заданные сильно
             for (let iter = 0; iter < 200; iter++) {
                 for (let i = 0; i < edges.length; i++) {
                     if (edges[i].lengthCm === null) continue;
@@ -347,12 +349,10 @@
                     
                     if (currentDist === 0) continue;
                     
-                    // Разница между текущей и целевой длиной
                     let diff = targetDist - currentDist;
                     let offsetX = (diff * (dx / currentDist)) * 0.5;
                     let offsetY = (diff * (dy / currentDist)) * 0.5;
 
-                    // Точку A (индекс 0) фиксируем, чтобы чертеж не улетал
                     if (edges[i].startIdx !== 0) {
                         p1.x -= offsetX;
                         p1.y -= offsetY;
@@ -366,15 +366,17 @@
         }
 
         function saveSideAndNext() {
-            const val = parseFloat(sideInput.value);
+            // Поддержка запятой вместо точки
+            let valStr = sideInput.value.replace(',', '.');
+            const val = parseFloat(valStr);
+            
             if (isNaN(val) || val <= 0) {
-                alert("Введите корректное число");
+                alert("Пожалуйста, введите корректное число");
                 return;
             }
 
             edges[currentInputEdge].lengthCm = val;
 
-            // Установка базового масштаба по первой введенной стороне
             if (currentInputEdge === 0) {
                 const pt1 = points[edges[0].startIdx];
                 const pt2 = points[edges[0].endIdx];
@@ -382,16 +384,14 @@
                 scaleFactor = val / pixelDist; 
             }
 
-            // Адаптируем чертеж
             adaptShape();
-
             currentInputEdge++;
 
             if (currentInputEdge >= edges.length) {
                 bottomBar.classList.remove('active');
                 state = 'DONE';
                 statusText.innerText = 'Готово';
-                showToast('Все размеры заданы.', 0);
+                showToast('Все размеры заданы. Чертеж адаптирован.', 0);
                 draw();
             } else {
                 updateInputUI();
@@ -435,7 +435,7 @@
                 ctx.fill();
             }
 
-            // Отрисовка линий (стен)
+            // Отрисовка линий
             for (let i = 0; i < points.length; i++) {
                 let nextIdx = (i + 1) % points.length;
                 if (!isClosed && nextIdx === 0) continue;
@@ -445,10 +445,10 @@
                 ctx.lineTo(points[nextIdx].x, points[nextIdx].y);
 
                 if (state === 'INPUT_SIDES' && i === edges[currentInputEdge].startIdx) {
-                    ctx.strokeStyle = 'var(--accent)'; 
+                    ctx.strokeStyle = '#e67e22'; // Оранжевый
                     ctx.lineWidth = 4;
                 } else {
-                    ctx.strokeStyle = 'var(--line-color)';
+                    ctx.strokeStyle = '#2c3e50'; // Темно-синий
                     ctx.lineWidth = 2.5;
                 }
                 ctx.stroke();
@@ -474,10 +474,11 @@
                         
                         ctx.fillStyle = '#ffffff';
                         ctx.fillRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
-                        ctx.strokeStyle = '#ccc';
+                        ctx.strokeStyle = '#cccccc';
+                        ctx.lineWidth = 1;
                         ctx.strokeRect(midX - textWidth/2 - 4, midY - 10, textWidth + 8, 20);
                         
-                        ctx.fillStyle = edge.lengthCm !== null ? 'var(--accent)' : 'var(--text-dark)';
+                        ctx.fillStyle = edge.lengthCm !== null ? '#e67e22' : '#333333';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.fillText(text, midX, midY);
@@ -489,21 +490,19 @@
             points.forEach((p, index) => {
                 ctx.beginPath();
                 ctx.fillStyle = '#ffffff';
-                ctx.strokeStyle = 'var(--line-color)';
+                ctx.strokeStyle = '#2c3e50';
                 ctx.lineWidth = 2;
                 ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
 
-                ctx.fillStyle = var(--text-dark);
+                ctx.fillStyle = '#333333';
                 ctx.font = 'bold 16px Arial';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'bottom';
                 ctx.fillText(p.letter, p.x + 8, p.y - 8);
             });
         }
-
-        resizeCanvas();
     </script>
 </body>
 </html>
