@@ -88,7 +88,7 @@
         #dimensionsPanel.visible { display: block; }
         .panel-title { font-weight: 700; margin-bottom: 8px; }
 
-        .side-input {
+        .side-input, .diag-input {
             display: grid;
             grid-template-columns: 1fr auto auto;
             align-items: center;
@@ -96,9 +96,9 @@
             padding: 7px 0;
             border-bottom: 1px solid #eee;
         }
-        .side-input:last-child { border-bottom: 0; }
-        .side-input label { font-weight: 600; font-size: 15px; }
-        .side-input input {
+        .side-input:last-child, .diag-input:last-child { border-bottom: 0; }
+        .side-input label, .diag-input label { font-weight: 600; font-size: 15px; }
+        .side-input input, .diag-input input {
             width: 110px;
             padding: 8px 10px;
             font-size: 16px;
@@ -107,8 +107,8 @@
             text-align: right;
             background: #fff;
         }
-        .side-input input:focus { border-color: #3390ec; outline: none; }
-        .side-input .unit { font-size: 14px; color: #666; min-width: 24px; }
+        .side-input input:focus, .diag-input input:focus { border-color: #3390ec; outline: none; }
+        .side-input .unit, .diag-input .unit { font-size: 14px; color: #666; min-width: 24px; }
 
         .toolbar {
             display: flex;
@@ -157,7 +157,7 @@
             body { padding-left: 7px; padding-right: 7px; }
             .toolbar { gap: 7px; }
             .toolbar button { min-width: 0; padding: 12px 8px; font-size: 14px; }
-            .side-input input { width: 100px; }
+            .side-input input, .diag-input input { width: 100px; }
         }
     </style>
 </head>
@@ -173,10 +173,12 @@
         <button class="tab-btn" id="dimensionsTabBtn" type="button">📏 Размеры</button>
     </div>
 
-    <!-- Панель ввода размеров -->
+    <!-- Панель ввода размеров и диагоналей -->
     <div id="dimensionsPanel">
-        <div class="panel-title">Введите длины сторон в сантиметрах:</div>
+        <div class="panel-title">Введите длины сторон (см):</div>
         <div id="sideInputs"></div>
+        <div class="panel-title" style="margin-top:12px;">Диагонали (опционально, см):</div>
+        <div id="diagInputs"></div>
         <div class="error-msg" id="errorMsg"></div>
     </div>
 
@@ -211,6 +213,7 @@
     const sendBtn = document.getElementById('sendBtn');
     const clearBtn = document.getElementById('clearBtn');
     const sideInputs = document.getElementById('sideInputs');
+    const diagInputs = document.getElementById('diagInputs');
     const errorMsg = document.getElementById('errorMsg');
     const tabs = document.getElementById('tabs');
     const drawingTabBtn = document.getElementById('drawingTabBtn');
@@ -221,8 +224,10 @@
     let points = [];
     let isClosed = false;
     let sideFields = [];
+    let diagFields = [];
     let builtPoints = [];
     let builtSides = [];
+    let builtDiagonals = [];
     let resizeObserver = null;
     let activeTab = 'drawing';
 
@@ -262,130 +267,232 @@
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        if (activeTab === 'drawing' || builtPoints.length < 3) {
-            drawSketch();
-        } else {
-            drawBuilt();
-        }
+        if (builtPoints.length >= 3) drawBuilt();
+        else drawSketch();
     }
 
-    // ---- Построение ортогонального многоугольника по длинам сторон и направлениям эскиза ----
-    function buildOrthogonalFromSketch(sketchPts, sidesCm) {
+    // ---- Построение по длинам и диагоналям (Easy Ceiling style) ----
+    function buildFromSidesAndDiagonals(sketchPts, sidesCm, diagCm) {
+        // sidesCm: массив длин сторон [n]
+        // diagCm: объект { "i_j": длина } для некоторых пар (i,j)
         const n = sidesCm.length;
-        if (n < 3 || sketchPts.length !== n) {
-            throw new Error('Для построения нужно минимум 3 вершины.');
-        }
+        if (n < 3) throw new Error('Минимум 3 стороны.');
 
-        // 1. Вычисляем направления сторон эскиза (векторы)
-        const dirs = [];
-        for (let i = 0; i < n; i++) {
-            const a = sketchPts[i];
-            const b = sketchPts[(i + 1) % n];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const len = Math.hypot(dx, dy);
-            if (len < 1e-6) {
-                throw new Error(`Сторона ${getLabel(i)}–${getLabel((i+1)%n)} слишком короткая.`);
+        // Проверка на прямоугольник
+        if (n === 4) {
+            const a = sidesCm[0], b = sidesCm[1], c = sidesCm[2], d = sidesCm[3];
+            if (Math.abs(a - c) < 0.001 && Math.abs(b - d) < 0.001) {
+                // Строим прямоугольник без наклона
+                return buildRectangle([a, b]);
             }
-            dirs.push({ x: dx / len, y: dy / len });
         }
 
-        // 2. Округляем направления до ближайшего из четырёх (ортогональных)
-        const orthoDirs = dirs.map(d => {
-            let angle = Math.atan2(d.y, d.x) * 180 / Math.PI;
-            if (angle < 0) angle += 360;
-            const rounded = Math.round(angle / 90) * 90;
-            const rad = rounded * Math.PI / 180;
-            return { x: Math.round(Math.cos(rad)), y: Math.round(Math.sin(rad)) };
-        });
-
-        // 3. Строим вершины, начиная с (0,0)
-        const pts = [{ x: 0, y: 0 }];
+        // Проверка на ортогональность (все углы близки к 90°)
+        let isOrthogonal = true;
+        const angleTolerance = 8 * Math.PI / 180; // 8 градусов
         for (let i = 0; i < n; i++) {
-            const prev = pts[i];
-            const dir = orthoDirs[i];
-            const len = sidesCm[i];
-            const nextX = prev.x + dir.x * len;
-            const nextY = prev.y + dir.y * len;
-            pts.push({ x: nextX, y: nextY });
+            const prev = sketchPts[(i - 1 + n) % n];
+            const cur = sketchPts[i];
+            const next = sketchPts[(i + 1) % n];
+            const v1 = { x: cur.x - prev.x, y: cur.y - prev.y };
+            const v2 = { x: next.x - cur.x, y: next.y - cur.y };
+            const len1 = Math.hypot(v1.x, v1.y);
+            const len2 = Math.hypot(v2.x, v2.y);
+            if (len1 < 1e-6 || len2 < 1e-6) continue;
+            const dot = v1.x * v2.x + v1.y * v2.y;
+            const cosAngle = dot / (len1 * len2);
+            const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+            const deviation = Math.abs(angle - Math.PI / 2);
+            if (deviation > angleTolerance && Math.abs(angle - Math.PI) > angleTolerance) {
+                isOrthogonal = false;
+                break;
+            }
         }
-        // Проверяем замыкание (в см)
+
+        if (isOrthogonal) {
+            try {
+                const turns = detectTurns(sketchPts);
+                return buildOrthogonalPolygon(sidesCm, turns);
+            } catch (e) {
+                // fallback to relaxation
+            }
+        }
+
+        // Если есть диагонали – используем триангуляцию
+        const diagKeys = Object.keys(diagCm);
+        if (diagKeys.length > 0) {
+            try {
+                return buildFromTriangulation(sketchPts, sidesCm, diagCm);
+            } catch (e) {
+                // fallback
+            }
+        }
+
+        // Общий случай – релаксация
+        return buildByRelaxation(sketchPts, sidesCm);
+    }
+
+    // Строит прямоугольник без наклона
+    function buildRectangle(sidesCm) {
+        const w = sidesCm[0];
+        const h = sidesCm[1];
+        const pts = [
+            { x: 0, y: 0 },
+            { x: w, y: 0 },
+            { x: w, y: h },
+            { x: 0, y: h }
+        ];
+        return pts.map(p => ({ x: p.x / 100, y: p.y / 100 }));
+    }
+
+    // Определяет повороты из эскиза
+    function detectTurns(sketchPts) {
+        const n = sketchPts.length;
+        const turns = [];
+        for (let i = 0; i < n; i++) {
+            const prev = sketchPts[(i - 1 + n) % n];
+            const cur = sketchPts[i];
+            const next = sketchPts[(i + 1) % n];
+            const v1 = { x: cur.x - prev.x, y: cur.y - prev.y };
+            const v2 = { x: next.x - cur.x, y: next.y - cur.y };
+            const cross = v1.x * v2.y - v1.y * v2.x;
+            if (Math.abs(cross) < 1e-6) {
+                turns.push(turns.length > 0 ? turns[turns.length - 1] : 1);
+            } else {
+                turns.push(cross > 0 ? 1 : -1);
+            }
+        }
+        return turns;
+    }
+
+    // Строит ортогональный многоугольник по длинам и поворотам
+    function buildOrthogonalPolygon(sidesCm, turns) {
+        const n = sidesCm.length;
+        const pts = [{ x: 0, y: 0 }];
+        let dir = { x: 1, y: 0 };
+        for (let i = 0; i < n; i++) {
+            const len = sidesCm[i];
+            const nextX = pts[i].x + dir.x * len;
+            const nextY = pts[i].y + dir.y * len;
+            pts.push({ x: nextX, y: nextY });
+            if (i < n - 1) {
+                const t = turns[i];
+                if (t === 1) dir = { x: -dir.y, y: dir.x };
+                else dir = { x: dir.y, y: -dir.x };
+            }
+        }
         const last = pts[pts.length - 1];
         const first = pts[0];
-        const dx = last.x - first.x;
-        const dy = last.y - first.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 0.05) { // 0.05 см = 0.5 мм
-            throw new Error('Ортогональный многоугольник не замкнулся – проверьте длины сторон.');
+        if (Math.hypot(last.x - first.x, last.y - first.y) > 0.01) {
+            throw new Error('Ортогональный многоугольник не замкнулся.');
         }
         pts.pop();
+        const minX = Math.min(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        return pts.map(p => ({ x: (p.x - minX) / 100, y: (p.y - minY) / 100 }));
+    }
+
+    // Построение по триангуляции (с диагоналями)
+    function buildFromTriangulation(sketchPts, sidesCm, diagCm) {
+        const n = sidesCm.length;
+        // Используем эскиз для получения порядка вершин
+        // Строим последовательно: A(0,0), B(длина AB, 0)
+        const pts = [{ x: 0, y: 0 }];
+        const AB = sidesCm[0];
+        pts.push({ x: AB, y: 0 });
+
+        // Для каждой следующей вершины i (2..n-1) используем стороны и диагонали
+        for (let i = 2; i < n; i++) {
+            // Ищем диагональ от i до какой-то уже построенной вершины j (j < i)
+            let found = false;
+            for (let j = 0; j < i; j++) {
+                const key = `${j}_${i}`;
+                const revKey = `${i}_${j}`;
+                let diagLen = null;
+                if (diagCm[key] !== undefined) diagLen = diagCm[key];
+                else if (diagCm[revKey] !== undefined) diagLen = diagCm[revKey];
+                if (diagLen !== null && diagLen > 0) {
+                    // Строим вершину i, зная расстояние до j и до i-1 (сторона)
+                    const d1 = sidesCm[i-1]; // сторона от i-1 до i
+                    const d2 = diagLen;
+                    const A = pts[j];
+                    const B = pts[i-1];
+                    // Находим точки пересечения окружностей
+                    const dx = B.x - A.x;
+                    const dy = B.y - A.y;
+                    const distAB = Math.hypot(dx, dy);
+                    if (distAB < 1e-9) throw new Error('Совпадающие вершины.');
+                    const a = (d1*d1 - d2*d2 + distAB*distAB) / (2 * distAB);
+                    const h2 = d1*d1 - a*a;
+                    if (h2 < 0) throw new Error(`Невозможно построить треугольник (${j},${i-1},${i}).`);
+                    const h = Math.sqrt(h2);
+                    // Выбираем сторону, ближайшую к эскизу
+                    const x0 = A.x + a * dx / distAB;
+                    const y0 = A.y + a * dy / distAB;
+                    const x1 = x0 + h * (-dy / distAB);
+                    const y1 = y0 + h * (dx / distAB);
+                    const x2 = x0 - h * (-dy / distAB);
+                    const y2 = y0 - h * (dx / distAB);
+                    // Выбираем ту, которая ближе к эскизу
+                    const sx = sketchPts[i].x * 100; // эскиз в см
+                    const sy = sketchPts[i].y * 100;
+                    const d1_ = Math.hypot(x1 - sx, y1 - sy);
+                    const d2_ = Math.hypot(x2 - sx, y2 - sy);
+                    if (d1_ < d2_) {
+                        pts.push({ x: x1, y: y1 });
+                    } else {
+                        pts.push({ x: x2, y: y2 });
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                // Если диагональ не найдена, используем только стороны (релаксация)
+                throw new Error('Недостаточно диагоналей для точного построения.');
+            }
+        }
+
+        // Проверяем замыкание (последняя сторона)
+        const last = pts[pts.length - 1];
+        const first_ = pts[0];
+        const dx = last.x - first_.x;
+        const dy = last.y - first_.y;
+        const dist = Math.hypot(dx, dy);
+        const target = sidesCm[n-1];
+        if (Math.abs(dist - target) > 0.5) {
+            throw new Error(`Последняя сторона не совпадает: ожидалось ${target}, получено ${dist.toFixed(1)}`);
+        }
 
         // Переводим в метры и сдвигаем к нулю
-        const ptsM = pts.map(p => ({ x: p.x / 100, y: p.y / 100 }));
-        const minX = Math.min(...ptsM.map(p => p.x));
-        const minY = Math.min(...ptsM.map(p => p.y));
-        return ptsM.map(p => ({ x: p.x - minX, y: p.y - minY }));
+        const minX = Math.min(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        return pts.map(p => ({ x: (p.x - minX) / 100, y: (p.y - minY) / 100 }));
     }
 
-    function polygonAreaAbs(pts) {
-        let area = 0;
-        for (let i = 0; i < pts.length; i++) {
-            const a = pts[i], b = pts[(i + 1) % pts.length];
-            area += a.x * b.y - b.x * a.y;
-        }
-        return Math.abs(area) / 2;
-    }
-
-    function maxSideError(pts, target) {
-        let maxError = 0;
-        for (let i = 0; i < pts.length; i++) {
-            const a = pts[i], b = pts[(i + 1) % pts.length];
-            const actual = Math.hypot(b.x - a.x, b.y - a.y);
-            maxError = Math.max(maxError, Math.abs(actual - target[i]));
-        }
-        return maxError;
-    }
-
-    // Основная функция построения
-    function buildPolygonFromSketchAndLengths(sketchPts, sidesCm) {
+    // Релаксация (общий случай)
+    function buildByRelaxation(sketchPts, sidesCm) {
         const n = sidesCm.length;
-        if (n < 3 || sketchPts.length !== n) {
-            throw new Error('Для построения нужно минимум 3 вершины.');
-        }
+        if (n < 3) throw new Error('Минимум 3 стороны.');
 
-        // Сначала пробуем построить ортогональный многоугольник
-        try {
-            const result = buildOrthogonalFromSketch(sketchPts, sidesCm);
-            // Проверяем, что длины сторон совпадают с заданными (сравниваем в метрах)
-            const error = maxSideError(result, sidesCm.map(s => s / 100));
-            if (error < 0.01) { // допуск 1 см
-                return result;
-            }
-        } catch (e) {
-            // Если не получилось – продолжаем к релаксации
-        }
-
-        // Если не удалось построить ортогонально – используем релаксацию
+        // Проверка неравенства многоугольника
         const longest = Math.max(...sidesCm);
-        const sumOthers = sidesCm.reduce((sum, s) => sum + s, 0) - longest;
+        const sumOthers = sidesCm.reduce((a,b) => a+b, 0) - longest;
         if (longest >= sumOthers - 1e-9) {
-            throw new Error('Такие длины сторон не могут образовать замкнутый многоугольник: самая длинная сторона слишком велика.');
+            throw new Error('Самая длинная сторона слишком велика.');
         }
 
-        // Масштабируем эскиз под суммарную длину
+        // Масштабируем эскиз
         let totalSketch = 0;
         for (let i = 0; i < n; i++) {
             const a = sketchPts[i];
-            const b = sketchPts[(i + 1) % n];
+            const b = sketchPts[(i+1)%n];
             totalSketch += Math.hypot(b.x - a.x, b.y - a.y);
         }
-        const targetTotal = sidesCm.reduce((a, b) => a + b, 0);
-        const scale = targetTotal / totalSketch;
+        const scale = sidesCm.reduce((a,b) => a+b, 0) / totalSketch;
         let pts = sketchPts.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        const x0 = pts[0].x, y0 = pts[0].y;
-        pts = pts.map(p => ({ x: p.x - x0, y: p.y - y0 }));
-
         const reference = pts.map(p => ({ ...p }));
+
         const iterations = Math.min(5000, Math.max(1500, n * 400));
         const shapeWeight = 0.0005;
 
@@ -432,10 +539,16 @@
                 p.y -= ay;
             }
 
-            if (maxSideError(pts, sidesCm) < 0.0005) break;
+            let maxErr = 0;
+            for (let i = 0; i < n; i++) {
+                const a = pts[i], b = pts[(i+1)%n];
+                const actual = Math.hypot(b.x - a.x, b.y - a.y);
+                maxErr = Math.max(maxErr, Math.abs(actual - sidesCm[i]));
+            }
+            if (maxErr < 0.0005) break;
         }
 
-        // Дополнительный цикл без сохранения формы
+        // Дополнительная подгонка
         for (let iter = 0; iter < 200; iter++) {
             for (let i = 0; i < n; i++) {
                 const j = (i + 1) % n;
@@ -472,23 +585,18 @@
                 p.x -= ax;
                 p.y -= ay;
             }
-            if (maxSideError(pts, sidesCm) < 0.0001) break;
-        }
-
-        const errorCm = maxSideError(pts, sidesCm);
-        if (errorCm > 0.05) {
-            throw new Error(`Не удалось точно замкнуть фигуру. Максимальная ошибка стороны: ${errorCm.toFixed(2)} см. Попробуйте нарисовать форму ближе к реальной.`);
-        }
-        if (polygonAreaAbs(pts) < 0.01) {
-            throw new Error('Получилась вырожденная фигура с нулевой площадью.');
+            let maxErr = 0;
+            for (let i = 0; i < n; i++) {
+                const a = pts[i], b = pts[(i+1)%n];
+                const actual = Math.hypot(b.x - a.x, b.y - a.y);
+                maxErr = Math.max(maxErr, Math.abs(actual - sidesCm[i]));
+            }
+            if (maxErr < 0.0001) break;
         }
 
         const minX = Math.min(...pts.map(p => p.x));
         const minY = Math.min(...pts.map(p => p.y));
-        return pts.map(p => ({
-            x: (p.x - minX) / 100,
-            y: (p.y - minY) / 100
-        }));
+        return pts.map(p => ({ x: (p.x - minX) / 100, y: (p.y - minY) / 100 }));
     }
 
     // ---- Отрисовка ----
@@ -505,7 +613,6 @@
         ctx.stroke();
         ctx.restore();
 
-        ctx.save();
         points.forEach((p, i) => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
@@ -517,7 +624,6 @@
             ctx.textBaseline = 'bottom';
             ctx.fillText(getLabel(i), p.x, p.y - 10);
         });
-        ctx.restore();
     }
 
     function drawSketch() {
@@ -553,9 +659,9 @@
             }
 
             statusEl.textContent = '✅ Фигура замкнута. Переключайтесь между вкладками.';
-            shapeHint.textContent = 'На вкладке «Чертёж» – форма, на «Размеры» – ввод длин.';
+            shapeHint.textContent = 'На вкладке «Чертёж» – форма, на «Размеры» – ввод длин и диагоналей.';
             closeBtn.disabled = true;
-            if (!sideFields.length) buildSideInputs();
+            if (!sideFields.length) buildInputs();
             tabs.classList.add('visible');
             if (activeTab === 'dimensions') {
                 dimensionsPanel.classList.add('visible');
@@ -573,7 +679,9 @@
             tabs.classList.remove('visible');
             dimensionsPanel.classList.remove('visible');
             sideFields = [];
+            diagFields = [];
             sideInputs.innerHTML = '';
+            diagInputs.innerHTML = '';
             sendBtn.disabled = true;
         }
 
@@ -655,6 +763,39 @@
             }
         }
 
+        // Рисуем диагонали, если есть
+        if (builtDiagonals && builtDiagonals.length > 0) {
+            for (const d of builtDiagonals) {
+                const i = d.i, j = d.j;
+                const p1 = screen(builtPoints[i]);
+                const p2 = screen(builtPoints[j]);
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.strokeStyle = '#2e7d32';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.restore();
+                // Подпись диагонали
+                const mx = (p1.x + p2.x) / 2;
+                const my = (p1.y + p2.y) / 2;
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const len = Math.hypot(dx, dy);
+                if (len > 32) {
+                    const nx = -dy / len * 14;
+                    const ny = dx / len * 14;
+                    ctx.fillStyle = '#2e7d32';
+                    ctx.font = '10px system-ui';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(`${d.label} = ${d.value.toFixed(1)} см`, mx + nx, my + ny);
+                }
+            }
+        }
+
         statusEl.textContent = '✅ Фигура построена. Можно отправлять.';
         sendBtn.disabled = false;
     }
@@ -662,12 +803,13 @@
     function rebuildFigure() {
         showError('');
 
+        // Считываем стороны
         const sides = [];
         for (const field of sideFields) {
             const raw = field.input.value.trim().replace(',', '.');
             const value = Number(raw);
             if (!Number.isFinite(value) || value <= 0) {
-                showError('Заполните все поля положительными числами.');
+                showError('Заполните все поля сторон положительными числами.');
                 sendBtn.disabled = true;
                 return;
             }
@@ -680,26 +822,53 @@
             return;
         }
 
+        // Считываем диагонали
+        const diagObj = {};
+        for (const field of diagFields) {
+            const raw = field.input.value.trim().replace(',', '.');
+            if (raw === '') continue;
+            const value = Number(raw);
+            if (!Number.isFinite(value) || value <= 0) {
+                showError('Диагонали должны быть положительными числами (или пустыми).');
+                sendBtn.disabled = true;
+                return;
+            }
+            diagObj[field.key] = value;
+        }
+
         try {
-            builtPoints = buildPolygonFromSketchAndLengths(points, sides);
+            const result = buildFromSidesAndDiagonals(points, sides, diagObj);
+            builtPoints = result;
             builtSides = sides.slice();
-            resizeCanvas();
+            // Сохраняем диагонали для отрисовки
+            builtDiagonals = [];
+            for (const key in diagObj) {
+                const parts = key.split('_');
+                const i = parseInt(parts[0]);
+                const j = parseInt(parts[1]);
+                builtDiagonals.push({ i, j, value: diagObj[key], label: `${getLabel(i)}–${getLabel(j)}` });
+            }
+            drawBuilt();
         } catch (e) {
             builtPoints = [];
             builtSides = [];
+            builtDiagonals = [];
             sendBtn.disabled = true;
             showError(e?.message || 'Не удалось построить фигуру.');
-            resizeCanvas();
+            drawSketch();
         }
     }
 
-    function buildSideInputs() {
+    function buildInputs() {
         const n = points.length;
         if (sideFields.length === n) return;
 
         sideInputs.innerHTML = '';
+        diagInputs.innerHTML = '';
         sideFields = [];
+        diagFields = [];
 
+        // Стороны
         for (let i = 0; i < n; i++) {
             const j = (i + 1) % n;
             const div = document.createElement('div');
@@ -709,8 +878,7 @@
             label.textContent = `${getLabel(i)}–${getLabel(j)}`;
 
             const input = document.createElement('input');
-            input.type = 'number';
-            input.step = '0.1';
+            input.type = 'text';
             input.autocomplete = 'off';
             input.inputMode = 'decimal';
             input.placeholder = 'см';
@@ -727,18 +895,45 @@
                 if (isClosed) rebuildFigure();
             });
         }
+
+        // Диагонали (все пары несмежных)
+        for (let i = 0; i < n; i++) {
+            for (let j = i+2; j < n; j++) {
+                if (i === 0 && j === n-1) continue; // не диагональ (это сторона)
+                const div = document.createElement('div');
+                div.className = 'diag-input';
+
+                const label = document.createElement('label');
+                label.textContent = `${getLabel(i)}–${getLabel(j)}`;
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.autocomplete = 'off';
+                input.inputMode = 'decimal';
+                input.placeholder = 'см (опц.)';
+
+                const unit = document.createElement('span');
+                unit.className = 'unit';
+                unit.textContent = 'см';
+
+                div.append(label, input, unit);
+                diagInputs.appendChild(div);
+                const key = `${i}_${j}`;
+                diagFields.push({ input, key, label: `${getLabel(i)}–${getLabel(j)}` });
+
+                input.addEventListener('input', () => {
+                    if (isClosed) rebuildFigure();
+                });
+            }
+        }
     }
 
     function addPoint(x, y) {
         if (isClosed) return;
-        // Защита от случайного двойного тапа
-        if (points.length > 0) {
-            const last = points[points.length - 1];
-            if (Math.hypot(x - last.x, y - last.y) < 8) return;
-        }
         points.push({ x, y });
         builtPoints = [];
         builtSides = [];
+        builtDiagonals = [];
         drawSketch();
     }
 
@@ -757,6 +952,7 @@
         isClosed = true;
         builtPoints = [];
         builtSides = [];
+        builtDiagonals = [];
         showError('');
         drawSketch();
         setActiveTab('dimensions');
@@ -768,8 +964,11 @@
         isClosed = false;
         builtPoints = [];
         builtSides = [];
+        builtDiagonals = [];
         sideFields = [];
+        diagFields = [];
         sideInputs.innerHTML = '';
+        diagInputs.innerHTML = '';
         showError('');
         tabs.classList.remove('visible');
         dimensionsPanel.classList.remove('visible');
@@ -782,9 +981,12 @@
         points = [];
         isClosed = false;
         sideFields = [];
+        diagFields = [];
         builtPoints = [];
         builtSides = [];
+        builtDiagonals = [];
         sideInputs.innerHTML = '';
+        diagInputs.innerHTML = '';
         showError('');
         tabs.classList.remove('visible');
         dimensionsPanel.classList.remove('visible');
@@ -815,7 +1017,11 @@
         if (isDrawing) {
             dimensionsPanel.classList.remove('visible');
         } else {
-            if (isClosed) dimensionsPanel.classList.add('visible');
+            if (isClosed) {
+                dimensionsPanel.classList.add('visible');
+                if (builtPoints.length >= 3) drawBuilt();
+                else if (isClosed) drawSketch();
+            }
         }
         resizeCanvas();
     }
@@ -831,7 +1037,7 @@
 
     sendBtn.addEventListener('click', () => {
         if (builtPoints.length < 3 || builtSides.length !== builtPoints.length) {
-            window.alert('Сначала введите корректные длины сторон и дождитесь построения фигуры.');
+            window.alert('Сначала введите корректные размеры и дождитесь построения фигуры.');
             return;
         }
 
