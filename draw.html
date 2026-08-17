@@ -198,7 +198,8 @@
 
     <!-- Итоговая панель -->
     <div id="results-panel" class="bottom-panel">
-        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить</button>
+        <button class="btn btn-success" id="add-ceiling-btn" onclick="addCeiling()">➕ Добавить потолок</button>
+        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
         <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (для отладки)</button>
     </div>
 
@@ -210,6 +211,10 @@
         
         let points = [], edges = [], availableDiagonals = [], selectedDiagonals = [];
         let isClosed = false, scaleFactor = 1, currentInputEdge = 0;
+        let sketchPoints = [], sketchTurnSigns = [], sketchOrientation = 1;
+        let currentDiagonalInput = 0;
+        let completedCeilings = [];
+        let editingCeilingIndex = null;
         let selectedMaterial = 'Мат', selectedColor = 'Белый';
         let state = 'DRAWING'; // DRAWING, INPUT_SIDES, SELECT_DIAGONALS, SELECT_MATERIAL, DONE
         
@@ -418,335 +423,340 @@
 
         function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); } }
 
-        // --- ВЫРАВНИВАНИЕ ПРЯМЫХ УГЛОВ ---
-        function snapOrthogonalGeometry() {
-            if (points.length < 3) return;
-
-            for (let i = 0; i < points.length; i++) {
-                let nxt = (i + 1) % points.length;
-                let dx = points[nxt].x - points[i].x;
-                let dy = points[nxt].y - points[i].y;
-                let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                let normAngle = (angle + 360) % 360;
-
-                let isH = (normAngle <= 20 || normAngle >= 340 || (normAngle >= 160 && normAngle <= 200));
-                let isV = ((normAngle >= 70 && normAngle <= 110) || (normAngle >= 250 && normAngle <= 290));
-
-                if (isH) {
-                    edges[i].type = 'H';
-                } else if (isV) {
-                    edges[i].type = 'V';
-                } else {
-                    edges[i].type = 'FREE';
-                }
-            }
-
-            for (let iter = 0; iter < 5; iter++) {
-                for (let i = 0; i < edges.length; i++) {
-                    let p1 = points[edges[i].startIdx];
-                    let p2 = points[edges[i].endIdx];
-                    if (edges[i].type === 'H') {
-                        let avgY = (p1.y + p2.y) / 2;
-                        p1.y = avgY; p2.y = avgY;
-                    } else if (edges[i].type === 'V') {
-                        let avgX = (p1.x + p2.x) / 2;
-                        p1.x = avgX; p2.x = avgX;
-                    }
-                }
-            }
+        // ==================== ГЕОМЕТРИЯ ЗАМЕРА ====================
+        // Ручной рисунок — только эскиз топологии. Его пропорции НЕ являются
+        // размерами помещения. Точная геометрия строится после ввода сторон
+        // и диагоналей методом триангуляции.
+        function clonePoints(pts) { return pts.map(p => ({x:p.x, y:p.y, letter:p.letter})); }
+        function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+        function cross(a,b,c) { return (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x); }
+        function polygonSignedArea(pts) {
+            let a=0;
+            for(let i=0;i<pts.length;i++) { const q=pts[(i+1)%pts.length]; a += pts[i].x*q.y-q.x*pts[i].y; }
+            return a/2;
         }
-
-        function closePolygon() {
-            if (points.length < 3) return;
-            if (!checkIntersectionValid(points[0], true)) { showToast("Замыкание невозможно: линия пересекает контур!", 2000); return; }
-
-            isClosed = true; state = 'INPUT_SIDES';
-            statusText.innerText = 'Ввод размеров';
-            document.getElementById('toast').style.display = 'none';
-            
-            edges = points.map((p, i) => {
-                let nxt = (i+1)%points.length;
-                return { startIdx: i, endIdx: nxt, label: `${p.letter}-${points[nxt].letter}`, lengthCm: null, type: 'FREE' };
+        function getTurnSigns(pts) {
+            const area=polygonSignedArea(pts), orient=area>=0?1:-1;
+            return pts.map((_,i)=>{
+                const a=pts[(i-1+pts.length)%pts.length], b=pts[i], c=pts[(i+1)%pts.length];
+                const cr=cross(a,b,c);
+                return Math.abs(cr)<1e-8 ? 0 : (cr*orient>0 ? 1 : -1);
             });
-
-            snapOrthogonalGeometry();
-
-            currentInputEdge = 0;
-            updateUI();
-            document.getElementById('bottom-input-bar').classList.add('active');
-            updateInputUI();
         }
-
-        function updateUI() {
-            document.getElementById('close-btn').style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
-            document.getElementById('undo-btn').style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
+        function geometrySignature(pts) {
+            return {orientation: polygonSignedArea(pts)>=0?1:-1, turns:getTurnSigns(pts)};
         }
-
-        function updateInputUI() {
-            document.getElementById('side-label').innerText = `${edges[currentInputEdge].label} =`;
-            let val = edges[currentInputEdge].lengthCm;
-            document.getElementById('side-input').value = val !== null ? val : '';
-            document.getElementById('prev-side-btn').style.display = currentInputEdge > 0 ? 'inline-block' : 'none';
-            document.getElementById('side-input').focus();
-            autoFitCamera(); draw();
-        }
-
-        function prevSide() {
-            if (currentInputEdge > 0) {
-                currentInputEdge--;
-                updateInputUI();
+        function topologyValid(pts) {
+            if(pts.length<3 || hasSelfIntersection(pts)) return false;
+            if(Math.abs(polygonSignedArea(pts))<1e-7) return false;
+            const sig=geometrySignature(pts);
+            if(sig.orientation!==sketchOrientation) return false;
+            for(let i=0;i<sig.turns.length;i++) {
+                if(sketchTurnSigns[i] && sig.turns[i] && sketchTurnSigns[i]!==sig.turns[i]) return false;
             }
+            return true;
+        }
+        function edgeKey(a,b) { return a<b ? `${a}:${b}` : `${b}:${a}`; }
+        function approxEq(a,b,tol=1e-3) { return Math.abs(a-b)<=tol; }
+        function allSideLengthsKnown() { return edges.length && edges.every(e=>Number.isFinite(e.lengthCm)&&e.lengthCm>0); }
+
+        function normalizedSketch() {
+            if(!sketchPoints.length) return [];
+            const minX=Math.min(...sketchPoints.map(p=>p.x)), maxX=Math.max(...sketchPoints.map(p=>p.x));
+            const minY=Math.min(...sketchPoints.map(p=>p.y)), maxY=Math.max(...sketchPoints.map(p=>p.y));
+            const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+            const span=Math.max(maxX-minX,maxY-minY,1);
+            return sketchPoints.map(p=>({x:(p.x-cx)/span,y:(p.y-cy)/span}));
         }
 
-        // --- АЛГОРИТМ ПЕРЕСЧЕТА ФИГУРЫ ---
-        function adjustShapeToLengths() {
-            if (scaleFactor === 1 || points.length < 3) return true;
+        function diagonalObj(a,b) {
+            const x=Math.min(a,b), y=Math.max(a,b);
+            return {p1:x,p2:y,label:`${points[x].letter}-${points[y].letter}`,lengthCm:null};
+        }
+        function isBoundaryEdge(a,b,n=points.length) { return Math.abs(a-b)===1 || Math.abs(a-b)===n-1; }
+        function hasDiagonal(a,b,list=selectedDiagonals) { return list.some(d=>edgeKey(d.p1,d.p2)===edgeKey(a,b)); }
 
-            let oldPoints = points.map(p => ({ ...p }));
-
-            let initialEdgeAngles = edges.map((e) => {
-                let p1 = points[e.startIdx], p2 = points[e.endIdx];
-                return Math.atan2(p2.y - p1.y, p2.x - p1.x);
-            });
-
-            for (let iter = 0; iter < 150; iter++) {
-                for (let i = 0; i < edges.length; i++) {
-                    let e = edges[i];
-                    if (e.lengthCm === null) continue;
-
-                    let p1 = points[e.startIdx], p2 = points[e.endIdx];
-                    let targetDist = e.lengthCm / scaleFactor;
-
-                    if (e.type === 'H') {
-                        let currentDist = Math.abs(p2.x - p1.x);
-                        if (currentDist < 1e-4) currentDist = 1e-4;
-                        let diff = targetDist - currentDist;
-                        let sign = (p2.x >= p1.x) ? 1 : -1;
-                        p1.y = p2.y;
-                        if (e.startIdx !== 0) p1.x -= sign * diff * 0.5;
-                        if (e.endIdx !== 0) p2.x += sign * diff * 0.5;
-                    } else if (e.type === 'V') {
-                        let currentDist = Math.abs(p2.y - p1.y);
-                        if (currentDist < 1e-4) currentDist = 1e-4;
-                        let diff = targetDist - currentDist;
-                        let sign = (p2.y >= p1.y) ? 1 : -1;
-                        p1.x = p2.x;
-                        if (e.startIdx !== 0) p1.y -= sign * diff * 0.5;
-                        if (e.endIdx !== 0) p2.y += sign * diff * 0.5;
-                    } else {
-                        let dx = p2.x - p1.x, dy = p2.y - p1.y;
-                        let currentDist = Math.hypot(dx, dy);
-                        if (currentDist < 1e-4) continue;
-
-                        let ang = initialEdgeAngles[i];
-                        let targetDx = Math.cos(ang) * targetDist;
-                        let targetDy = Math.sin(ang) * targetDist;
-
-                        let shiftX = (dx - targetDx) * 0.5;
-                        let shiftY = (dy - targetDy) * 0.5;
-
-                        if (e.startIdx !== 0) { p1.x += shiftX; p1.y += shiftY; }
-                        if (e.endIdx !== 0) { p2.x -= shiftX; p2.y -= shiftY; }
+        // Ear clipping is used only to determine a stable triangulation from the
+        // hand-drawn topology. The sketch controls which ears are preferred;
+        // its scale/proportions are never copied into the final drawing.
+        function pointInTriangle(p,a,b,c) {
+            const c1=cross(a,b,p), c2=cross(b,c,p), c3=cross(c,a,p);
+            const hasNeg=c1<-1e-8||c2<-1e-8||c3<-1e-8, hasPos=c1>1e-8||c2>1e-8||c3>1e-8;
+            return !(hasNeg&&hasPos);
+        }
+        function triangulateBySketch() {
+            const n=sketchPoints.length;
+            if(n<3) return [];
+            const ids=[...Array(n).keys()];
+            const orient=sketchOrientation;
+            const tris=[];
+            const sk=sketchPoints;
+            let guard=0;
+            while(ids.length>3 && guard++<n*n) {
+                let chosen=-1;
+                let best=Infinity;
+                for(let k=0;k<ids.length;k++) {
+                    const prev=ids[(k-1+ids.length)%ids.length], cur=ids[k], next=ids[(k+1)%ids.length];
+                    const cr=cross(sk[prev],sk[cur],sk[next]);
+                    if(cr*orient<=1e-8) continue;
+                    let contains=false;
+                    for(const q of ids) {
+                        if(q===prev||q===cur||q===next) continue;
+                        if(pointInTriangle(sk[q],sk[prev],sk[cur],sk[next])) { contains=true; break; }
                     }
+                    if(contains) continue;
+                    const score=dist(sk[prev],sk[next]);
+                    if(score<best){best=score;chosen=k;}
+                }
+                if(chosen<0) break;
+                const prev=ids[(chosen-1+ids.length)%ids.length], cur=ids[chosen], next=ids[(chosen+1)%ids.length];
+                tris.push([prev,cur,next]);
+                ids.splice(chosen,1);
+            }
+            if(ids.length===3) tris.push([ids[0],ids[1],ids[2]]);
+            return tris;
+        }
+
+        function recommendedDiagonalPairs() {
+            return triangulateBySketch().map(t=>edgeKey(t[0],t[2])).filter(k=>{
+                const [a,b]=k.split(':').map(Number); return !isBoundaryEdge(a,b);
+            });
+        }
+
+        function updateDiagonalSelectionUI() {
+            const list=document.getElementById('diag-list-container'), info=document.getElementById('diag-selected-info');
+            if(!list||!info) return;
+            list.innerHTML=availableDiagonals.map((d,idx)=>{
+                const selected=selectedDiagonals.some(x=>edgeKey(x.p1,x.p2)===edgeKey(d.p1,d.p2));
+                const recommended=d.recommended?' <span style="font-size:11px;opacity:.7">(рекомендуется)</span>':'';
+                return `<button type="button" class="diag-select-btn ${selected?'selected':''}" onclick="toggleDiagonalByIndex(${idx})">${selected?'✓ ':''}${d.label}${recommended}</button>`;
+            }).join('');
+            const minNeeded=Math.max(0,points.length-3);
+            info.innerText=`Выбрано диагоналей: ${selectedDiagonals.length}. Для точного построения минимум: ${minNeeded}`;
+        }
+
+        function buildConstraintMap() {
+            const map=new Map();
+            edges.forEach((e,i)=>{ if(Number.isFinite(e.lengthCm)&&e.lengthCm>0) map.set(edgeKey(e.startIdx,e.endIdx),e.lengthCm); });
+            selectedDiagonals.forEach(d=>{ if(Number.isFinite(d.lengthCm)&&d.lengthCm>0) map.set(edgeKey(d.p1,d.p2),d.lengthCm); });
+            return map;
+        }
+
+        function circleIntersections(A,rA,B,rB) {
+            const dx=B.x-A.x, dy=B.y-A.y, d=Math.hypot(dx,dy);
+            if(d<1e-9 || d>rA+rB+1e-7 || d<Math.abs(rA-rB)-1e-7) return [];
+            const a=(rA*rA-rB*rB+d*d)/(2*d);
+            const h2=Math.max(0,rA*rA-a*a), h=Math.sqrt(h2);
+            const ux=dx/d, uy=dy/d;
+            const px=A.x+a*ux, py=A.y+a*uy;
+            return [
+                {x:px-h*uy,y:py+h*ux},
+                {x:px+h*uy,y:py-h*ux}
+            ];
+        }
+
+        // Build the exact polygon from a triangulation. Every newly placed vertex
+        // is the intersection of two circles, so measured lengths are hard
+        // constraints rather than soft optimisation targets.
+        function buildExactFromTriangulation(tris,constraints) {
+            const n=points.length;
+            if(!tris.length || !constraints) return null;
+            const adjacency=Array.from({length:n},()=>new Map());
+            for(const [k,len] of constraints.entries()) {
+                const [a,b]=k.split(':').map(Number);
+                adjacency[a].set(b,len); adjacency[b].set(a,len);
+            }
+            for(const t of tris) {
+                const pairs=[[t[0],t[1]],[t[1],t[2]],[t[2],t[0]]];
+                if(pairs.some(([a,b])=>!adjacency[a].has(b))) return null;
+            }
+            const work=Array(n).fill(null);
+            const sketch=normalizedSketch();
+            const first=tris[0];
+            const A=first[0], B=first[1], C=first[2];
+            const ab=adjacency[A].get(B), bc=adjacency[B].get(C), ca=adjacency[C].get(A);
+            if(!ab||!bc||!ca) return null;
+            // Place first triangle in the same orientation as the sketch.
+            work[A]={x:0,y:0,letter:points[A].letter};
+            work[B]={x:ab,y:0,letter:points[B].letter};
+            let sols=circleIntersections(work[A],ca,work[B],bc);
+            if(!sols.length) return null;
+            const sA=sketch[A]||{x:0,y:0}, sB=sketch[B]||{x:1,y:0}, sC=sketch[C]||{x:0,y:1};
+            const desired=cross(sA,sB,sC)*sketchOrientation;
+            let cand=sols[0];
+            if(sols.length>1) {
+                const score=p=>{
+                    const v={x:p.x/Math.max(ab,1),y:p.y/Math.max(ab,1)};
+                    return Math.hypot(v.x-sC.x,v.y-sC.y);
+                };
+                const valid=sols.filter(p=>cross(work[A],work[B],p)*sketchOrientation>0);
+                cand=(valid.length?valid:sols).sort((p,q)=>score(p)-score(q))[0];
+            }
+            work[C]={x:cand.x,y:cand.y,letter:points[C].letter};
+
+            const placed=new Set([A,B,C]);
+            let progress=true;
+            while(placed.size<n && progress) {
+                progress=false;
+                for(const tri of tris) {
+                    const ps=tri.filter(v=>placed.has(v));
+                    const un=tri.filter(v=>!placed.has(v));
+                    if(un.length!==1 || ps.length!==2) continue;
+                    const u=un[0], p=ps[0], q=ps[1];
+                    const rp=adjacency[u].get(p), rq=adjacency[u].get(q), pq=dist(work[p],work[q]);
+                    if(!rp||!rq) continue;
+                    const sols2=circleIntersections(work[p],rp,work[q],rq);
+                    if(!sols2.length) return null;
+                    let best=null,bestScore=Infinity;
+                    for(const s of sols2) {
+                        const trial=clonePoints(work.map((x,i)=>x||{x:0,y:0,letter:points[i].letter}));
+                        trial[u]={x:s.x,y:s.y,letter:points[u].letter};
+                        // Preserve the local turn sign at u and avoid intersections.
+                        const prev=(u-1+n)%n,next=(u+1)%n;
+                        let score=0;
+                        if(work[prev]) score+=dist(s,work[prev]);
+                        if(work[next]) score+=dist(s,work[next]);
+                        const skU=sketch[u]||{x:0,y:0};
+                        score+=0.01*Math.hypot(s.x/Math.max(ab,1)-skU.x,s.y/Math.max(ab,1)-skU.y);
+                        const localPrev=work[prev], localNext=work[next];
+                        if(localPrev&&localNext) {
+                            const turn=cross(localPrev,s,localNext);
+                            if(turn*sketchTurnSigns[u]<=0) score+=1e9;
+                        }
+                        if(score<bestScore){bestScore=score;best=s;}
+                    }
+                    if(!best || bestScore>=1e8) return null;
+                    work[u]={x:best.x,y:best.y,letter:points[u].letter};
+                    placed.add(u); progress=true;
                 }
             }
+            if(placed.size<n) return null;
+            if(!topologyValid(work)) return null;
+            return work;
+        }
 
-            if (hasSelfIntersection(points)) {
-                points = oldPoints;
-                return false;
+        function verifyConstraints(work,constraints) {
+            for(const [k,lenCm] of constraints.entries()) {
+                const [a,b]=k.split(':').map(Number);
+                const actual=dist(work[a],work[b]);
+                if(Math.abs(actual-lenCm)>Math.max(0.05,lenCm*0.00005)) return false;
             }
-
             return true;
         }
 
-        function saveSideAndNext() {
-            let val = parseFloat(document.getElementById('side-input').value.replace(',','.'));
-            if (isNaN(val) || val <= 0) { showToast("Введите корректное число см", 2500); return; }
+        function solveExactGeometry() {
+            if(!allSideLengthsKnown()) return false;
+            const minNeeded=Math.max(0,points.length-3);
+            if(selectedDiagonals.length<minNeeded) return false;
+            if(selectedDiagonals.some(d=>!Number.isFinite(d.lengthCm)||d.lengthCm<=0)) return false;
+            const constraints=buildConstraintMap();
+            const tris=triangulateBySketch();
+            if(tris.length!==points.length-2) return false;
+            const result=buildExactFromTriangulation(tris,constraints);
+            if(!result || !verifyConstraints(result,constraints)) return false;
+            points=result;
+            // scaleFactor is now only a display conversion. The exact geometry
+            // itself is stored in centimetres in a temporary coordinate system.
+            scaleFactor=1;
+            return true;
+        }
 
-            let oldVal = edges[currentInputEdge].lengthCm;
-            edges[currentInputEdge].lengthCm = val;
+        function closePolygon() {
+            if(points.length<3) return;
+            if(!checkIntersectionValid(points[0],true)) { showToast('Замыкание невозможно: линия пересекает контур!',2500); return; }
+            const signed=polygonSignedArea(points);
+            if(Math.abs(signed)<1e-5) { showToast('Невозможно замкнуть почти вырожденную фигуру.',2500); return; }
+            isClosed=true; state='INPUT_SIDES'; statusText.innerText='Ввод фактических размеров';
+            document.getElementById('toast').style.display='none';
+            sketchPoints=clonePoints(points);
+            sketchOrientation=signed>=0?1:-1;
+            sketchTurnSigns=getTurnSigns(sketchPoints);
+            edges=points.map((p,i)=>({startIdx:i,endIdx:(i+1)%points.length,label:`${p.letter}-${points[(i+1)%points.length].letter}`,lengthCm:null,type:'FREE'}));
+            scaleFactor=1; currentInputEdge=0;
+            showToast('Эскиз сохранён. Введите реальные размеры сторон в сантиметрах. Форма эскиза не считается масштабом.',4500);
+            document.getElementById('bottom-input-bar').classList.add('active');
+            updateInputUI(); updateUI();
+        }
 
-            if (currentInputEdge === 0) {
-                let dx = points[edges[0].endIdx].x - points[edges[0].startIdx].x;
-                let dy = points[edges[0].endIdx].y - points[edges[0].startIdx].y;
-                scaleFactor = val / Math.hypot(dx, dy);
-            }
-
-            let success = adjustShapeToLengths();
-            if (!success) {
-                edges[currentInputEdge].lengthCm = oldVal;
-                showToast("Ошибка: этот размер приводит к пересечению сторон! Измените значение.", 4000);
-                return;
-            }
-
+        function updateUI() {
+            document.getElementById('close-btn').style.display=(points.length>=3&&state==='DRAWING')?'block':'none';
+            document.getElementById('undo-btn').style.display=(state==='DRAWING'&&points.length>0)?'block':'none';
+        }
+        function updateInputUI() {
+            const isDiag=state==='INPUT_DIAGONALS';
+            const item=isDiag?selectedDiagonals[currentDiagonalInput]:edges[currentInputEdge];
+            document.getElementById('side-label').innerText=`${item.label} =`;
+            document.getElementById('side-input').value=(item.lengthCm!=null?item.lengthCm:'');
+            document.getElementById('side-input').placeholder='см';
+            document.getElementById('prev-side-btn').style.display=(isDiag?currentDiagonalInput:currentInputEdge)>0?'inline-block':'none';
+            const btn=document.querySelector('#input-row .btn-next');
+            if(btn) btn.innerText=isDiag && currentDiagonalInput===selectedDiagonals.length-1?'Готово':'Далее';
+            document.getElementById('side-input').focus(); draw();
+        }
+        function prevSide(){
+            if(state==='INPUT_DIAGONALS') { if(currentDiagonalInput>0){currentDiagonalInput--;updateInputUI();} return; }
+            if(currentInputEdge>0){currentInputEdge--;updateInputUI();}
+        }
+        function saveSideAndNext(){
+            const val=parseFloat(document.getElementById('side-input').value.replace(',','.'));
+            if(!Number.isFinite(val)||val<=0){showToast('Введите корректное число см',2500);return;}
+            if(state==='INPUT_DIAGONALS') { saveDiagonalAndNext(val); return; }
+            const idx=currentInputEdge;
+            edges[idx].lengthCm=val;
             currentInputEdge++;
-
-            if (currentInputEdge >= edges.length) {
+            // During side entry the sketch is intentionally NOT reshaped.
+            // Only labels for already entered real measurements appear.
+            if(currentInputEdge>=edges.length){
                 document.getElementById('bottom-input-bar').classList.remove('active');
-                if (points.length >= 6) {
-                    initDiagonals();
-                } else {
-                    openMaterialPanel();
-                }
-            } else { updateInputUI(); }
+                initDiagonals();
+            } else updateInputUI();
         }
 
-        function initDiagonals() {
-            state = 'SELECT_DIAGONALS';
-            statusText.innerText = 'Выбор диагоналей';
-            availableDiagonals = [];
-            for (let i = 0; i < points.length; i++) {
-                for (let j = i + 2; j < points.length; j++) {
-                    if (i === 0 && j === points.length - 1) continue;
-                    availableDiagonals.push({ p1: i, p2: j, label: `${points[i].letter}-${points[j].letter}` });
-                }
+        function initDiagonals(){
+            state='SELECT_DIAGONALS'; statusText.innerText='Выбор диагоналей'; availableDiagonals=[]; selectedDiagonals=[];
+            const recommended=new Set(recommendedDiagonalPairs());
+            for(let i=0;i<points.length;i++) for(let j=i+2;j<points.length;j++) {
+                if(i===0&&j===points.length-1)continue;
+                availableDiagonals.push({p1:i,p2:j,label:`${points[i].letter}-${points[j].letter}`,recommended:recommended.has(edgeKey(i,j))});
             }
-
+            // Preselect the minimum triangulation recommended by the sketch.
+            availableDiagonals.filter(d=>d.recommended).forEach(d=>selectedDiagonals.push({...d}));
             updateDiagonalSelectionUI();
-            document.getElementById('diagonals-panel').classList.add('active');
-            autoFitCamera();
-            draw();
+            showToast(`Для точного построения автоматически выбраны ${selectedDiagonals.length} рекомендуемых диагоналей.`,3500);
+            document.getElementById('diagonals-panel').classList.add('active'); draw();
         }
-
-        window.finishDiagonals = function() {
+        window.finishDiagonals=function(){
+            const minNeeded=Math.max(0,points.length-3);
+            if(selectedDiagonals.length<minNeeded){showToast(`Для точного построения нужно минимум ${minNeeded} диагоналей.`,3500);return;}
             document.getElementById('diagonals-panel').classList.remove('active');
-            openMaterialPanel();
+            state='INPUT_DIAGONALS'; statusText.innerText='Ввод фактических диагоналей'; currentDiagonalInput=0;
+            document.getElementById('bottom-input-bar').classList.add('active'); updateInputUI();
         };
+        function saveDiagonalAndNext(val){
+            const d=selectedDiagonals[currentDiagonalInput];
+            d.lengthCm=val;
+            if(currentDiagonalInput===selectedDiagonals.length-1){
+                if(!solveExactGeometry()){
+                    d.lengthCm=null;
+                    showToast('❌ Размеры сторон и диагоналей не дают корректную геометрию. Проверьте измерения и направление внутренних/внешних углов.',5000);
+                    updateInputUI(); return;
+                }
+                document.getElementById('bottom-input-bar').classList.remove('active');
+                openMaterialPanel();
+            } else { currentDiagonalInput++; updateInputUI(); }
+        }
 
         function openMaterialPanel() {
-            state = 'SELECT_MATERIAL'; statusText.innerText = 'Материал и цвет';
+            state='SELECT_MATERIAL'; statusText.innerText='Материал и цвет';
             document.getElementById('material-panel').classList.add('active');
             autoFitCamera(); draw();
         }
 
-        function selectMat(matName, btnEl) {
-            selectedMaterial = matName;
-            document.querySelectorAll('.mat-btn').forEach(b => b.classList.remove('selected'));
-            btnEl.classList.add('selected');
-        }
-
-        function finishMaterialSelection() {
-            selectedColor = document.getElementById('color-input').value.trim() || 'Белый';
-            document.getElementById('material-panel').classList.remove('active');
-            state = 'DONE'; statusText.innerText = 'Готово';
-            document.getElementById('results-panel').classList.add('active');
-            autoFitCamera(); draw();
-        }
-
-        function buildPayload() {
-            // Внутренние координаты Draw хранятся в условных единицах canvas.
-            // scaleFactor = сантиметров на одну условную единицу.
-            // Сохраняем ту же систему координат, которую видит пользователь:
-            // X вправо, Y вниз. Python при построении чертежа использует
-            // invert_yaxis(), поэтому фигура в Telegram не будет зеркальной.
-            const pointsM = points.map(p => ({
-                x: (p.x * scaleFactor) / 100,
-                y: (p.y * scaleFactor) / 100
-            }));
-
-            const sides = edges.map(e => Number(e.lengthCm));
-            const diagonals = selectedDiagonals.map(d => [d.p1, d.p2]);
-
-            return {
-                type: 'drawing',
-                version: 3,
-                points: pointsM,
-                sides_cm: sides,
-                diagonals: diagonals,
-                material: selectedMaterial,
-                color: selectedColor
-            };
-        }
-
-        function sendToBot() {
-            const sendBtn = document.getElementById('send-btn');
-            sendBtn.disabled = true;
-
-            try {
-                if (!isClosed || points.length < 3) {
-                    throw new Error("Сначала замкните фигуру и введите все размеры.");
-                }
-
-                const sides = edges.map(e => Number(e.lengthCm));
-                if (sides.some(s => !Number.isFinite(s) || s <= 0)) {
-                    throw new Error("Не все стороны имеют корректные размеры.");
-                }
-
-                if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-                    throw new Error("Не удалось определить масштаб фигуры.");
-                }
-
-                const payload = buildPayload();
-                const data = JSON.stringify(payload);
-
-                // Telegram.WebApp.sendData принимает строку; для этого режима
-                // Используем только официальный Telegram WebApp API.
-                const byteLength = new TextEncoder().encode(data).length;
-                if (byteLength > 4096) {
-                    throw new Error(`Данные слишком большие (${byteLength} байт). Максимум Telegram — 4096 байт.`);
-                }
-
-                const webApp = requireTelegramWebApp();
-                if (typeof webApp.sendData !== 'function') {
-                    throw new Error("Telegram.WebApp.sendData недоступен в этом режиме запуска.");
-                }
-
-                console.log('Отправка чертежа:', payload);
-                webApp.sendData(data);
-            } catch (e) {
-                console.error('Ошибка отправки:', e);
-                showToast("❌ " + e.message, 5000);
-                sendBtn.disabled = false;
-            }
-        }
-
-        function copyData() {
-            try {
-                if (!isClosed || points.length < 3) {
-                    throw new Error("Сначала замкните фигуру и введите все размеры.");
-                }
-                const payload = buildPayload();
-                const data = JSON.stringify(payload, null, 2);
-                navigator.clipboard.writeText(data).then(() => {
-                    showToast("✅ Данные скопированы в буфер обмена", 2000);
-                }).catch(() => {
-                    const textarea = document.createElement('textarea');
-                    textarea.value = data;
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    showToast("✅ Данные скопированы", 2000);
-                });
-            } catch (e) {
-                showToast("❌ " + e.message, 4000);
-            }
-        }
-
-        function autoFitCamera() {
-            if(points.length === 0) return;
-            let minX = Math.min(...points.map(p=>p.x)), maxX = Math.max(...points.map(p=>p.x));
-            let minY = Math.min(...points.map(p=>p.y)), maxY = Math.max(...points.map(p=>p.y));
-            let cx = (minX + maxX)/2, cy = (minY + maxY)/2;
-            
-            let shapeW = maxX - minX || 200;
-            let shapeH = (maxY - minY) + 160; 
-
-            let scaleX = canvas.width / (shapeW + 80);
-            let scaleY = canvas.height / (shapeH + 120);
-            
-            camera.zoom = Math.max(0.3, Math.min(scaleX, scaleY, 3));
-            camera.x = canvas.width/2 - cx * camera.zoom;
-            camera.y = canvas.height/2 - (cy + 50) * camera.zoom;
-        }
-
-        function resetAll() {
-            points = []; edges = []; availableDiagonals = []; selectedDiagonals = [];
-            isClosed = false; scaleFactor = 1; state = 'DRAWING';
-            camera = {x:0, y:0, zoom:1};
-            statusText.innerText = 'Черчение';
-            document.querySelectorAll('.bottom-panel').forEach(p => p.classList.remove('active'));
-            updateUI(); draw();
+        function selectMat(matName,btnEl){selectedMaterial=matName;document.querySelectorAll('.mat-btn').forEach(b=>b.classList.remove('selected'));btnEl.classList.add('selected');}
+        function finishMaterialSelection(){
+            selectedColor=document.getElementById('color-input').value.trim()||'Белый';
+            document.getElementById('material-panel').classList.remove('active'); state='DONE'; statusText.innerText='Готово';
+            document.getElementById('results-panel').classList.add('active'); autoFitCamera(); draw();
         }
 
         // --- ОТРИСОВКА ТАБЛИЦЫ ОТЧЕТА ---
@@ -760,19 +770,19 @@
             let matStr = `Материал: ${selectedMaterial}   |   Цвет: ${selectedColor}`;
 
             let sidesStrArr = edges.map(e => {
-                let len = e.lengthCm !== null ? e.lengthCm : Math.round(Math.hypot(points[e.endIdx].x-points[e.startIdx].x, points[e.endIdx].y-points[e.startIdx].y)*scaleFactor);
+                let len = e.lengthCm !== null ? e.lengthCm : null;
                 return `${e.label} = ${len} см`;
             });
 
             let diagStrArr = selectedDiagonals.map(d => {
-                let len = Math.round(Math.hypot(points[d.p2].x-points[d.p1].x, points[d.p2].y-points[d.p1].y)*scaleFactor);
+                let len = d.lengthCm != null ? d.lengthCm : null;
                 return `${d.label} = ${len} см`;
             });
 
             let perimeter = 0;
             edges.forEach(e => {
-                let len = e.lengthCm !== null ? e.lengthCm : Math.round(Math.hypot(points[e.endIdx].x-points[e.startIdx].x, points[e.endIdx].y-points[e.startIdx].y)*scaleFactor);
-                perimeter += len;
+                let len = e.lengthCm !== null ? e.lengthCm : null;
+                if (len != null) perimeter += len;
             });
 
             let areaPx = 0;
@@ -876,13 +886,15 @@
                     let s1 = toScreen(points[d.p1].x, points[d.p1].y), s2 = toScreen(points[d.p2].x, points[d.p2].y);
                     ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
 
-                    let len = Math.round(Math.hypot(points[d.p2].x-points[d.p1].x, points[d.p2].y-points[d.p1].y)*scaleFactor);
+                    let len = d.lengthCm != null ? d.lengthCm : null;
                     let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
                     
                     ctx.font = 'bold 12px Arial';
-                    let w = ctx.measureText(len).width;
-                    ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-2, mY-8, w+4, 16);
-                    ctx.fillStyle = '#d32f2f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(len, mX, mY);
+                    if (len != null) {
+                        let w = ctx.measureText(String(len)).width;
+                        ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-2, mY-8, w+4, 16);
+                        ctx.fillStyle = '#d32f2f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(len), mX, mY);
+                    }
                 });
                 ctx.setLineDash([]);
             }
@@ -902,16 +914,17 @@
                 ctx.stroke();
 
                 if (isClosed) {
-                    let text = edges[i].lengthCm !== null ? edges[i].lengthCm : '~'+Math.round(Math.hypot(points[nxt].x-points[i].x, points[nxt].y-points[i].y)*scaleFactor);
+                    let text = edges[i].lengthCm !== null ? edges[i].lengthCm : null;
                     let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
                     
                     ctx.font = 'bold 13px Arial';
-                    let w = ctx.measureText(text).width;
+                    if (text === null) continue;
+                    let w = ctx.measureText(String(text)).width;
                     ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-4, mY-9, w+8, 18);
                     ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX-w/2-4, mY-9, w+8, 18);
                     
                     ctx.fillStyle = edges[i].lengthCm !== null ? '#d32f2f' : '#666666'; 
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, mX, mY);
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(text), mX, mY);
                 }
             }
 
