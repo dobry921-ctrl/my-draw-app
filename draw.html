@@ -538,16 +538,15 @@ function verifyConstraints(work, constraints) {
 }
 
 /**
- * Главный fallback: форма СТРОГО подстраивается под введённые длины сторон.
- * Углы берутся из эскиза, длины — из измерений.
- * После укладки выполняется коррекция замыкания.
+ * Углы поворота из эскиза с «притяжением» к 90°.
+ * Для замера потолков большинство углов близки к прямым — выравниваем их.
  */
-function reconstructFromSidesAndSketch() {
-    const n = points.length;
-    if (n < 3 || !allSideLengthsKnown()) return null;
+function getPreferredTurnAngles(snapDeg = 22) {
+    const n = sketchPoints.length;
+    const turns = [];
+    const snapRad = snapDeg * Math.PI / 180;
+    const right = Math.PI / 2;
 
-    // 1. Углы поворота в каждой вершине по эскизу
-    const turnAngles = [];
     for (let i = 0; i < n; i++) {
         const a = sketchPoints[(i - 1 + n) % n];
         const b = sketchPoints[i];
@@ -558,17 +557,47 @@ function reconstructFromSidesAndSketch() {
         const len2 = Math.hypot(v2x, v2y) || 1;
         let cosA = (v1x * v2x + v1y * v2y) / (len1 * len2);
         cosA = Math.max(-1, Math.min(1, cosA));
-        let ang = Math.acos(cosA);
-        // Знак: сохраняем направление поворота эскиза
+        let ang = Math.acos(cosA); // 0..PI — величина поворота направления
         const cr = cross(a, b, c);
-        if (cr * sketchOrientation < 0) ang = -ang;
-        turnAngles.push(ang);
-    }
+        const sign = (cr * sketchOrientation < 0) ? -1 : 1;
 
-    // 2. Последовательная укладка
+        // Притягиваем к 90° (типичный угол комнаты)
+        if (Math.abs(ang - right) < snapRad) {
+            ang = right;
+        }
+        // Также лёгкое притяжение к 0 (почти прямая линия) и к 180 не делаем —
+        // 0 означало бы отсутствие поворота.
+        turns.push(sign * ang);
+    }
+    return turns;
+}
+
+/**
+ * Реконструкция по длинам сторон + углам эскиза (с притяжением к 90°).
+ * Ориентация итогового чертежа совпадает с эскизом (без произвольного поворота).
+ */
+function reconstructFromSidesAndSketch() {
+    const n = points.length;
+    if (n < 3 || !allSideLengthsKnown()) return null;
+
+    const turnAngles = getPreferredTurnAngles(25);
+
+    // Направление первой стороны берём из эскиза — так сохраняется ориентация
+    const sk0 = sketchPoints[0];
+    const sk1 = sketchPoints[1];
+    let dirX = sk1.x - sk0.x;
+    let dirY = sk1.y - sk0.y;
+    let dirLen = Math.hypot(dirX, dirY) || 1;
+    dirX /= dirLen;
+    dirY /= dirLen;
+
     const work = Array(n).fill(null);
     work[0] = { x: 0, y: 0, letter: points[0].letter };
-    work[1] = { x: edges[0].lengthCm, y: 0, letter: points[1].letter };
+    work[1] = {
+        x: dirX * edges[0].lengthCm,
+        y: dirY * edges[0].lengthCm,
+        letter: points[1].letter
+    };
 
     for (let i = 1; i < n - 1; i++) {
         const prev = work[i - 1];
@@ -580,6 +609,7 @@ function reconstructFromSidesAndSketch() {
         const ux = vx / vlen, uy = vy / vlen;
         const ang = turnAngles[i];
         const cosT = Math.cos(ang), sinT = Math.sin(ang);
+        // Поворот вектора (ux,uy) на ang (в 2D: против часовой при ang>0)
         const nx = ux * cosT - uy * sinT;
         const ny = ux * sinT + uy * cosT;
         work[i + 1] = {
@@ -589,51 +619,33 @@ function reconstructFromSidesAndSketch() {
         };
     }
 
-    // 3. Коррекция замыкания
-    // Последняя сторона должна иметь длину edges[n-1].lengthCm и прийти в work[0]
-    const lastIdx = n - 1;
-    const expectedClose = edges[lastIdx].lengthCm;
-    const actualClose = dist(work[lastIdx], work[0]);
-
-    // Если ошибка большая — распределяем её, слегка поворачивая/сдвигая цепочку.
-    // Простой и надёжный способ: масштабируем и поворачиваем всю фигуру так,
-    // чтобы последняя точка легла на окружность нужного радиуса вокруг первой,
-    // а затем слегка подправим.
-    // Ещё проще и стабильнее для практики:
-    // двигаем последнюю точку на правильное расстояние от предыдущей
-    // в направлении к первой точке, а затем делаем лёгкую глобальную коррекцию.
-
-    // Пересчитываем последнюю точку так, чтобы:
-    // - расстояние до предыдущей = edges[n-2] уже соблюдено
-    // - расстояние до первой ≈ edges[n-1]
-    // Используем пересечение двух окружностей: от work[n-2] и от work[0]
+    // Замыкание: последняя вершина — пересечение окружностей от prev и от first
     if (n >= 3) {
         const prevP = work[n - 2];
-        const rPrev = edges[n - 2].lengthCm; // уже почти соблюдено
+        const rPrev = edges[n - 2].lengthCm;
         const rFirst = edges[n - 1].lengthCm;
         const sols = circleIntersections(prevP, rPrev, work[0], rFirst);
         if (sols.length) {
-            // Выбираем точку, ближайшую к текущей work[n-1] и с правильным знаком поворота
-            let best = sols[0];
-            let bestScore = Infinity;
+            let best = sols[0], bestScore = Infinity;
             for (const s of sols) {
-                let score = dist(s, work[n - 1]);
+                let score = dist(s, work[n - 1] || s);
                 const turn = cross(prevP, s, work[0]);
-                if (turn * sketchTurnSigns[n - 1] <= 0) score += 1e6;
+                if (turn * sketchOrientation <= 0) score += 1e6;
+                // Предпочитаем точку, близкую по направлению к эскизу
+                const skPrev = sketchPoints[n - 2], skLast = sketchPoints[n - 1], skFirst = sketchPoints[0];
+                const skDirx = skLast.x - skPrev.x, skDiry = skLast.y - skPrev.y;
+                const candDirx = s.x - prevP.x, candDiry = s.y - prevP.y;
+                const skL = Math.hypot(skDirx, skDiry) || 1;
+                const cL = Math.hypot(candDirx, candDiry) || 1;
+                score += 0.5 * (1 - (skDirx * candDirx + skDiry * candDiry) / (skL * cL));
                 if (score < bestScore) { bestScore = score; best = s; }
             }
             work[n - 1] = { x: best.x, y: best.y, letter: points[n - 1].letter };
         }
     }
 
-    // 4. Финальная проверка и лёгкая нормализация
-    if (hasSelfIntersection(work)) return null;
-    if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
-
-    // Убеждаемся, что ВСЕ стороны (кроме возможной крошечной ошибки замыкания)
-    // имеют правильные длины. Пересчитываем все длины и, если нужно, слегка
-    // масштабируем отдельные рёбра (итеративно).
-    for (let iter = 0; iter < 8; iter++) {
+    // Итеративная подгонка длин сторон (жёсткие ограничения)
+    for (let iter = 0; iter < 12; iter++) {
         let maxErr = 0;
         for (let i = 0; i < n; i++) {
             const a = work[i];
@@ -642,25 +654,44 @@ function reconstructFromSidesAndSketch() {
             const actual = dist(a, b);
             const err = Math.abs(actual - target);
             if (err > maxErr) maxErr = err;
-            if (actual > 1e-6 && err > 0.05) {
-                // Двигаем точку b вдоль направления a→b
+            if (actual > 1e-6 && err > 0.08) {
                 const scale = target / actual;
                 const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-                // Относительно середины
                 b.x = mx + (b.x - mx) * scale;
                 b.y = my + (b.y - my) * scale;
-                // Компенсируем сдвиг a
                 a.x = mx + (a.x - mx) * scale;
                 a.y = my + (a.y - my) * scale;
             }
         }
-        if (maxErr < 0.15) break;
+        if (maxErr < 0.12) break;
     }
 
-    // Ещё раз проверяем ориентацию
+    if (hasSelfIntersection(work)) return null;
+    if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
+
+    // Сохраняем ориентацию эскиза
     if (polygonSignedArea(work) * sketchOrientation < 0) {
-        // Зеркалим по X
-        for (const p of work) p.x = -p.x;
+        for (const p of work) p.y = -p.y;
+    }
+
+    // Финальный поворот: совмещаем направление первой стороны с эскизом
+    // (на случай накопленных ошибок)
+    const wdx = work[1].x - work[0].x;
+    const wdy = work[1].y - work[0].y;
+    const targetAng = Math.atan2(dirY, dirX);
+    const currentAng = Math.atan2(wdy, wdx);
+    let dAng = targetAng - currentAng;
+    // Нормализуем
+    while (dAng > Math.PI) dAng -= 2 * Math.PI;
+    while (dAng < -Math.PI) dAng += 2 * Math.PI;
+    if (Math.abs(dAng) > 1e-6) {
+        const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
+        const ox = work[0].x, oy = work[0].y;
+        for (let i = 1; i < n; i++) {
+            const px = work[i].x - ox, py = work[i].y - oy;
+            work[i].x = ox + px * cosR - py * sinR;
+            work[i].y = oy + px * sinR + py * cosR;
+        }
     }
 
     return work;
@@ -680,14 +711,16 @@ function solveExactGeometry() {
         if (tris.length === points.length - 2) {
             const result = buildExactFromTriangulation(tris, constraints);
             if (result && verifyConstraints(result, constraints)) {
-                points = result;
+                // Выровнять ориентацию с эскизом
+                const aligned = alignToSketchOrientation(result);
+                points = aligned || result;
                 usedExactGeometry = true;
                 return true;
             }
         }
     }
 
-    // 2. Fallback — жёсткая подгонка под длины сторон + углы эскиза
+    // 2. Fallback — стороны + углы эскиза (с притяжением к 90°)
     const fallback = reconstructFromSidesAndSketch();
     if (fallback) {
         points = fallback;
@@ -695,6 +728,45 @@ function solveExactGeometry() {
         return true;
     }
     return false;
+}
+
+/** Поворачивает готовый полигон так, чтобы первая сторона совпала с направлением эскиза */
+function alignToSketchOrientation(pts) {
+    if (!pts || pts.length < 2 || !sketchPoints.length) return pts;
+    const work = clonePoints(pts);
+    const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
+    const dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
+    const targetAng = Math.atan2(dirY, dirX);
+    const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
+    const currentAng = Math.atan2(wdy, wdx);
+    let dAng = targetAng - currentAng;
+    while (dAng > Math.PI) dAng -= 2 * Math.PI;
+    while (dAng < -Math.PI) dAng += 2 * Math.PI;
+    if (Math.abs(dAng) < 1e-9) return work;
+    const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
+    const ox = work[0].x, oy = work[0].y;
+    for (let i = 1; i < work.length; i++) {
+        const px = work[i].x - ox, py = work[i].y - oy;
+        work[i].x = ox + px * cosR - py * sinR;
+        work[i].y = oy + px * sinR + py * cosR;
+    }
+    // Ориентация (CW/CCW)
+    if (polygonSignedArea(work) * sketchOrientation < 0) {
+        for (const p of work) p.y = -p.y;
+        // После отражения снова совмещаем первую сторону
+        const wdx2 = work[1].x - work[0].x, wdy2 = work[1].y - work[0].y;
+        const cur2 = Math.atan2(wdy2, wdx2);
+        let d2 = targetAng - cur2;
+        while (d2 > Math.PI) d2 -= 2 * Math.PI;
+        while (d2 < -Math.PI) d2 += 2 * Math.PI;
+        const c2 = Math.cos(d2), s2 = Math.sin(d2);
+        for (let i = 1; i < work.length; i++) {
+            const px = work[i].x - ox, py = work[i].y - oy;
+            work[i].x = ox + px * c2 - py * s2;
+            work[i].y = oy + px * s2 + py * c2;
+        }
+    }
+    return work;
 }
 
 // --- UI flow ---
