@@ -585,13 +585,22 @@ function reconstructOrthogonal() {
     const n = points.length;
     if (n < 3 || !allSideLengthsKnown()) return null;
 
-    // Направление первой стороны как в эскизе
+    // Направление первой стороны: берём из эскиза, но притягиваем
+    // к ближайшей оси (горизонт/вертикаль), чтобы чертёж не «заваливался».
     const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
     let dirX = sk1.x - sk0.x;
     let dirY = sk1.y - sk0.y;
     let dlen = Math.hypot(dirX, dirY) || 1;
     dirX /= dlen;
     dirY /= dlen;
+    // Snap to axis: whichever component is larger wins
+    if (Math.abs(dirX) >= Math.abs(dirY)) {
+        dirX = dirX >= 0 ? 1 : -1;
+        dirY = 0;
+    } else {
+        dirX = 0;
+        dirY = dirY >= 0 ? 1 : -1;
+    }
 
     // Нормаль «влево» относительно направления (для поворотов)
     // Поворот на +90° (против часовой): (x,y) -> (-y, x)
@@ -746,6 +755,9 @@ function reconstructFromSidesAndSketch() {
     let dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
     let dlen = Math.hypot(dirX, dirY) || 1;
     dirX /= dlen; dirY /= dlen;
+    // Если угол почти ось — выравниваем, чтобы не было наклона
+    if (Math.abs(dirX) >= Math.abs(dirY) * 2.5) { dirX = dirX >= 0 ? 1 : -1; dirY = 0; }
+    else if (Math.abs(dirY) >= Math.abs(dirX) * 2.5) { dirX = 0; dirY = dirY >= 0 ? 1 : -1; }
 
     const work = Array(n).fill(null);
     work[0] = { x: 0, y: 0, letter: points[0].letter };
