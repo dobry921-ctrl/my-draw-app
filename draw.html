@@ -699,155 +699,138 @@
             const n = points.length;
             if (n < 3) return {ok:false, reason:'Недостаточно вершин.'};
             if (originalPoints.length !== n) captureOriginalGeometry();
-
-            // ВАЖНО: эскиз не является масштабным чертежом. Он задаёт только
-            // порядок вершин и характер углов. Все фактические размеры берём
-            // только из введённых пользователем значений.
             if (targets.length !== n || targets.some(v => !Number.isFinite(Number(v)) || Number(v) <= 0)) {
                 return {ok:false, reason:'Для построения нужно ввести реальные размеры всех сторон.'};
             }
             const L = targets.map(Number);
-
-            // Не замыкаем фигуру на каждом введённом размере. Этот решатель
-            // вызывается только после ввода ВСЕХ сторон.
-            const sum = L.reduce((a,b)=>a+b,0);
-            const longest = Math.max(...L);
-            if (longest >= sum - longest - 1e-7) {
+            const longest = Math.max(...L), sum = L.reduce((a,b)=>a+b,0);
+            if (longest >= sum - longest - 1e-6) {
                 return {ok:false, reason:'Такие размеры не образуют замкнутую фигуру: самая длинная сторона должна быть короче суммы остальных.'};
             }
 
-            const originalDirs = originalPoints.map((_,i)=>edgeDirection(originalPoints,i));
-            const originalTurns = originalPoints.map((_,i)=>turnSignAt(originalPoints,i));
-            const originalOrient = Math.sign(signedArea(originalPoints)) || 1;
+            const dirs = originalPoints.map((_,i)=>edgeDirection(originalPoints,i));
+            const turns = originalPoints.map((_,i)=>turnSignAt(originalPoints,i));
+            const orient = Math.sign(signedArea(originalPoints)) || 1;
+            const scale = Math.max(100, sum);
 
-            // Специальный случай: если эскиз похож на прямоугольник, а стороны
-            // задают прямоугольник, строим его точно. Поэтому криво нарисованный
-            // прямоугольник 200x200x200x200 всегда становится квадратом 200x200.
+            // Четырёхугольник с попарно равными сторонами: это однозначный
+            // прямоугольник/квадрат в рамках нашего UX. Кривизна эскиза здесь
+            // полностью игнорируется, используются только направление первой
+            // стороны и сторона обхода.
             if (n === 4 &&
-                Math.abs(L[0]-L[2]) <= Math.max(0.5, L[0]*0.01) &&
-                Math.abs(L[1]-L[3]) <= Math.max(0.5, L[1]*0.01)) {
-                const d01 = edgeDirection(originalPoints,0);
-                const dir = {x:Math.cos(d01), y:Math.sin(d01)};
-                const side = {x:-dir.y*originalOrient, y:dir.x*originalOrient};
+                Math.abs(L[0]-L[2]) <= Math.max(0.5,L[0]*0.01) &&
+                Math.abs(L[1]-L[3]) <= Math.max(0.5,L[1]*0.01)) {
+                const a = dirs[0], ux=Math.cos(a), uy=Math.sin(a);
+                const vx=-uy*orient, vy=ux*orient;
                 const A={x:0,y:0,letter:originalPoints[0].letter};
-                const B={x:dir.x*L[0],y:dir.y*L[0],letter:originalPoints[1].letter};
-                const D={x:side.x*L[3],y:side.y*L[3],letter:originalPoints[3].letter};
-                const C={x:B.x+side.x*L[1],y:B.y+side.y*L[1],letter:originalPoints[2].letter};
+                const B={x:ux*L[0],y:uy*L[0],letter:originalPoints[1].letter};
+                const C={x:B.x+vx*L[1],y:B.y+vy*L[1],letter:originalPoints[2].letter};
+                const D={x:vx*L[3],y:vy*L[3],letter:originalPoints[3].letter};
                 const rect=[A,B,C,D];
-                if (topologyIsPreserved(rect)) return {ok:true, points:rect};
+                if (!hasSelfIntersection(rect) && Math.sign(signedArea(rect))===orient) return {ok:true,points:rect};
             }
 
-            function makeInitial(blend, rotation) {
-                const out=[];
-                out.push({x:0,y:0,letter:originalPoints[0].letter});
+            // Важный принцип: эскиз задаёт только направления/углы. Реальные
+            // длины задаются L. Ищем такие направления рёбер, чтобы векторная
+            // сумма всех сторон была нулевой. Это гораздо устойчивее, чем
+            // двигать вершины PBD-алгоритмом и пытаться «растянуть» кривой эскиз.
+            function build(angles){
+                const out=[{x:0,y:0,letter:originalPoints[0].letter}];
                 let x=0,y=0;
-                for(let i=0;i<n-1;i++){
-                    let a=originalDirs[i] + rotation;
-                    // blend towards the direction of the previous constructed edge;
-                    // this prevents a very distorted hand sketch from dominating.
-                    if(i>0) {
-                        const prev=Math.atan2(y-out[i-1].y,x-out[i-1].x);
-                        let delta=normalizeAngle(a-prev);
-                        a=prev + delta*blend;
-                    }
-                    x += Math.cos(a)*L[i];
-                    y += Math.sin(a)*L[i];
-                    out.push({x,y,letter:originalPoints[i+1].letter});
-                }
-                // distribute closure error as a good PBD starting point
-                const ex=-x, ey=-y;
-                for(let i=1;i<n;i++){
-                    const f=i/(n-1);
-                    out[i].x += ex*f;
-                    out[i].y += ey*f;
+                for(let i=0;i<n;i++){
+                    x += L[i]*Math.cos(angles[i]);
+                    y += L[i]*Math.sin(angles[i]);
+                    if(i<n-1) out.push({x,y,letter:originalPoints[i+1].letter});
                 }
                 return out;
             }
 
-            function solveCandidate(initial) {
-                let p=initial.map(q=>({x:q.x,y:q.y,letter:q.letter}));
-                const A={x:0,y:0};
-                const firstAngle=originalDirs[0];
-                const firstB={x:Math.cos(firstAngle)*L[0],y:Math.sin(firstAngle)*L[0]};
-
-                for(let iter=0;iter<12000;iter++){
-                    let maxErr=0;
-                    // Жёсткие ограничения длин. Точка A фиксирована.
-                    for(let i=0;i<n;i++){
-                        const j=(i+1)%n;
-                        let dx=p[j].x-p[i].x, dy=p[j].y-p[i].y;
-                        let len=Math.hypot(dx,dy);
-                        if(len<1e-9){
-                            const a=originalDirs[i]; dx=Math.cos(a); dy=Math.sin(a); len=1;
-                        }
-                        const target=L[i];
-                        const err=(len-target)/target;
-                        maxErr=Math.max(maxErr,Math.abs(err));
-                        const ux=dx/len, uy=dy/len;
-                        const correction=(len-target)*0.5;
-                        if(i!==0){ p[i].x += ux*correction; p[i].y += uy*correction; }
-                        if(j!==0){ p[j].x -= ux*correction; p[j].y -= uy*correction; }
-                    }
-
-                    // Фиксируем положение/длину первой стороны. Это убирает
-                    // дрейф фигуры во время PBD.
-                    p[0].x=A.x; p[0].y=A.y;
-                    p[1].x=firstB.x; p[1].y=firstB.y;
-
-                    // Очень мягко тянем направления рёбер к эскизу. Мы НЕ
-                    // фиксируем углы и не требуем пропорций исходного рисунка.
-                    // Это только помогает выбрать нужную из нескольких
-                    // математически возможных форм.
-                    if(iter%2===0){
-                        const strength=0.012;
-                        for(let i=1;i<n-1;i++){
-                            const prev=p[i-1], cur=p[i], next=p[i+1];
-                            const want=originalDirs[i];
-                            const dx=next.x-cur.x, dy=next.y-cur.y;
-                            const len=Math.hypot(dx,dy)||1;
-                            const curA=Math.atan2(dy,dx);
-                            const da=normalizeAngle(want-curA)*strength;
-                            const cs=Math.cos(da), sn=Math.sin(da);
-                            const rx=dx*cs-dy*sn, ry=dx*sn+dy*cs;
-                            next.x=cur.x+rx; next.y=cur.y+ry;
-                        }
-                    }
-
-                    if(iter%50===0){
-                        let good=true;
-                        for(let i=0;i<n;i++){
-                            if(Math.abs(edgeLength(p,i)-L[i])>Math.max(0.03,L[i]*0.0005)){good=false;break;}
-                        }
-                        if(good && !hasSelfIntersection(p) && Math.sign(signedArea(p))===originalOrient){
-                            const turns=p.map((_,i)=>turnSignAt(p,i));
-                            let signsOk=true;
-                            for(let i=0;i<n;i++) if(originalTurns[i]!==0 && turns[i]!==originalTurns[i]) {signsOk=false;break;}
-                            if(signsOk) return p;
-                        }
-                    }
+            function scoreAngles(angles){
+                let rx=0, ry=0;
+                for(let i=0;i<n;i++){ rx+=L[i]*Math.cos(angles[i]); ry+=L[i]*Math.sin(angles[i]); }
+                let anglePenalty=0;
+                for(let i=0;i<n;i++){
+                    const d=normalizeAngle(angles[i]-dirs[i]);
+                    anglePenalty += d*d;
                 }
-
-                // Последняя проверка кандидата.
-                for(let i=0;i<n;i++) if(Math.abs(edgeLength(p,i)-L[i])>Math.max(0.08,L[i]*0.001)) return null;
-                if(hasSelfIntersection(p) || Math.sign(signedArea(p))!==originalOrient) return null;
-                for(let i=0;i<n;i++) if(originalTurns[i]!==0 && turnSignAt(p,i)!==originalTurns[i]) return null;
-                return p;
+                return (rx*rx+ry*ry)/(scale*scale) + 0.006*anglePenalty;
             }
 
-            // Несколько стартов нужны потому, что один и тот же набор сторон
-            // может иметь несколько форм. Выбираем ту, которая ближе к
-            // направлению эскиза, но не сохраняем его кривые пропорции.
-            const attempts=[
-                [1,0],[0.75,0],[0.5,0],[0.25,0],
-                [1,0.08],[1,-0.08],[0.5,0.15],[0.5,-0.15],
-                [0.25,0.3],[0.25,-0.3]
-            ];
-            for(const [blend,rot] of attempts){
-                const solved=solveCandidate(makeInitial(blend,rot));
-                if(solved) return {ok:true,points:solved};
+            function solveAngles(start, jitter=0){
+                let ang=start.slice();
+                const first=ang[0];
+                let best=ang.slice(), bestScore=Infinity;
+                let step=0.12;
+                for(let iter=0;iter<30000;iter++){
+                    let rx=0,ry=0;
+                    for(let i=0;i<n;i++){rx+=L[i]*Math.cos(ang[i]);ry+=L[i]*Math.sin(ang[i]);}
+                    const norm=(rx*rx+ry*ry)/(scale*scale);
+                    let maxGrad=0;
+                    const grad=new Array(n).fill(0);
+                    for(let i=1;i<n;i++){
+                        const d=normalizeAngle(ang[i]-dirs[i]);
+                        grad[i]=2*L[i]*(-Math.sin(ang[i])*rx+Math.cos(ang[i])*ry)/(scale*scale)+0.012*d;
+                        maxGrad=Math.max(maxGrad,Math.abs(grad[i]));
+                    }
+                    if(norm<1e-10){
+                        // Финальное уточнение без штрафа за эскиз.
+                        for(let k=0;k<4;k++){
+                            rx=0;ry=0; for(let i=0;i<n;i++){rx+=L[i]*Math.cos(ang[i]);ry+=L[i]*Math.sin(ang[i]);}
+                            for(let i=1;i<n;i++) ang[i]-=0.08*(2*L[i]*(-Math.sin(ang[i])*rx+Math.cos(ang[i])*ry)/(scale*scale));
+                        }
+                    }
+                    const cur=scoreAngles(ang);
+                    if(cur<bestScore){bestScore=cur;best=ang.slice();}
+                    if(maxGrad<1e-8 && norm<1e-10) break;
+                    let improved=false;
+                    for(let trial=0;trial<3;trial++){
+                        const cand=ang.slice();
+                        for(let i=1;i<n;i++) cand[i]-=grad[i]*step;
+                        const sc=scoreAngles(cand);
+                        if(sc<cur){ang=cand;step=Math.min(0.25,step*1.03);improved=true;break;}
+                        step*=0.5;
+                    }
+                    if(!improved && step<1e-6){
+                        // небольшой случайный/детерминированный выход из локального минимума
+                        for(let i=1;i<n;i++) ang[i]=best[i] + (jitter||0) * Math.sin((iter+i)*1.731);
+                        step=0.08;
+                    }
+                    ang[0]=first;
+                }
+                return best;
             }
 
-            return {ok:false, reason:'Не удалось построить замкнутую фигуру по этим сторонам с сохранением направления внутренних и внешних углов. Проверьте, что размеры соответствуют форме помещения.'};
+            const starts=[];
+            for(const rot of [0,0.15,-0.15,0.35,-0.35,0.6,-0.6,Math.PI/2,-Math.PI/2]){
+                starts.push(dirs.map((d,i)=>d+rot + (i?0:0)));
+            }
+            // Дополнительные старты слегка сглаживают очень кривой ручной эскиз.
+            for(const blend of [0.25,0.5,0.75]){
+                const st=dirs.slice();
+                for(let i=1;i<n;i++) st[i]=dirs[i-1]+normalizeAngle(dirs[i]-dirs[i-1])*blend;
+                starts.push(st);
+            }
+
+            let best=null, bestCost=Infinity;
+            for(let si=0;si<starts.length;si++){
+                const ang=solveAngles(starts[si], si*0.025);
+                const p=build(ang);
+                if(hasSelfIntersection(p)) continue;
+                if(Math.sign(signedArea(p))!==orient) continue;
+                let turnsOk=true;
+                for(let i=0;i<n;i++){
+                    if(turns[i]!==0 && turnSignAt(p,i)!==turns[i]) {turnsOk=false;break;}
+                }
+                if(!turnsOk) continue;
+                let maxErr=0;
+                for(let i=0;i<n;i++) maxErr=Math.max(maxErr,Math.abs(edgeLength(p,i)-L[i]));
+                if(maxErr>Math.max(0.05,scale*0.000001)) continue;
+                const cost=scoreAngles(ang);
+                if(cost<bestCost){bestCost=cost;best=p;}
+            }
+            if(best) return {ok:true,points:best};
+
+            return {ok:false, reason:'Не удалось построить фигуру по этим размерам с сохранением направления внутренних и внешних углов. Эскиз можно рисовать непропорционально — проверьте только реальные размеры сторон.'};
         }
 
         function adjustShapeToLengths() {
@@ -1063,7 +1046,7 @@
         function closeReview(){document.getElementById('review-panel').classList.remove('active');}
 
         async function sendToBot() {
-            const sendBtn=document.getElementById('send-btn'); sendBtn.disabled=true;
+            const sendBtn=document.getElementById('review-btn'); if(sendBtn) sendBtn.disabled=true;
             try {
                 const payloads=getAllPayloadsForSending(); if(!payloads.length) throw new Error('Добавьте хотя бы один готовый потолок.');
                 for(const p of payloads){ if(!p.points||p.points.length<3) throw new Error('Один из потолков содержит меньше 3 вершин.'); if(!p.sides_cm||p.sides_cm.some(s=>!Number.isFinite(s)||s<=0)) throw new Error('У одного из потолков есть некорректный размер стороны.'); }
@@ -1076,7 +1059,7 @@
                 if(new TextEncoder().encode(data).byteLength>4096) throw new Error('Комплект чертежей слишком большой для Telegram. Уменьшите количество потолков или сложность чертежей.');
                 const webApp=requireTelegramWebApp(); if(typeof webApp.sendData!=='function') throw new Error('Telegram.WebApp.sendData недоступен. Откройте Draw через кнопку Telegram.');
                 clearDraft(); closeReview(); webApp.sendData(data);
-            } catch(e){console.error(e);showToast('❌ '+e.message,5000);sendBtn.disabled=false;}
+            } catch(e){console.error(e);showToast('❌ '+e.message,5000);if(sendBtn) sendBtn.disabled=false;}
         }
 
         function autoFitCamera() {
