@@ -51,6 +51,7 @@
         .btn-danger { background-color: var(--danger); }
         .btn-success { background-color: var(--success); }
         .btn-outline { background: transparent; color: var(--text-dark); border: 1px solid #ccc; }
+        .btn-accent { background-color: var(--accent); }
 
         #canvas-container {
             flex-grow: 1; position: relative;
@@ -72,6 +73,8 @@
             display: none; flex-direction: column; z-index: 100;
             padding: 15px;
             border-top-left-radius: 14px; border-top-right-radius: 14px;
+            max-height: 55vh;
+            overflow-y: auto;
         }
         .bottom-panel.active { display: flex; }
 
@@ -95,7 +98,7 @@
 
         .diag-buttons-grid {
             display: grid; grid-template-columns: repeat(3, minmax(90px, 1fr));
-            gap: 8px; max-height: 35vh; overflow-y: auto; padding-bottom: 4px;
+            gap: 8px; max-height: 28vh; overflow-y: auto; padding-bottom: 4px;
         }
         .diag-select-btn {
             border: 1px solid #c9c9c9; background: #f8f9fa; color: #222;
@@ -126,65 +129,50 @@
 
         .send-btn {
             width: 100%; padding: 14px; font-size: 1.1rem;
-            background-color: #8e44ad; color: white; border: none;
+            background-color: #28a745; color: white; border: none;
             border-radius: 8px; font-weight: bold; cursor: pointer;
         }
         .send-btn:active { opacity: 0.85; }
         .send-btn:disabled { background-color: #aaa; cursor: not-allowed; }
 
-        #ceilings-summary {
-            display: none; flex: 0 0 auto; background: #ffffff;
-            border-bottom: 1px solid #dfe3e8; padding: 8px 10px;
-            max-height: 150px; overflow-y: auto;
+        .copy-btn {
+            width: 100%; padding: 10px; font-size: 0.9rem;
+            background-color: #6c757d; color: white; border: none;
+            border-radius: 8px; cursor: pointer; margin-top: 8px;
         }
-        #ceilings-summary.active { display: block; }
-        .summary-header {
-            display: flex; justify-content: space-between; align-items: center;
-            font-weight: 700; font-size: 0.9rem; margin-bottom: 6px;
-        }
-        .ceiling-card {
-            display: flex; align-items: center; gap: 8px;
-            background: #f8f9fa; border: 1px solid #d8dde3;
-            border-radius: 8px; padding: 7px 9px; margin-bottom: 5px;
-            font-size: 0.82rem;
-        }
-        .ceiling-card:last-child { margin-bottom: 0; }
-        .ceiling-card-num {
-            min-width: 26px; height: 26px; display: flex;
-            align-items: center; justify-content: center;
-            background: var(--primary); color: #fff; border-radius: 50%;
-            font-weight: 700;
-        }
-        .ceiling-card-info { flex: 1; min-width: 0; }
-        .ceiling-card-title { font-weight: 700; }
-        .ceiling-card-meta { color: #666; margin-top: 2px; }
-        .ceiling-card-delete {
-            border: none; background: transparent; color: var(--danger);
-            font-size: 1.15rem; cursor: pointer; padding: 4px 7px;
-        }
-        .result-actions { display:flex; flex-direction:column; gap:12px; margin-top:8px; }
-        .add-ceiling-btn {
-            width: 100%; padding: 13px; font-size: 1.05rem;
-            background-color: #0066cc; color: white; border: none;
-            border-radius: 8px; font-weight: bold; cursor: pointer;
-        }
-        .add-ceiling-btn:active { opacity: 0.85; }
+        .copy-btn:active { opacity: 0.85; }
 
-        .summary-total { margin-top: 7px; padding-top: 7px; border-top: 1px solid #ddd; font-weight: 800; }
-        .current-metrics { background:#f7f9fb; border:1px solid #e1e5ea; border-radius:8px; padding:9px; margin-bottom:10px; line-height:1.45; }
-        .ceiling-card-edit { border:none; background:transparent; color:var(--primary); font-size:1rem; cursor:pointer; padding:4px 5px; }
-        .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.42); display:none; align-items:flex-end; z-index:300; padding:12px; }
-        .modal-backdrop.active { display:flex; }
-        .review-card { background:#fff; width:100%; max-height:80vh; overflow:auto; border-radius:14px; padding:15px; box-shadow:0 -4px 20px rgba(0,0,0,.2); }
-        .review-title { font-size:1.15rem; font-weight:800; margin-bottom:10px; }
-        .review-row { display:flex; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid #eee; }
-        .review-total { margin-top:10px; padding:11px; background:#eef8f1; border-radius:8px; font-weight:800; line-height:1.5; }
-        .review-actions { display:flex; gap:8px; margin-top:12px; }
-        .review-actions button { flex:1; }
-        .recovery-panel { position:absolute; left:10px; right:10px; top:70px; background:#fff; border:1px solid #ddd; border-radius:10px; padding:10px; z-index:250; box-shadow:0 4px 15px rgba(0,0,0,.15); display:none; }
-        .recovery-panel.active { display:block; }
-        .recovery-actions { display:flex; gap:8px; margin-top:8px; }
-        .recovery-actions button { flex:1; }
+        .ceilings-list {
+            margin: 10px 0;
+            max-height: 18vh;
+            overflow-y: auto;
+        }
+        .ceiling-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            font-size: 0.92rem;
+        }
+        .ceiling-item button {
+            background: var(--danger);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .hint {
+            font-size: 0.88rem;
+            color: #555;
+            margin-bottom: 8px;
+            line-height: 1.35;
+        }
     </style>
 </head>
 <body>
@@ -202,22 +190,12 @@
 
     <div id="toast"></div>
 
-    <div id="ceilings-summary">
-        <div class="summary-header">
-            <span>Готовые потолки: <b id="ceilings-count">0</b></span>
-            <span id="total-metrics">0.00 м² · 0.00 пог. м</span>
-        </div>
-        <div id="ceilings-list"></div>
-        <button class="btn btn-outline" style="width:100%;margin-top:6px;display:none" id="undo-delete-btn" onclick="undoDeleteCeiling()">↩️ Отменить удаление</button>
-        <div class="summary-total" id="summary-total">Итого: 0.00 м² · 0.00 пог. м</div>
-    </div>
-
     <div id="canvas-container">
         <canvas id="appCanvas"></canvas>
         <button id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
     </div>
 
-    <!-- Ввод сторон -->
+    <!-- Ввод сторон / диагоналей -->
     <div id="bottom-input-bar" class="bottom-panel">
         <div id="input-row">
             <button class="btn btn-outline" id="prev-side-btn" onclick="prevSide()" style="display: none;">Назад</button>
@@ -227,15 +205,19 @@
         </div>
     </div>
 
-    <!-- Выбор диагоналей -->
+    <!-- Выбор диагоналей (необязательно) -->
     <div id="diagonals-panel" class="bottom-panel">
-        <div class="panel-title">Дополнительные диагонали — необязательно</div>
-        <div style="font-size:0.92rem; color:#555; margin-bottom:8px;">
-            Диагонали нужны только как дополнительные контрольные размеры. Можно пропустить этот шаг и сразу перейти дальше.
+        <div class="panel-title">Диагонали (необязательно)</div>
+        <div class="hint">
+            Можно пропустить. Если введёте диагонали — форма будет точнее.
+            Рекомендуемые диагонали уже отмечены.
         </div>
         <div id="diag-list-container" class="diag-buttons-grid"></div>
         <div id="diag-selected-info" class="diag-item" style="margin-top:8px;">Выбрано: 0</div>
-        <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn btn-outline" style="flex:1;padding:12px;" onclick="skipDiagonals()">Пропустить</button><button class="btn btn-success" style="flex:1;padding:12px;" onclick="finishDiagonals()">Продолжить</button></div>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+            <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="skipDiagonals()">Пропустить</button>
+            <button class="btn btn-success" style="flex:1; padding:12px;" onclick="finishDiagonals()">Далее</button>
+        </div>
     </div>
 
     <!-- Выбор материала и цвета -->
@@ -247,121 +229,37 @@
             <div class="mat-btn" onclick="selectMat('Сатин', this)">Сатин</div>
         </div>
         <div class="color-row">
-            <label>Название:</label>
-            <input type="text" id="ceiling-name-input" value="" maxlength="60" placeholder="Например: Кухня, Гостиная">
-        </div>
-        <div class="color-row">
             <label>Цвет:</label>
             <input type="text" id="color-input" value="Белый" placeholder="Например: Белый, 001">
         </div>
-        <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Сформировать чертеж</button>
+        <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Сформировать чертёж</button>
     </div>
 
-    <!-- Действия после готовности текущего потолка -->
+    <!-- Итоговая панель -->
     <div id="results-panel" class="bottom-panel">
-        <div class="panel-title">Потолок готов</div>
-        <div id="current-metrics" class="current-metrics"></div>
-        <div class="result-actions">
-            <button class="add-ceiling-btn" onclick="addCeiling()">➕ Добавить потолок</button>
-            <button type="button" class="send-btn" id="review-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
-        </div>
-    </div>
-
-    <div id="review-panel" class="modal-backdrop">
-        <div class="review-card">
-            <div class="review-title">Проверьте замер</div>
-            <div id="review-content"></div>
-            <div class="review-actions">
-                <button class="btn btn-outline" onclick="closeReview()">✏️ Вернуться</button>
-                <button class="btn btn-success" id="send-btn" onclick="sendToBot()">📤 Отправить</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="recovery-panel" class="recovery-panel">
-        <div><b>Незавершённый замер</b><br><span id="recovery-text"></span></div>
-        <div class="recovery-actions">
-            <button class="btn btn-success" onclick="resumeDraft()">Продолжить</button>
-            <button class="btn btn-outline" onclick="discardDraft()">Удалить</button>
-        </div>
+        <div class="panel-title">Готовые потолки</div>
+        <div id="ceilings-list" class="ceilings-list"></div>
+        <button class="btn btn-accent" id="add-ceiling-btn" onclick="addCeiling()" style="width:100%; margin-bottom:8px;">➕ Добавить ещё потолок</button>
+        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
+        <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
     </div>
 
     <script>
-        try { if (window.Telegram && Telegram.WebApp) { Telegram.WebApp.ready(); Telegram.WebApp.expand(); } } catch(e) {}
         const canvas = document.getElementById('appCanvas');
         const ctx = canvas.getContext('2d');
         const container = document.getElementById('canvas-container');
         const statusText = document.getElementById('status-text');
         
         let points = [], edges = [], availableDiagonals = [], selectedDiagonals = [];
-        // Геометрический эталон: координаты, которые пользователь реально нарисовал.
-        let originalPoints = [];
-        let originalTurnSigns = [];
-        let originalOrientation = 0;
-        let isClosed = false, currentInputEdge = 0;
-        let selectedMaterial = 'Мат', selectedColor = 'Белый', selectedCeilingName = '';
-        let lastDeletedCeiling = null;
-        let state = 'DRAWING'; // DRAWING, INPUT_SIDES, SELECT_DIAGONALS(optional), SELECT_MATERIAL, DONE
-
+        let isClosed = false, scaleFactor = 1, currentInputEdge = 0;
+        let sketchPoints = [], sketchTurnSigns = [], sketchOrientation = 1;
+        let currentDiagonalInput = 0;
         let completedCeilings = [];
-        let editingCeilingIndex = null;
-        let lastGeometryError = '';
-        const DRAFT_KEY = 'zamer_master_draft_v6';
-        const MAX_POINTS = 30; // ограничение на количество вершин
-
+        let selectedMaterial = 'Мат', selectedColor = 'Белый';
+        let state = 'DRAWING'; // DRAWING, INPUT_SIDES, SELECT_DIAGONALS, INPUT_DIAGONALS, SELECT_MATERIAL, DONE
+        let usedExactGeometry = false;
+        
         let camera = { x: 0, y: 0, zoom: 1 };
-
-        function saveDraft() {
-            try {
-                const draft = { completedCeilings, current: { points, originalPoints, originalTurnSigns, originalOrientation, edges, availableDiagonals, selectedDiagonals, isClosed, currentInputEdge, selectedMaterial, selectedColor, selectedCeilingName, state, camera }, editingCeilingIndex, savedAt: Date.now() };
-                localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-            } catch (e) { console.warn('Не удалось сохранить черновик', e); }
-        }
-
-        function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch(e) {} }
-
-        function showRecoveryIfNeeded() {
-            try {
-                const raw = localStorage.getItem(DRAFT_KEY);
-                if (!raw) return;
-                const d = JSON.parse(raw);
-                const count = (d.completedCeilings || []).length;
-                const hasCurrent = d.current && ((d.current.points || []).length > 0 || d.current.state === 'DONE');
-                if (!count && !hasCurrent) return;
-                const totalArea = (d.completedCeilings || []).reduce((a,c)=>a+Number(c.area_m2||0),0);
-                const totalPer = (d.completedCeilings || []).reduce((a,c)=>a+Number(c.perimeter_cm||0)/100,0);
-                document.getElementById('recovery-text').innerText = `Сохранено потолков: ${count}${hasCurrent ? ' + текущий незавершённый чертёж' : ''}. ${count ? `Итого ${totalArea.toFixed(2)} м² · ${totalPer.toFixed(2)} пог. м.` : ''}`;
-                document.getElementById('recovery-panel').classList.add('active');
-            } catch(e) { clearDraft(); }
-        }
-
-        function resumeDraft() {
-            try {
-                const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}');
-                completedCeilings = Array.isArray(d.completedCeilings) ? d.completedCeilings : [];
-                const c = d.current || {};
-                points = c.points || []; originalPoints = c.originalPoints || points.map(p => ({...p})); originalTurnSigns = Array.isArray(c.originalTurnSigns) ? c.originalTurnSigns : []; originalOrientation = Number(c.originalOrientation) || 0; edges = c.edges || []; availableDiagonals = c.availableDiagonals || []; selectedDiagonals = c.selectedDiagonals || [];
-                isClosed = !!c.isClosed; currentInputEdge = Number(c.currentInputEdge) || 0;
-                selectedMaterial = c.selectedMaterial || 'Мат'; selectedColor = c.selectedColor || 'Белый'; selectedCeilingName = c.selectedCeilingName || ''; state = c.state || 'DRAWING';
-                camera = c.camera || {x:0,y:0,zoom:1}; editingCeilingIndex = null; // при восстановлении сбрасываем редактирование
-                document.getElementById('recovery-panel').classList.remove('active');
-                renderCompletedCeilings();
-                document.getElementById('color-input').value = selectedColor;
-                document.getElementById('ceiling-name-input').value = selectedCeilingName;
-                document.querySelectorAll('.mat-btn').forEach(b => b.classList.toggle('selected', b.innerText === selectedMaterial));
-                document.querySelectorAll('.bottom-panel').forEach(p => p.classList.remove('active'));
-                if (state === 'INPUT_SIDES') { document.getElementById('bottom-input-bar').classList.add('active'); updateInputUI(); }
-                else if (state === 'SELECT_DIAGONALS') { updateDiagonalSelectionUI(); document.getElementById('diagonals-panel').classList.add('active'); }
-                else if (state === 'SELECT_MATERIAL') { document.getElementById('material-panel').classList.add('active'); }
-                else if (state === 'DONE') { document.getElementById('results-panel').classList.add('active'); updateCurrentMetrics(); }
-                statusText.innerText = state === 'DONE' ? 'Потолок готов' : state === 'DRAWING' ? 'Черчение контура' : 'Продолжение замера';
-                updateUI(); autoFitCamera(); draw();
-            } catch(e) { clearDraft(); showToast('Не удалось восстановить черновик', 3000); }
-        }
-
-        function discardDraft() { clearDraft(); document.getElementById('recovery-panel').classList.remove('active'); }
-
-        window.addEventListener('load', () => setTimeout(showRecoveryIfNeeded, 250));
 
         // --- Telegram WebApp ---
         function getTelegramWebApp() {
@@ -391,7 +289,7 @@
             if (toastTimer) clearTimeout(toastTimer);
             if(duration > 0) toastTimer = setTimeout(() => { t.style.display = 'none'; }, duration);
         }
-        showToast("Тапайте по экрану для создания углов. Замкните, нажав на 1-ю точку. Форма после ввода размеров не будет переворачиваться.", 5000);
+        showToast("Тапайте по экрану для создания углов. Замкните, нажав на 1-ю точку.", 4000);
 
         function toWorld(sx, sy) { return { x: (sx - camera.x) / camera.zoom, y: (sy - camera.y) / camera.zoom }; }
         function toScreen(wx, wy) { return { x: wx * camera.zoom + camera.x, y: wy * camera.zoom + camera.y }; }
@@ -518,10 +416,6 @@
 
         function handleCanvasTap(worldPos) {
             if (state === 'DRAWING') {
-                if (points.length >= MAX_POINTS) {
-                    showToast(`Максимум ${MAX_POINTS} вершин. Замкните фигуру.`, 2500);
-                    return;
-                }
                 if (points.length >= 3) {
                     let distToFirst = Math.hypot(worldPos.x - points[0].x, worldPos.y - points[0].y) * camera.zoom;
                     if (distToFirst < 40) { closePolygon(); return; }
@@ -533,11 +427,7 @@
                 }
 
                 points.push({ x: worldPos.x, y: worldPos.y, letter: getLetter(points.length) });
-                updateUI(); draw(); saveDraft();
-                return;
-            }
-
-            if (state === 'SELECT_DIAGONALS') {
+                updateUI(); draw();
                 return;
             }
         }
@@ -549,532 +439,663 @@
             if (existing >= 0) {
                 selectedDiagonals.splice(existing, 1);
             } else {
-                selectedDiagonals.push({ ...d });
+                selectedDiagonals.push({ ...d, lengthCm: null });
             }
             updateDiagonalSelectionUI();
             draw();
         }
 
-        function updateDiagonalSelectionUI() {
-            const list = document.getElementById('diag-list-container');
-            const info = document.getElementById('diag-selected-info');
-            if (!list || !info) return;
+        function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); } }
 
-            list.innerHTML = availableDiagonals.map((d, idx) => {
-                const selected = selectedDiagonals.some(x => x.p1 === d.p1 && x.p2 === d.p2);
-                return `<button type="button" class="diag-select-btn ${selected ? 'selected' : ''}" onclick="toggleDiagonalByIndex(${idx})">${selected ? '✓ ' : ''}${d.label}</button>`;
-            }).join('');
-
-            info.innerText = `Выбрано диагоналей: ${selectedDiagonals.length}`;
+        // ==================== ГЕОМЕТРИЯ ====================
+        function clonePoints(pts) { return pts.map(p => ({x:p.x, y:p.y, letter:p.letter})); }
+        function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+        function cross(a,b,c) { return (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x); }
+        function polygonSignedArea(pts) {
+            let a=0;
+            for(let i=0;i<pts.length;i++) { const q=pts[(i+1)%pts.length]; a += pts[i].x*q.y-q.x*pts[i].y; }
+            return a/2;
         }
-
-        function undoPoint() { if(points.length > 0) { points.pop(); updateUI(); draw(); saveDraft(); } }
-
-        // --- ФИКСАЦИЯ ИСХОДНОЙ ГЕОМЕТРИИ ---
-        function signedArea(pts) {
-            let a = 0;
-            for (let i = 0; i < pts.length; i++) {
-                const p = pts[i], q = pts[(i + 1) % pts.length];
-                a += p.x * q.y - q.x * p.y;
+        function getTurnSigns(pts) {
+            const area=polygonSignedArea(pts), orient=area>=0?1:-1;
+            return pts.map((_,i)=>{
+                const a=pts[(i-1+pts.length)%pts.length], b=pts[i], c=pts[(i+1)%pts.length];
+                const cr=cross(a,b,c);
+                return Math.abs(cr)<1e-8 ? 0 : (cr*orient>0 ? 1 : -1);
+            });
+        }
+        function geometrySignature(pts) {
+            return {orientation: polygonSignedArea(pts)>=0?1:-1, turns:getTurnSigns(pts)};
+        }
+        function topologyValid(pts) {
+            if(pts.length<3 || hasSelfIntersection(pts)) return false;
+            if(Math.abs(polygonSignedArea(pts))<1e-7) return false;
+            const sig=geometrySignature(pts);
+            if(sig.orientation!==sketchOrientation) return false;
+            for(let i=0;i<sig.turns.length;i++) {
+                if(sketchTurnSigns[i] && sig.turns[i] && sketchTurnSigns[i]!==sig.turns[i]) return false;
             }
-            return a / 2;
+            return true;
+        }
+        function edgeKey(a,b) { return a<b ? `${a}:${b}` : `${b}:${a}`; }
+        function allSideLengthsKnown() { return edges.length && edges.every(e=>Number.isFinite(e.lengthCm)&&e.lengthCm>0); }
+
+        function normalizedSketch() {
+            if(!sketchPoints.length) return [];
+            const minX=Math.min(...sketchPoints.map(p=>p.x)), maxX=Math.max(...sketchPoints.map(p=>p.x));
+            const minY=Math.min(...sketchPoints.map(p=>p.y)), maxY=Math.max(...sketchPoints.map(p=>p.y));
+            const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+            const span=Math.max(maxX-minX,maxY-minY,1);
+            return sketchPoints.map(p=>({x:(p.x-cx)/span,y:(p.y-cy)/span}));
         }
 
-        function turnSignAt(pts, i) {
-            const n = pts.length;
-            const a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n];
-            const abx = b.x - a.x, aby = b.y - a.y;
-            const bcx = c.x - b.x, bcy = c.y - b.y;
-            const cross = abx * bcy - aby * bcx;
-            const eps = 1e-7;
-            return Math.abs(cross) < eps ? 0 : (cross > 0 ? 1 : -1);
+        function isBoundaryEdge(a,b,n=points.length) { return Math.abs(a-b)===1 || Math.abs(a-b)===n-1; }
+
+        function pointInTriangle(p,a,b,c) {
+            const c1=cross(a,b,p), c2=cross(b,c,p), c3=cross(c,a,p);
+            const hasNeg=c1<-1e-8||c2<-1e-8||c3<-1e-8, hasPos=c1>1e-8||c2>1e-8||c3>1e-8;
+            return !(hasNeg&&hasPos);
         }
-
-        function captureOriginalGeometry() {
-            originalPoints = points.map(p => ({ x: Number(p.x), y: Number(p.y), letter: p.letter }));
-            originalOrientation = Math.sign(signedArea(originalPoints));
-            originalTurnSigns = originalPoints.map((_, i) => turnSignAt(originalPoints, i));
-        }
-
-        function topologyIsPreserved(pts) {
-            if (!Array.isArray(pts) || pts.length < 3) return false;
-            if (hasSelfIntersection(pts)) return false;
-
-            const area = signedArea(pts);
-            if (Math.abs(area) < 1e-6) return false;
-            if (originalOrientation && Math.sign(area) !== originalOrientation) return false;
-
-            if (originalTurnSigns.length === pts.length) {
-                for (let i = 0; i < pts.length; i++) {
-                    const expected = originalTurnSigns[i];
-                    const actual = turnSignAt(pts, i);
-                    if (expected !== 0 && actual !== expected) return false;
+        function triangulateBySketch() {
+            const n=sketchPoints.length;
+            if(n<3) return [];
+            const ids=[...Array(n).keys()];
+            const orient=sketchOrientation;
+            const tris=[];
+            const sk=sketchPoints;
+            let guard=0;
+            while(ids.length>3 && guard++<n*n) {
+                let chosen=-1;
+                let best=Infinity;
+                for(let k=0;k<ids.length;k++) {
+                    const prev=ids[(k-1+ids.length)%ids.length], cur=ids[k], next=ids[(k+1)%ids.length];
+                    const cr=cross(sk[prev],sk[cur],sk[next]);
+                    if(cr*orient<=1e-8) continue;
+                    let contains=false;
+                    for(const q of ids) {
+                        if(q===prev||q===cur||q===next) continue;
+                        if(pointInTriangle(sk[q],sk[prev],sk[cur],sk[next])) { contains=true; break; }
+                    }
+                    if(contains) continue;
+                    const score=dist(sk[prev],sk[next]);
+                    if(score<best){best=score;chosen=k;}
                 }
+                if(chosen<0) break;
+                const prev=ids[(chosen-1+ids.length)%ids.length], cur=ids[chosen], next=ids[(chosen+1)%ids.length];
+                tris.push([prev,cur,next]);
+                ids.splice(chosen,1);
+            }
+            if(ids.length===3) tris.push([ids[0],ids[1],ids[2]]);
+            return tris;
+        }
+
+        function recommendedDiagonalPairs() {
+            return triangulateBySketch().map(t=>edgeKey(t[0],t[2])).filter(k=>{
+                const [a,b]=k.split(':').map(Number); return !isBoundaryEdge(a,b);
+            });
+        }
+
+        function updateDiagonalSelectionUI() {
+            const list=document.getElementById('diag-list-container'), info=document.getElementById('diag-selected-info');
+            if(!list||!info) return;
+            list.innerHTML=availableDiagonals.map((d,idx)=>{
+                const selected=selectedDiagonals.some(x=>edgeKey(x.p1,x.p2)===edgeKey(d.p1,d.p2));
+                const recommended=d.recommended?' <span style="font-size:11px;opacity:.7">(рек.)</span>':'';
+                return `<button type="button" class="diag-select-btn ${selected?'selected':''}" onclick="toggleDiagonalByIndex(${idx})">${selected?'✓ ':''}${d.label}${recommended}</button>`;
+            }).join('');
+            const minNeeded=Math.max(0,points.length-3);
+            info.innerText=`Выбрано: ${selectedDiagonals.length}. Для точного построения желательно ≥ ${minNeeded}. Можно пропустить.`;
+        }
+
+        function buildConstraintMap() {
+            const map=new Map();
+            edges.forEach((e)=>{ if(Number.isFinite(e.lengthCm)&&e.lengthCm>0) map.set(edgeKey(e.startIdx,e.endIdx),e.lengthCm); });
+            selectedDiagonals.forEach(d=>{ if(Number.isFinite(d.lengthCm)&&d.lengthCm>0) map.set(edgeKey(d.p1,d.p2),d.lengthCm); });
+            return map;
+        }
+
+        function circleIntersections(A,rA,B,rB) {
+            const dx=B.x-A.x, dy=B.y-A.y, d=Math.hypot(dx,dy);
+            if(d<1e-9 || d>rA+rB+1e-7 || d<Math.abs(rA-rB)-1e-7) return [];
+            const a=(rA*rA-rB*rB+d*d)/(2*d);
+            const h2=Math.max(0,rA*rA-a*a), h=Math.sqrt(h2);
+            const ux=dx/d, uy=dy/d;
+            const px=A.x+a*ux, py=A.y+a*uy;
+            return [
+                {x:px-h*uy,y:py+h*ux},
+                {x:px+h*uy,y:py-h*ux}
+            ];
+        }
+
+        function buildExactFromTriangulation(tris,constraints) {
+            const n=points.length;
+            if(!tris.length || !constraints) return null;
+            const adjacency=Array.from({length:n},()=>new Map());
+            for(const [k,len] of constraints.entries()) {
+                const [a,b]=k.split(':').map(Number);
+                adjacency[a].set(b,len); adjacency[b].set(a,len);
+            }
+            for(const t of tris) {
+                const pairs=[[t[0],t[1]],[t[1],t[2]],[t[2],t[0]]];
+                if(pairs.some(([a,b])=>!adjacency[a].has(b))) return null;
+            }
+            const work=Array(n).fill(null);
+            const sketch=normalizedSketch();
+            const first=tris[0];
+            const A=first[0], B=first[1], C=first[2];
+            const ab=adjacency[A].get(B), bc=adjacency[B].get(C), ca=adjacency[C].get(A);
+            if(!ab||!bc||!ca) return null;
+
+            work[A]={x:0,y:0,letter:points[A].letter};
+            work[B]={x:ab,y:0,letter:points[B].letter};
+            let sols=circleIntersections(work[A],ca,work[B],bc);
+            if(!sols.length) return null;
+            const sA=sketch[A]||{x:0,y:0}, sB=sketch[B]||{x:1,y:0}, sC=sketch[C]||{x:0,y:1};
+            let cand=sols[0];
+            if(sols.length>1) {
+                const score=p=>{
+                    const v={x:p.x/Math.max(ab,1),y:p.y/Math.max(ab,1)};
+                    return Math.hypot(v.x-sC.x,v.y-sC.y);
+                };
+                const valid=sols.filter(p=>cross(work[A],work[B],p)*sketchOrientation>0);
+                cand=(valid.length?valid:sols).sort((p,q)=>score(p)-score(q))[0];
+            }
+            work[C]={x:cand.x,y:cand.y,letter:points[C].letter};
+
+            const placed=new Set([A,B,C]);
+            let progress=true;
+            while(placed.size<n && progress) {
+                progress=false;
+                for(const tri of tris) {
+                    const ps=tri.filter(v=>placed.has(v));
+                    const un=tri.filter(v=>!placed.has(v));
+                    if(un.length!==1 || ps.length!==2) continue;
+                    const u=un[0], p=ps[0], q=ps[1];
+                    const rp=adjacency[u].get(p), rq=adjacency[u].get(q);
+                    if(!rp||!rq) continue;
+                    const sols2=circleIntersections(work[p],rp,work[q],rq);
+                    if(!sols2.length) return null;
+                    let best=null,bestScore=Infinity;
+                    for(const s of sols2) {
+                        let score=0;
+                        const prev=(u-1+n)%n,next=(u+1)%n;
+                        if(work[prev]) score+=dist(s,work[prev]);
+                        if(work[next]) score+=dist(s,work[next]);
+                        const skU=sketch[u]||{x:0,y:0};
+                        score+=0.01*Math.hypot(s.x/Math.max(ab,1)-skU.x,s.y/Math.max(ab,1)-skU.y);
+                        const localPrev=work[prev], localNext=work[next];
+                        if(localPrev&&localNext) {
+                            const turn=cross(localPrev,s,localNext);
+                            if(turn*sketchTurnSigns[u]<=0) score+=1e9;
+                        }
+                        if(score<bestScore){bestScore=score;best=s;}
+                    }
+                    if(!best || bestScore>=1e8) return null;
+                    work[u]={x:best.x,y:best.y,letter:points[u].letter};
+                    placed.add(u); progress=true;
+                }
+            }
+            if(placed.size<n) return null;
+            if(!topologyValid(work)) return null;
+            return work;
+        }
+
+        function verifyConstraints(work,constraints) {
+            for(const [k,lenCm] of constraints.entries()) {
+                const [a,b]=k.split(':').map(Number);
+                const actual=dist(work[a],work[b]);
+                if(Math.abs(actual-lenCm)>Math.max(0.15,lenCm*0.0008)) return false;
             }
             return true;
         }
 
-        function geometrySnapshot() {
-            return points.map(p => ({ x: p.x, y: p.y, letter: p.letter }));
+        // Fallback: последовательная укладка по реальным длинам сторон + углам из эскиза
+        function reconstructSequentialFromSketch() {
+            const n = points.length;
+            if (n < 3 || !allSideLengthsKnown()) return null;
+
+            const work = Array(n).fill(null);
+            work[0] = { x: 0, y: 0, letter: points[0].letter };
+            work[1] = { x: edges[0].lengthCm, y: 0, letter: points[1].letter };
+
+            // Углы поворота из эскиза (внешние/внутренние через cross)
+            for (let i = 1; i < n - 1; i++) {
+                const prev = work[i - 1];
+                const cur = work[i];
+                const sideLen = edges[i].lengthCm;
+
+                // Вектор предыдущей стороны
+                const vx = cur.x - prev.x;
+                const vy = cur.y - prev.y;
+                const vlen = Math.hypot(vx, vy) || 1;
+
+                // Угол поворота из эскиза в этой вершине
+                const sa = sketchPoints[(i - 1 + n) % n];
+                const sb = sketchPoints[i];
+                const sc = sketchPoints[(i + 1) % n];
+                const cr = cross(sa, sb, sc);
+                const absCr = Math.abs(cr);
+                // Угол между векторами в эскизе
+                const v1x = sb.x - sa.x, v1y = sb.y - sa.y;
+                const v2x = sc.x - sb.x, v2y = sc.y - sb.y;
+                const len1 = Math.hypot(v1x, v1y) || 1;
+                const len2 = Math.hypot(v2x, v2y) || 1;
+                let cosA = (v1x * v2x + v1y * v2y) / (len1 * len2);
+                cosA = Math.max(-1, Math.min(1, cosA));
+                let ang = Math.acos(cosA);
+                // Знак поворота сохраняем
+                if (cr * sketchOrientation < 0) ang = -ang;
+
+                // Поворачиваем предыдущий вектор на этот угол и ставим новую точку
+                const ux = vx / vlen, uy = vy / vlen;
+                const cosT = Math.cos(ang), sinT = Math.sin(ang);
+                const nx = ux * cosT - uy * sinT;
+                const ny = ux * sinT + uy * cosT;
+
+                work[i + 1] = {
+                    x: cur.x + nx * sideLen,
+                    y: cur.y + ny * sideLen,
+                    letter: points[i + 1].letter
+                };
+            }
+
+            // Проверяем замыкание последней стороны
+            const lastToFirst = dist(work[n - 1], work[0]);
+            const expectedClose = edges[n - 1].lengthCm;
+            // Если ошибка замыкания большая — слегка масштабируем/сдвигаем последние точки
+            // (простая коррекция)
+            if (Math.abs(lastToFirst - expectedClose) > Math.max(2, expectedClose * 0.03)) {
+                // Пытаемся немного подвинуть последнюю точку, сохраняя длину предыдущей стороны
+                const prev = work[n - 2];
+                const cur = work[n - 1];
+                const targetLen = edges[n - 2].lengthCm;
+                const dirx = cur.x - prev.x, diry = cur.y - prev.y;
+                const dlen = Math.hypot(dirx, diry) || 1;
+                // Оставляем как есть — лучше сохранить форму, чем ломать
+            }
+
+            if (hasSelfIntersection(work)) return null;
+            if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
+
+            return work;
         }
 
-        function restoreGeometry(snapshot) {
-            points = snapshot.map(p => ({ x: p.x, y: p.y, letter: p.letter }));
+        function solveExactGeometry() {
+            if (!allSideLengthsKnown()) return false;
+
+            const constraints = buildConstraintMap();
+            const minNeeded = Math.max(0, points.length - 3);
+            const hasEnoughDiags = selectedDiagonals.length >= minNeeded &&
+                selectedDiagonals.every(d => Number.isFinite(d.lengthCm) && d.lengthCm > 0);
+
+            // 1. Пробуем точную реконструкцию, если хватает диагоналей
+            if (hasEnoughDiags) {
+                const tris = triangulateBySketch();
+                if (tris.length === points.length - 2) {
+                    const result = buildExactFromTriangulation(tris, constraints);
+                    if (result && verifyConstraints(result, constraints)) {
+                        points = result;
+                        scaleFactor = 1;
+                        usedExactGeometry = true;
+                        return true;
+                    }
+                }
+            }
+
+            // 2. Fallback — последовательная укладка по сторонам + углам эскиза
+            const fallback = reconstructSequentialFromSketch();
+            if (fallback) {
+                points = fallback;
+                scaleFactor = 1;
+                usedExactGeometry = false;
+                return true;
+            }
+
+            return false;
         }
 
         function closePolygon() {
-            if (points.length < 3) return;
-            if (!checkIntersectionValid(points[0], true)) { showToast("Замыкание невозможно: линия пересекает контур!", 2000); return; }
-
-            isClosed = true; state = 'INPUT_SIDES';
-            statusText.innerText = 'Ввод размеров';
-            document.getElementById('toast').style.display = 'none';
-            
-            edges = points.map((p, i) => {
-                let nxt = (i+1)%points.length;
-                return { startIdx: i, endIdx: nxt, label: `${p.letter}-${points[nxt].letter}`, lengthCm: null, type: 'FREE' };
-            });
-
-            captureOriginalGeometry();
-            currentInputEdge = 0;
-            updateUI();
+            if(points.length<3) return;
+            if(!checkIntersectionValid(points[0],true)) { showToast('Замыкание невозможно: линия пересекает контур!',2500); return; }
+            const signed=polygonSignedArea(points);
+            if(Math.abs(signed)<1e-5) { showToast('Невозможно замкнуть почти вырожденную фигуру.',2500); return; }
+            isClosed=true; state='INPUT_SIDES'; statusText.innerText='Ввод фактических размеров';
+            document.getElementById('toast').style.display='none';
+            sketchPoints=clonePoints(points);
+            sketchOrientation=signed>=0?1:-1;
+            sketchTurnSigns=getTurnSigns(sketchPoints);
+            edges=points.map((p,i)=>({startIdx:i,endIdx:(i+1)%points.length,label:`${p.letter}-${points[(i+1)%points.length].letter}`,lengthCm:null,type:'FREE'}));
+            scaleFactor=1; currentInputEdge=0;
+            showToast('Эскиз сохранён. Введите реальные размеры сторон в сантиметрах.',4000);
             document.getElementById('bottom-input-bar').classList.add('active');
-            saveDraft();
-            updateInputUI();
+            updateInputUI(); updateUI();
         }
 
         function updateUI() {
-            document.getElementById('close-btn').style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
-            document.getElementById('undo-btn').style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
+            document.getElementById('close-btn').style.display=(points.length>=3&&state==='DRAWING')?'block':'none';
+            document.getElementById('undo-btn').style.display=(state==='DRAWING'&&points.length>0)?'block':'none';
         }
-
         function updateInputUI() {
-            document.getElementById('side-label').innerText = `${edges[currentInputEdge].label} =`;
-            let val = edges[currentInputEdge].lengthCm;
-            document.getElementById('side-input').value = val !== null ? val : '';
-            document.getElementById('prev-side-btn').style.display = currentInputEdge > 0 ? 'inline-block' : 'none';
-            document.getElementById('side-input').focus();
-            autoFitCamera(); draw();
+            const isDiag=state==='INPUT_DIAGONALS';
+            const item=isDiag?selectedDiagonals[currentDiagonalInput]:edges[currentInputEdge];
+            if (!item) return;
+            document.getElementById('side-label').innerText=`${item.label} =`;
+            document.getElementById('side-input').value=(item.lengthCm!=null?item.lengthCm:'');
+            document.getElementById('side-input').placeholder='см';
+            document.getElementById('prev-side-btn').style.display=(isDiag?currentDiagonalInput:currentInputEdge)>0?'inline-block':'none';
+            const btn=document.querySelector('#input-row .btn-next');
+            if(btn) btn.innerText=isDiag && currentDiagonalInput===selectedDiagonals.length-1?'Готово':'Далее';
+            document.getElementById('side-input').focus(); draw();
         }
-
-        function prevSide() {
-            if (currentInputEdge > 0) {
-                currentInputEdge--;
-                updateInputUI();
-            }
+        function prevSide(){
+            if(state==='INPUT_DIAGONALS') { if(currentDiagonalInput>0){currentDiagonalInput--;updateInputUI();} return; }
+            if(currentInputEdge>0){currentInputEdge--;updateInputUI();}
         }
-
-        // --- ГЕОМЕТРИЧЕСКИЙ РЕШАТЕЛЬ (улучшенный) ---
-        function edgeLength(pts, i) {
-            const a = pts[i], b = pts[(i + 1) % pts.length];
-            return Math.hypot(b.x - a.x, b.y - a.y);
-        }
-
-        function angleAt(pts, i) {
-            const n = pts.length;
-            const a = pts[(i - 1 + n) % n], b = pts[i], c = pts[(i + 1) % n];
-            const ux = a.x - b.x, uy = a.y - b.y;
-            const vx = c.x - b.x, vy = c.y - b.y;
-            const nu = Math.hypot(ux, uy), nv = Math.hypot(vx, vy);
-            if (nu < 1e-9 || nv < 1e-9) return 0;
-            return Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (nu * nv))));
-        }
-
-        function normalizeAngle(a) {
-            while (a > Math.PI) a -= Math.PI * 2;
-            while (a < -Math.PI) a += Math.PI * 2;
-            return a;
-        }
-
-        function edgeDirection(pts, i) {
-            const a = pts[i], b = pts[(i + 1) % pts.length];
-            return Math.atan2(b.y - a.y, b.x - a.x);
-        }
-
-        function solveGeometryToLengths(targets) {
-            const n = points.length;
-            if (n < 3) return {ok:false, reason:'Недостаточно вершин.'};
-            if (originalPoints.length !== n) captureOriginalGeometry();
-
-            if (targets.length !== n || targets.some(v => !Number.isFinite(Number(v)) || Number(v) <= 0)) {
-                return {ok:false, reason:'Для построения нужно ввести реальные размеры всех сторон.'};
-            }
-            const L = targets.map(Number);
-
-            const sum = L.reduce((a,b)=>a+b,0);
-            const longest = Math.max(...L);
-            if (longest >= sum - longest - 1e-7) {
-                return {ok:false, reason:'Такие размеры не образуют замкнутую фигуру: самая длинная сторона должна быть короче суммы остальных.'};
-            }
-
-            const originalDirs = originalPoints.map((_,i)=>edgeDirection(originalPoints,i));
-            const originalTurns = originalPoints.map((_,i)=>turnSignAt(originalPoints,i));
-            const originalOrient = Math.sign(signedArea(originalPoints)) || 1;
-
-            // Специальный случай: прямоугольник
-            if (n === 4 &&
-                Math.abs(L[0]-L[2]) <= Math.max(0.5, L[0]*0.01) &&
-                Math.abs(L[1]-L[3]) <= Math.max(0.5, L[1]*0.01)) {
-                const d01 = edgeDirection(originalPoints,0);
-                const dir = {x:Math.cos(d01), y:Math.sin(d01)};
-                const side = {x:-dir.y*originalOrient, y:dir.x*originalOrient};
-                const A={x:0,y:0,letter:originalPoints[0].letter};
-                const B={x:dir.x*L[0],y:dir.y*L[0],letter:originalPoints[1].letter};
-                const D={x:side.x*L[3],y:side.y*L[3],letter:originalPoints[3].letter};
-                const C={x:B.x+side.x*L[1],y:B.y+side.y*L[1],letter:originalPoints[2].letter};
-                const rect=[A,B,C,D];
-                if (topologyIsPreserved(rect)) return {ok:true, points:rect};
-            }
-
-            function makeInitial(blend, rotation) {
-                const out=[];
-                out.push({x:0,y:0,letter:originalPoints[0].letter});
-                let x=0,y=0;
-                for(let i=0;i<n-1;i++){
-                    let a=originalDirs[i] + rotation;
-                    if(i>0) {
-                        const prev=Math.atan2(y-out[i-1].y,x-out[i-1].x);
-                        let delta=normalizeAngle(a-prev);
-                        a=prev + delta*blend;
-                    }
-                    x += Math.cos(a)*L[i];
-                    y += Math.sin(a)*L[i];
-                    out.push({x,y,letter:originalPoints[i+1].letter});
-                }
-                const ex=-x, ey=-y;
-                for(let i=1;i<n;i++){
-                    const f=i/(n-1);
-                    out[i].x += ex*f;
-                    out[i].y += ey*f;
-                }
-                return out;
-            }
-
-            function solveCandidate(initial) {
-                let p=initial.map(q=>({x:q.x,y:q.y,letter:q.letter}));
-                const A={x:0,y:0};
-                const firstAngle=originalDirs[0];
-                const firstB={x:Math.cos(firstAngle)*L[0],y:Math.sin(firstAngle)*L[0]};
-
-                // Увеличим итерации до 20000
-                for(let iter=0;iter<20000;iter++){
-                    let maxErr=0;
-                    for(let i=0;i<n;i++){
-                        const j=(i+1)%n;
-                        let dx=p[j].x-p[i].x, dy=p[j].y-p[i].y;
-                        let len=Math.hypot(dx,dy);
-                        if(len<1e-9){
-                            const a=originalDirs[i]; dx=Math.cos(a); dy=Math.sin(a); len=1;
-                        }
-                        const target=L[i];
-                        const err=(len-target)/target;
-                        maxErr=Math.max(maxErr,Math.abs(err));
-                        const ux=dx/len, uy=dy/len;
-                        const correction=(len-target)*0.5;
-                        if(i!==0){ p[i].x += ux*correction; p[i].y += uy*correction; }
-                        if(j!==0){ p[j].x -= ux*correction; p[j].y -= uy*correction; }
-                    }
-
-                    p[0].x=A.x; p[0].y=A.y;
-                    p[1].x=firstB.x; p[1].y=firstB.y;
-
-                    if(iter%2===0){
-                        const strength=0.012;
-                        for(let i=1;i<n-1;i++){
-                            const prev=p[i-1], cur=p[i], next=p[i+1];
-                            const want=originalDirs[i];
-                            const dx=next.x-cur.x, dy=next.y-cur.y;
-                            const len=Math.hypot(dx,dy)||1;
-                            const curA=Math.atan2(dy,dx);
-                            const da=normalizeAngle(want-curA)*strength;
-                            const cs=Math.cos(da), sn=Math.sin(da);
-                            const rx=dx*cs-dy*sn, ry=dx*sn+dy*cs;
-                            next.x=cur.x+rx; next.y=cur.y+ry;
-                        }
-                    }
-
-                    // Проверка с более мягким допуском (относительным)
-                    if(iter%50===0){
-                        let good=true;
-                        for(let i=0;i<n;i++){
-                            if(Math.abs(edgeLength(p,i)-L[i]) > Math.max(0.1, L[i]*1e-4)){good=false;break;}
-                        }
-                        if(good && !hasSelfIntersection(p) && Math.sign(signedArea(p))===originalOrient){
-                            const turns=p.map((_,i)=>turnSignAt(p,i));
-                            let signsOk=true;
-                            for(let i=0;i<n;i++) if(originalTurns[i]!==0 && turns[i]!==originalTurns[i]) {signsOk=false;break;}
-                            if(signsOk) return p;
-                        }
-                    }
-                }
-
-                // Финальная проверка
-                for(let i=0;i<n;i++) if(Math.abs(edgeLength(p,i)-L[i]) > Math.max(0.15, L[i]*2e-4)) return null;
-                if(hasSelfIntersection(p) || Math.sign(signedArea(p))!==originalOrient) return null;
-                for(let i=0;i<n;i++) if(originalTurns[i]!==0 && turnSignAt(p,i)!==originalTurns[i]) return null;
-                return p;
-            }
-
-            const attempts=[
-                [1,0],[0.75,0],[0.5,0],[0.25,0],
-                [1,0.08],[1,-0.08],[0.5,0.15],[0.5,-0.15],
-                [0.25,0.3],[0.25,-0.3]
-            ];
-            for(const [blend,rot] of attempts){
-                const solved=solveCandidate(makeInitial(blend,rot));
-                if(solved) return {ok:true,points:solved};
-            }
-
-            return {ok:false, reason:'Не удалось построить замкнутую фигуру по этим сторонам с сохранением направления внутренних и внешних углов. Проверьте, что размеры соответствуют форме помещения.'};
-        }
-
-        function adjustShapeToLengths() {
-            const targets = edges.map(e => e.lengthCm === null ? NaN : Number(e.lengthCm));
-            if (targets.some(v => !Number.isFinite(v) || v <= 0)) return true;
-            const result = solveGeometryToLengths(targets);
-            lastGeometryError = result.reason || '';
-            if (result.ok && result.points) restoreGeometry(result.points);
-            return result.ok;
-        }
-
-        function saveSideAndNext() {
-            const input=document.getElementById('side-input');
-            let val=parseFloat(input.value.replace(',','.'));
+        function saveSideAndNext(){
+            const val=parseFloat(document.getElementById('side-input').value.replace(',','.'));
             if(!Number.isFinite(val)||val<=0){showToast('Введите корректное число см',2500);return;}
-
-            const oldVal=edges[currentInputEdge].lengthCm;
-            edges[currentInputEdge].lengthCm=val;
-
-            if(currentInputEdge < edges.length-1){
-                currentInputEdge++;
-                updateInputUI();
-                draw();
-                saveDraft();
-                return;
-            }
-
-            const snapshot=geometrySnapshot();
-            if(!adjustShapeToLengths()){
-                edges[currentInputEdge].lengthCm=oldVal;
-                restoreGeometry(snapshot);
-                showToast(lastGeometryError || 'Не удалось построить фигуру по этим размерам. Проверьте размеры.',5000);
-                return;
-            }
-
-            document.getElementById('bottom-input-bar').classList.remove('active');
-            currentInputEdge=0;
-            initDiagonals();
-            autoFitCamera(); draw(); saveDraft();
+            if(state==='INPUT_DIAGONALS') { saveDiagonalAndNext(val); return; }
+            const idx=currentInputEdge;
+            edges[idx].lengthCm=val;
+            currentInputEdge++;
+            if(currentInputEdge>=edges.length){
+                document.getElementById('bottom-input-bar').classList.remove('active');
+                initDiagonals();
+            } else updateInputUI();
         }
 
-        function initDiagonals() {
-            state='SELECT_DIAGONALS';
-            statusText.innerText='Дополнительные диагонали (необязательно)';
-            availableDiagonals=[];
-            for(let i=0;i<points.length;i++){
-                for(let j=i+2;j<points.length;j++){
-                    if(i===0&&j===points.length-1)continue;
-                    availableDiagonals.push({p1:i,p2:j,label:`${points[i].letter}-${points[j].letter}`});
-                }
+        function initDiagonals(){
+            state='SELECT_DIAGONALS'; statusText.innerText='Диагонали (необязательно)';
+            availableDiagonals=[]; selectedDiagonals=[];
+            const recommended=new Set(recommendedDiagonalPairs());
+            for(let i=0;i<points.length;i++) for(let j=i+2;j<points.length;j++) {
+                if(i===0&&j===points.length-1)continue;
+                availableDiagonals.push({p1:i,p2:j,label:`${points[i].letter}-${points[j].letter}`,recommended:recommended.has(edgeKey(i,j))});
             }
+            // Автоматически выбираем рекомендуемые (пользователь может снять)
+            availableDiagonals.filter(d=>d.recommended).forEach(d=>selectedDiagonals.push({...d, lengthCm:null}));
             updateDiagonalSelectionUI();
-            document.getElementById('diagonals-panel').classList.add('active');
-            autoFitCamera(); draw();
+            showToast('Диагонали необязательны. Можно пропустить или ввести для большей точности.',3500);
+            document.getElementById('diagonals-panel').classList.add('active'); draw();
         }
 
-        window.finishDiagonals=function(){
+        function skipDiagonals() {
+            selectedDiagonals = [];
             document.getElementById('diagonals-panel').classList.remove('active');
+            // Сразу пробуем построить геометрию без диагоналей
+            if (!solveExactGeometry()) {
+                showToast('Не удалось построить форму только по сторонам. Проверьте размеры или добавьте диагонали.', 4500);
+                // Возвращаем панель диагоналей
+                document.getElementById('diagonals-panel').classList.add('active');
+                return;
+            }
             openMaterialPanel();
+        }
+
+        window.finishDiagonals = function(){
+            document.getElementById('diagonals-panel').classList.remove('active');
+
+            if (selectedDiagonals.length === 0) {
+                // То же самое, что skip
+                if (!solveExactGeometry()) {
+                    showToast('Не удалось построить форму. Проверьте размеры сторон.', 4000);
+                    document.getElementById('diagonals-panel').classList.add('active');
+                    return;
+                }
+                openMaterialPanel();
+                return;
+            }
+
+            // Есть выбранные диагонали — вводим их длины
+            state='INPUT_DIAGONALS'; statusText.innerText='Ввод длин диагоналей';
+            currentDiagonalInput=0;
+            document.getElementById('bottom-input-bar').classList.add('active');
+            updateInputUI();
         };
 
-        function skipDiagonals(){
-            selectedDiagonals=[];
-            document.getElementById('diagonals-panel').classList.remove('active');
-            openMaterialPanel();
-            saveDraft();
+        function saveDiagonalAndNext(val){
+            const d=selectedDiagonals[currentDiagonalInput];
+            d.lengthCm=val;
+            if(currentDiagonalInput===selectedDiagonals.length-1){
+                if(!solveExactGeometry()){
+                    d.lengthCm=null;
+                    showToast('Размеры не дают корректную геометрию. Проверьте измерения или уберите часть диагоналей.',5000);
+                    updateInputUI(); return;
+                }
+                document.getElementById('bottom-input-bar').classList.remove('active');
+                openMaterialPanel();
+            } else { currentDiagonalInput++; updateInputUI(); }
         }
 
         function openMaterialPanel() {
-            state = 'SELECT_MATERIAL'; statusText.innerText = 'Материал и цвет';
+            state='SELECT_MATERIAL'; statusText.innerText='Материал и цвет';
             document.getElementById('material-panel').classList.add('active');
             autoFitCamera(); draw();
+            if (!usedExactGeometry) {
+                showToast('Форма построена по сторонам и эскизу (диагонали не использовались или были недостаточны).', 3500);
+            } else {
+                showToast('Форма построена точно по сторонам и диагоналям.', 3000);
+            }
         }
 
-        function selectMat(matName, btnEl) {
-            selectedMaterial = matName; saveDraft();
-            document.querySelectorAll('.mat-btn').forEach(b => b.classList.remove('selected'));
+        function selectMat(matName,btnEl){
+            selectedMaterial=matName;
+            document.querySelectorAll('.mat-btn').forEach(b=>b.classList.remove('selected'));
             btnEl.classList.add('selected');
         }
 
-        function finishMaterialSelection() {
-            selectedColor = document.getElementById('color-input').value.trim() || 'Белый';
-            selectedCeilingName = document.getElementById('ceiling-name-input').value.trim().slice(0,60);
-            const metrics = calculateCurrentCeilingMetrics();
-            if (!Number.isFinite(metrics.areaM2) || metrics.areaM2 <= 0) { showToast('Не удалось рассчитать площадь.', 3000); return; }
-            if (!topologyIsPreserved(points)) { showToast('Геометрия потолка изменилась недопустимо. Проверьте размеры сторон.', 4000); return; }
+        function finishMaterialSelection(){
+            selectedColor=document.getElementById('color-input').value.trim()||'Белый';
             document.getElementById('material-panel').classList.remove('active');
-            state = 'DONE';
-            statusText.innerText = 'Потолок готов';
+            state='DONE'; statusText.innerText='Готово';
             document.getElementById('results-panel').classList.add('active');
-            updateCurrentMetrics();
-            saveDraft();
+            updateCeilingsList();
             autoFitCamera(); draw();
         }
 
-        function calculateCurrentCeilingMetrics() {
-            let perimeter = 0;
-            edges.forEach(e => perimeter += Number(e.lengthCm || 0));
-            let areaPx = 0;
-            for (let i = 0; i < points.length; i++) {
-                const p1 = points[i], p2 = points[(i + 1) % points.length];
-                areaPx += p1.x * p2.y - p2.x * p1.y;
-            }
-            const signedAreaPx = areaPx / 2;
-            const areaM2 = Math.abs(signedAreaPx) / 10000;
-            return { areaM2, perimeterCm: perimeter };
-        }
+        // --- МНОГОПОТОЛОЧНОСТЬ ---
+        function getCurrentCeilingPayload() {
+            // Координаты в метрах
+            const ptsMeters = points.map(p => ({
+                x: p.x / 100,
+                y: p.y / 100,
+                letter: p.letter
+            }));
+            const sides = edges.map(e => e.lengthCm);
+            const diags = selectedDiagonals
+                .filter(d => Number.isFinite(d.lengthCm) && d.lengthCm > 0)
+                .map(d => [d.p1, d.p2]);
 
-        function buildPayload() {
-            const metrics = calculateCurrentCeilingMetrics();
             return {
-                type: 'drawing', version: 6,
-                name: selectedCeilingName || '',
-                points: points.map(p => [Number((p.x / 100).toFixed(4)), Number((p.y / 100).toFixed(4))]),
-                raw_points: points.map(p => [Number(p.x.toFixed(4)), Number(p.y.toFixed(4))]),
-                original_raw_points: originalPoints.map(p => [Number(p.x.toFixed(4)), Number(p.y.toFixed(4))]),
-                original_turn_signs: [...originalTurnSigns],
-                original_orientation: originalOrientation,
-                sides_cm: edges.map(e => Number(e.lengthCm)),
-                diagonals: selectedDiagonals.map(d => [d.p1, d.p2]),
-                material: selectedMaterial, color: selectedColor,
-                area_m2: Number(metrics.areaM2.toFixed(4)), perimeter_cm: Number(metrics.perimeterCm.toFixed(2))
+                points: ptsMeters,
+                sides_cm: sides,
+                diagonals: diags,
+                material: selectedMaterial,
+                color: selectedColor,
+                used_exact: usedExactGeometry
             };
         }
-        function updateCurrentMetrics() {
-            const el = document.getElementById('current-metrics');
-            if (!el || points.length < 3) return;
-            const m = calculateCurrentCeilingMetrics();
-            el.innerHTML = `<b>${escapeHtml(selectedCeilingName || (editingCeilingIndex !== null ? 'Потолок №' + (editingCeilingIndex + 1) : 'Текущий потолок'))}</b><br>📐 ${m.areaM2.toFixed(2)} м² · 📏 ${(m.perimeterCm/100).toFixed(2)} пог. м<br>🧵 ${escapeHtml(selectedMaterial)} · 🎨 ${escapeHtml(selectedColor)}`;
-        }
 
-        function escapeHtml(v) { return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
-
-        function renderCompletedCeilings() {
-            const box = document.getElementById('ceilings-summary'), list = document.getElementById('ceilings-list'), count = document.getElementById('ceilings-count');
-            if (!completedCeilings.length) { box.classList.remove('active'); list.innerHTML=''; count.innerText='0'; document.getElementById('summary-total').innerText='Итого: 0.00 м² · 0.00 пог. м'; const undoBtn=document.getElementById('undo-delete-btn'); if(undoBtn) undoBtn.style.display=lastDeletedCeiling ? 'block' : 'none'; return; }
-            box.classList.add('active'); count.innerText = String(completedCeilings.length);
-            const totalArea = completedCeilings.reduce((a,c)=>a+Number(c.area_m2||0),0);
-            const totalPer = completedCeilings.reduce((a,c)=>a+Number(c.perimeter_cm||0)/100,0);
-            document.getElementById('total-metrics').innerText = `${totalArea.toFixed(2)} м² · ${totalPer.toFixed(2)} пог. м`;
-            document.getElementById('summary-total').innerText = `Итого: ${totalArea.toFixed(2)} м² · ${totalPer.toFixed(2)} пог. м`;
-            list.innerHTML = completedCeilings.map((c,i)=>`<div class="ceiling-card"><div class="ceiling-card-num">${i+1}</div><div class="ceiling-card-info"><div class="ceiling-card-title">${escapeHtml(c.name || ('Потолок №'+(i+1)))}</div><div class="ceiling-card-material">${escapeHtml(c.material||'—')}, ${escapeHtml(c.color||'—')}</div><div class="ceiling-card-meta">${Number(c.area_m2||0).toFixed(2)} м² · ${(Number(c.perimeter_cm||0)/100).toFixed(2)} пог. м</div></div><button class="ceiling-card-edit" onclick="editCeiling(${i})">✏️</button><button class="ceiling-card-delete" onclick="removeCeiling(${i})">✕</button></div>`).join(''); const undoBtn=document.getElementById('undo-delete-btn'); if(undoBtn) undoBtn.style.display=lastDeletedCeiling ? 'block' : 'none';
-        }
-
-        function editCeiling(index) {
-            const c = completedCeilings[index]; if (!c) return;
-            editingCeilingIndex = index;
-            if (Array.isArray(c.raw_points) && c.raw_points.length === c.points.length) {
-                points = c.raw_points.map((p,i)=>({x:Number(p[0]), y:Number(p[1]), letter:getLetter(i)}));
-                originalPoints = Array.isArray(c.original_raw_points) && c.original_raw_points.length === points.length ? c.original_raw_points.map((p,i)=>({x:Number(p[0]), y:Number(p[1]), letter:getLetter(i)})) : points.map(p=>({...p}));
-                originalTurnSigns = Array.isArray(c.original_turn_signs) ? c.original_turn_signs.map(Number) : originalPoints.map((_,i)=>turnSignAt(originalPoints,i));
-                originalOrientation = Number(c.original_orientation) || Math.sign(signedArea(originalPoints));
-            } else {
-                points = c.points.map((p,i)=>({x:Number(p[0])*100, y:Number(p[1])*100, letter:getLetter(i)}));
-                originalPoints = points.map(p=>({...p}));
-                originalTurnSigns = originalPoints.map((_,i)=>turnSignAt(originalPoints,i));
-                originalOrientation = Math.sign(signedArea(originalPoints));
+        function updateCeilingsList() {
+            const list = document.getElementById('ceilings-list');
+            if (!list) return;
+            if (completedCeilings.length === 0) {
+                list.innerHTML = '<div style="color:#888;font-size:0.9rem;">Пока нет добавленных потолков. Нажмите «Добавить ещё потолок» или сразу отправьте текущий.</div>';
+                return;
             }
-            edges = c.sides_cm.map((len,i)=>({startIdx:i,endIdx:(i+1)%points.length,label:`${getLetter(i)}-${getLetter((i+1)%points.length)}`,lengthCm:Number(len),type:'FREE'}));
-            selectedDiagonals=(c.diagonals||[]).map(d=>({p1:d[0],p2:d[1],label:`${getLetter(d[0])}-${getLetter(d[1])}`}));
-            availableDiagonals=[]; selectedMaterial=c.material||'Мат'; selectedColor=c.color||'Белый'; selectedCeilingName=c.name||''; isClosed=true; state='DONE';
-            document.getElementById('color-input').value=selectedColor; document.getElementById('ceiling-name-input').value=selectedCeilingName; document.querySelectorAll('.bottom-panel').forEach(p=>p.classList.remove('active')); document.getElementById('results-panel').classList.add('active');
-            statusText.innerText='Редактирование потолка'; updateCurrentMetrics(); autoFitCamera(); draw(); saveDraft();
+            list.innerHTML = completedCeilings.map((c, idx) => {
+                const area = calcAreaM2(c.points);
+                const perim = (c.sides_cm.reduce((a,b)=>a+b,0)/100).toFixed(2);
+                return `<div class="ceiling-item">
+                    <span>#${idx+1}: ${c.material}, ${c.color} · ${area.toFixed(2)} м² · ${perim} м</span>
+                    <button onclick="removeCeiling(${idx})">✕</button>
+                </div>`;
+            }).join('');
         }
 
-        function removeCeiling(index) {
-            if (index<0||index>=completedCeilings.length) return;
-            if(!confirm(`Удалить потолок №${index+1}?`)) return;
-            lastDeletedCeiling = { item: completedCeilings[index], index };
-            completedCeilings.splice(index,1); renderCompletedCeilings(); saveDraft();
-            showToast('Потолок удалён. Нажмите «Отменить удаление» в течение 7 секунд.',7000);
-            setTimeout(()=>{ lastDeletedCeiling=null; renderCompletedCeilings(); },7000);
-        }
-
-        function undoDeleteCeiling() {
-            if (!lastDeletedCeiling) { showToast('Нет удаления для отмены.',1800); return; }
-            completedCeilings.splice(Math.min(lastDeletedCeiling.index, completedCeilings.length),0,lastDeletedCeiling.item);
-            lastDeletedCeiling=null; renderCompletedCeilings(); saveDraft(); showToast('Потолок восстановлен.',1800);
-        }
-
-        function resetCurrentCeiling() {
-            points=[]; originalPoints=[]; originalTurnSigns=[]; originalOrientation=0; edges=[]; availableDiagonals=[]; selectedDiagonals=[]; isClosed=false; currentInputEdge=0; selectedMaterial='Мат'; selectedColor='Белый'; selectedCeilingName=''; state='DRAWING'; camera={x:0,y:0,zoom:1}; editingCeilingIndex=null; // сброс индекса
-            document.querySelectorAll('.bottom-panel').forEach(p=>p.classList.remove('active')); document.querySelectorAll('.mat-btn').forEach(b=>b.classList.remove('selected')); const firstMat=document.querySelector('.mat-btn'); if(firstMat) firstMat.classList.add('selected'); document.getElementById('color-input').value='Белый'; document.getElementById('ceiling-name-input').value=''; document.getElementById('side-input').value=''; statusText.innerText='Черчение контура'; updateUI(); draw(); saveDraft();
+        function calcAreaM2(pts) {
+            let a = 0;
+            for (let i = 0; i < pts.length; i++) {
+                const p1 = pts[i], p2 = pts[(i+1)%pts.length];
+                a += p1.x * p2.y - p2.x * p1.y;
+            }
+            return Math.abs(a) / 2;
         }
 
         function addCeiling() {
-            if (state !== 'DONE' || !isClosed || points.length < 3) { showToast('Сначала завершите текущий потолок.',2500); return; }
-            const payload=buildPayload();
-            if (editingCeilingIndex !== null) completedCeilings[editingCeilingIndex]=payload; else completedCeilings.push(payload);
-            const n=completedCeilings.length; editingCeilingIndex=null; renderCompletedCeilings(); resetCurrentCeiling(); showToast(`Потолок сохранён. Всего: ${n}. Нарисуйте следующий.`,2500); saveDraft();
+            if (state !== 'DONE') {
+                showToast('Сначала завершите текущий потолок.', 2500);
+                return;
+            }
+            const payload = getCurrentCeilingPayload();
+            if (payload.points.length < 3) {
+                showToast('Нет готового потолка.', 2000);
+                return;
+            }
+            completedCeilings.push(payload);
+            updateCeilingsList();
+            showToast(`Потолок №${completedCeilings.length} добавлен. Можно чертить следующий.`, 3000);
+            // Сброс для нового чертежа
+            resetCurrentDrawing(false);
         }
 
-        function getAllPayloadsForSending() { const result=[...completedCeilings]; if(state==='DONE'&&isClosed&&points.length>=3){const p=buildPayload(); if(editingCeilingIndex!==null) result[editingCeilingIndex]=p; else result.push(p);} return result; }
-
-        function openReview() {
-            const payloads=getAllPayloadsForSending(); if(!payloads.length){showToast('Добавьте хотя бы один готовый потолок.',2500);return;}
-            const area=payloads.reduce((a,c)=>a+Number(c.area_m2||0),0), per=payloads.reduce((a,c)=>a+Number(c.perimeter_cm||0)/100,0);
-            document.getElementById('review-content').innerHTML=payloads.map((c,i)=>`<div class="review-row"><span><b>${escapeHtml(c.name || ('Потолок №'+(i+1)))}</b><br>${escapeHtml(c.material||'—')} · ${escapeHtml(c.color||'—')}</span><span>${Number(c.area_m2||0).toFixed(2)} м²<br>${(Number(c.perimeter_cm||0)/100).toFixed(2)} пог. м</span></div>`).join('')+`<div class="review-total">Потолков: ${payloads.length}<br>📐 Общая площадь: ${area.toFixed(2)} м²<br>📏 Общий периметр: ${per.toFixed(2)} пог. м</div>`;
-            document.getElementById('review-panel').classList.add('active');
-        }
-        function closeReview(){document.getElementById('review-panel').classList.remove('active');}
-
-        async function sendToBot() {
-            const sendBtn=document.getElementById('send-btn'); sendBtn.disabled=true;
-            try {
-                const payloads=getAllPayloadsForSending(); if(!payloads.length) throw new Error('Добавьте хотя бы один готовый потолок.');
-                for(const p of payloads){ if(!p.points||p.points.length<3) throw new Error('Один из потолков содержит меньше 3 вершин.'); if(!p.sides_cm||p.sides_cm.some(s=>!Number.isFinite(s)||s<=0)) throw new Error('У одного из потолков есть некорректный размер стороны.'); }
-                const payload={type:'drawing_set',version:6,ceilings:payloads};
-                let data=JSON.stringify(payload);
-                const bytes=new TextEncoder().encode(data).byteLength;
-                if(bytes>4096 && typeof CompressionStream!=='undefined'){
-                    const stream=new Blob([data]).stream().pipeThrough(new CompressionStream('gzip')); const compressed=new Uint8Array(await new Response(stream).arrayBuffer()); let binary=''; for(let i=0;i<compressed.length;i+=0x8000) binary+=String.fromCharCode(...compressed.subarray(i,i+0x8000)); data='Z5G:'+btoa(binary);
-                }
-                if(new TextEncoder().encode(data).byteLength>4096) throw new Error('Комплект чертежей слишком большой для Telegram. Уменьшите количество потолков или сложность чертежей.');
-                const webApp=requireTelegramWebApp(); if(typeof webApp.sendData!=='function') throw new Error('Telegram.WebApp.sendData недоступен. Откройте Draw через кнопку Telegram.');
-                clearDraft(); closeReview(); webApp.sendData(data);
-            } catch(e){console.error(e);showToast('❌ '+e.message,5000);sendBtn.disabled=false;}
+        function removeCeiling(idx) {
+            completedCeilings.splice(idx, 1);
+            updateCeilingsList();
+            showToast('Потолок удалён.', 2000);
         }
 
-        function autoFitCamera() {
-            if(points.length === 0) return;
-            let minX = Math.min(...points.map(p=>p.x)), maxX = Math.max(...points.map(p=>p.x));
-            let minY = Math.min(...points.map(p=>p.y)), maxY = Math.max(...points.map(p=>p.y));
-            let cx = (minX + maxX)/2, cy = (minY + maxY)/2;
-            
-            let shapeW = maxX - minX || 200;
-            let shapeH = (maxY - minY) + 160; 
-
-            let scaleX = canvas.width / (shapeW + 80);
-            let scaleY = canvas.height / (shapeH + 120);
-            
-            camera.zoom = Math.max(0.3, Math.min(scaleX, scaleY, 3));
-            camera.x = canvas.width/2 - cx * camera.zoom;
-            camera.y = canvas.height/2 - (cy + 50) * camera.zoom;
+        function resetCurrentDrawing(full = true) {
+            points = []; edges = []; availableDiagonals = []; selectedDiagonals = [];
+            isClosed = false; scaleFactor = 1; currentInputEdge = 0;
+            sketchPoints = []; sketchTurnSigns = []; sketchOrientation = 1;
+            currentDiagonalInput = 0;
+            selectedMaterial = 'Мат'; selectedColor = 'Белый';
+            usedExactGeometry = false;
+            state = 'DRAWING';
+            statusText.innerText = 'Черчение контура';
+            document.getElementById('bottom-input-bar').classList.remove('active');
+            document.getElementById('diagonals-panel').classList.remove('active');
+            document.getElementById('material-panel').classList.remove('active');
+            if (full) {
+                document.getElementById('results-panel').classList.remove('active');
+                completedCeilings = [];
+            } else {
+                // Остаёмся в режиме добавления — results-panel оставляем
+                document.getElementById('results-panel').classList.remove('active');
+            }
+            document.querySelectorAll('.mat-btn').forEach((b,i)=>b.classList.toggle('selected', i===0));
+            document.getElementById('color-input').value = 'Белый';
+            camera = { x: 0, y: 0, zoom: 1 };
+            updateUI(); draw();
+            if (!full) showToast('Рисуйте следующий потолок.', 2500);
         }
 
         function resetAll() {
-            if (completedCeilings.length > 0) {
-                const ok = confirm(`Сбросить все ${completedCeilings.length} готовых потолка и текущий чертёж?`);
-                if (!ok) return;
+            if (confirm('Сбросить всё (включая уже добавленные потолки)?')) {
+                resetCurrentDrawing(true);
+                showToast('Всё сброшено.', 2000);
             }
-            completedCeilings = [];
-            clearDraft();
-            renderCompletedCeilings();
-            resetCurrentCeiling();
-            showToast("Все данные замера сброшены", 1500);
         }
 
-        // --- ОТРИСОВКА ТАБЛИЦЫ ОТЧЕТА (с исправленными диагоналями) ---
+        function autoFitCamera() {
+            if (points.length === 0) return;
+            const xs = points.map(p => p.x);
+            const ys = points.map(p => p.y);
+            const minX = Math.min(...xs), maxX = Math.max(...xs);
+            const minY = Math.min(...ys), maxY = Math.max(...ys);
+            const w = maxX - minX || 1;
+            const h = maxY - minY || 1;
+            const pad = 0.25;
+            const scaleX = canvas.width / (w * (1 + pad));
+            const scaleY = canvas.height / (h * (1 + pad));
+            camera.zoom = Math.min(scaleX, scaleY, 8);
+            camera.x = canvas.width / 2 - ((minX + maxX) / 2) * camera.zoom;
+            camera.y = canvas.height / 2 - ((minY + maxY) / 2) * camera.zoom;
+        }
+
+        function sendToBot() {
+            try {
+                const webApp = requireTelegramWebApp();
+
+                // Добавляем текущий потолок, если он готов и ещё не добавлен
+                if (state === 'DONE' && points.length >= 3) {
+                    const current = getCurrentCeilingPayload();
+                    // Чтобы не дублировать, если пользователь уже нажал «Добавить»
+                    const already = completedCeilings.some(c =>
+                        c.sides_cm.length === current.sides_cm.length &&
+                        c.sides_cm.every((v,i) => Math.abs(v - current.sides_cm[i]) < 0.01)
+                    );
+                    if (!already) {
+                        completedCeilings.push(current);
+                    }
+                }
+
+                if (completedCeilings.length === 0) {
+                    showToast('Нет ни одного потолка для отправки.', 3000);
+                    return;
+                }
+
+                if (completedCeilings.length > 30) {
+                    showToast('Слишком много потолков (максимум 30).', 3000);
+                    return;
+                }
+
+                const payload = {
+                    type: 'drawing_set',
+                    ceilings: completedCeilings.map(c => ({
+                        points: c.points,
+                        sides_cm: c.sides_cm,
+                        diagonals: c.diagonals || [],
+                        material: c.material || 'Мат',
+                        color: c.color || 'Белый'
+                    }))
+                };
+
+                const json = JSON.stringify(payload);
+                console.log('Отправка в бот:', json.slice(0, 400) + '...');
+
+                webApp.sendData(json);
+                showToast('Данные отправлены в бот!', 2500);
+
+                // После успешной отправки можно закрыть WebApp
+                setTimeout(() => {
+                    if (typeof webApp.close === 'function') webApp.close();
+                }, 800);
+            } catch (err) {
+                console.error(err);
+                showToast('Ошибка отправки: ' + (err.message || err), 4000);
+            }
+        }
+
+        function copyData() {
+            try {
+                let data;
+                if (completedCeilings.length > 0 || state === 'DONE') {
+                    const all = [...completedCeilings];
+                    if (state === 'DONE' && points.length >= 3) {
+                        all.push(getCurrentCeilingPayload());
+                    }
+                    data = {
+                        type: 'drawing_set',
+                        ceilings: all
+                    };
+                } else {
+                    data = { error: 'Нет данных' };
+                }
+                const str = JSON.stringify(data, null, 2);
+                navigator.clipboard.writeText(str).then(() => {
+                    showToast('Данные скопированы в буфер.', 2000);
+                }).catch(() => {
+                    showToast('Не удалось скопировать.', 2000);
+                    console.log(str);
+                });
+            } catch (e) {
+                showToast('Ошибка копирования.', 2000);
+            }
+        }
+
+        // --- ОТРИСОВКА СВОДКИ ---
         function drawSummaryCardOnCanvas() {
             if (state !== 'DONE' && state !== 'SELECT_MATERIAL') return;
 
@@ -1085,20 +1106,17 @@
             let matStr = `Материал: ${selectedMaterial}   |   Цвет: ${selectedColor}`;
 
             let sidesStrArr = edges.map(e => {
-                let len = e.lengthCm !== null ? e.lengthCm : Math.round(Math.hypot(points[e.endIdx].x-points[e.startIdx].x, points[e.endIdx].y-points[e.startIdx].y));
+                let len = e.lengthCm !== null ? e.lengthCm : null;
                 return `${e.label} = ${len} см`;
             });
 
-            // Длины диагоналей вычисляем напрямую по координатам (без scaleFactor)
-            let diagStrArr = selectedDiagonals.map(d => {
-                let len = Math.round(Math.hypot(points[d.p2].x-points[d.p1].x, points[d.p2].y-points[d.p1].y));
-                return `${d.label} = ${len} см`;
-            });
+            let diagStrArr = selectedDiagonals
+                .filter(d => d.lengthCm != null)
+                .map(d => `${d.label} = ${d.lengthCm} см`);
 
             let perimeter = 0;
             edges.forEach(e => {
-                let len = e.lengthCm !== null ? e.lengthCm : Math.round(Math.hypot(points[e.endIdx].x-points[e.startIdx].x, points[e.endIdx].y-points[e.startIdx].y));
-                perimeter += len;
+                if (e.lengthCm != null) perimeter += e.lengthCm;
             });
 
             let areaPx = 0;
@@ -1106,8 +1124,10 @@
                 let p1 = points[i], p2 = points[(i+1)%points.length];
                 areaPx += (p1.x * p2.y - p2.x * p1.y);
             }
+            // points сейчас в см → площадь в см² → м²
             let areaM2 = (Math.abs(areaPx/2) / 10000).toFixed(2);
             let totalStr = `Периметр: ${(perimeter/100).toFixed(2)} м (${perimeter} см)   |   Площадь: ${areaM2} м²`;
+            if (!usedExactGeometry) totalStr += '   |   (по эскизу)';
 
             let screenPos = toScreen(cx, maxY + 35 / camera.zoom);
             let boxX = screenPos.x, boxY = screenPos.y;
@@ -1116,8 +1136,8 @@
             ctx.font = '13px Arial';
 
             let sideLines = [];
-            for (let i = 0; i < sidesStrArr.length; i += 7) {
-                const chunk = sidesStrArr.slice(i, i + 7);
+            for (let i = 0; i < sidesStrArr.length; i += 6) {
+                const chunk = sidesStrArr.slice(i, i + 6);
                 sideLines.push((i === 0 ? "Стороны: " : "") + chunk.join(", "));
             }
 
@@ -1135,7 +1155,7 @@
 
             let allTextLines = [ matStr, ...sideLines, ...diagLines, totalStr ];
 
-            let lineHeight = 20, boxPadding = 12, boxWidth = 370;
+            let lineHeight = 20, boxPadding = 12, boxWidth = 380;
             let boxHeight = allTextLines.length * lineHeight + boxPadding * 2;
             let rectX = boxX - boxWidth / 2, rectY = boxY;
 
@@ -1202,13 +1222,15 @@
                     let s1 = toScreen(points[d.p1].x, points[d.p1].y), s2 = toScreen(points[d.p2].x, points[d.p2].y);
                     ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
 
-                    let len = Math.round(Math.hypot(points[d.p2].x-points[d.p1].x, points[d.p2].y-points[d.p1].y));
+                    let len = d.lengthCm != null ? d.lengthCm : null;
                     let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
                     
                     ctx.font = 'bold 12px Arial';
-                    let w = ctx.measureText(len).width;
-                    ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-2, mY-8, w+4, 16);
-                    ctx.fillStyle = '#d32f2f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(len, mX, mY);
+                    if (len != null) {
+                        let w = ctx.measureText(String(len)).width;
+                        ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-2, mY-8, w+4, 16);
+                        ctx.fillStyle = '#d32f2f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(len), mX, mY);
+                    }
                 });
                 ctx.setLineDash([]);
             }
@@ -1220,7 +1242,7 @@
                 let s1 = toScreen(points[i].x, points[i].y), s2 = toScreen(points[nxt].x, points[nxt].y);
                 ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
                 
-                if (state==='INPUT_SIDES' && i===edges[currentInputEdge].startIdx) {
+                if (state==='INPUT_SIDES' && edges[currentInputEdge] && i===edges[currentInputEdge].startIdx) {
                     ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
                 } else {
                     ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
@@ -1228,23 +1250,24 @@
                 ctx.stroke();
 
                 if (isClosed) {
-                    let text = edges[i].lengthCm !== null ? edges[i].lengthCm : '';
+                    let text = edges[i] && edges[i].lengthCm !== null ? edges[i].lengthCm : null;
                     let mX = (s1.x+s2.x)/2, mY = (s1.y+s2.y)/2;
                     
                     ctx.font = 'bold 13px Arial';
-                    let w = ctx.measureText(text).width;
+                    if (text === null) continue;
+                    let w = ctx.measureText(String(text)).width;
                     ctx.fillStyle = '#ffffff'; ctx.fillRect(mX-w/2-4, mY-9, w+8, 18);
                     ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX-w/2-4, mY-9, w+8, 18);
                     
-                    ctx.fillStyle = edges[i].lengthCm !== null ? '#d32f2f' : '#666666'; 
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, mX, mY);
+                    ctx.fillStyle = '#d32f2f'; 
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(text), mX, mY);
                 }
             }
 
             points.forEach((p, idx) => {
                 let sp = toScreen(p.x, p.y);
                 ctx.beginPath();
-                ctx.fillStyle = (idx === 0 && !isClosed) ? 'var(--success)' : '#ffffff';
+                ctx.fillStyle = (idx === 0 && !isClosed) ? '#28a745' : '#ffffff';
                 ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
                 ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI*2);
                 ctx.fill(); ctx.stroke();
@@ -1263,6 +1286,9 @@
         if (webApp) {
             webApp.ready();
             if (typeof webApp.expand === 'function') webApp.expand();
+            if (typeof webApp.enableClosingConfirmation === 'function') {
+                webApp.enableClosingConfirmation();
+            }
             console.log("Telegram WebApp готов", {
                 version: webApp.version,
                 platform: webApp.platform,
