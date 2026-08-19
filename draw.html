@@ -165,6 +165,7 @@
         <div id="diag-list-container" class="diag-buttons-grid"></div>
         <div id="diag-selected-info" class="diag-item" style="margin-top:8px;">Выбрано: 0</div>
         <div style="display:flex; gap:8px; margin-top:10px;">
+            <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="backToSidesFromDiagonals()">← Стороны</button>
             <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="skipDiagonals()">Пропустить</button>
             <button class="btn btn-success" style="flex:1; padding:12px;" onclick="finishDiagonals()">Далее</button>
         </div>
@@ -182,6 +183,15 @@
             <input type="text" id="color-input" value="Белый" placeholder="Например: Белый, 001">
         </div>
         <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Сформировать чертёж</button>
+    </div>
+
+    <div id="profiles-panel" class="bottom-panel">
+        <div class="panel-title">Профиль по сторонам</div>
+        <div class="hint">Тапните сторону на чертеже и выберите профиль.</div>
+        <div id="profile-side-label" style="font-weight:bold;margin-bottom:8px;">Сторона: —</div>
+        <div id="profile-buttons" class="diag-buttons-grid"></div>
+        <button class="btn btn-outline" style="width:100%;margin-top:8px;padding:10px;" onclick="applyProfileToAll()">Применить ко всем сторонам</button>
+        <button class="btn btn-success" style="width:100%;margin-top:8px;padding:12px;" onclick="finishProfiles()">Готово</button>
     </div>
 
     <div id="results-panel" class="bottom-panel">
@@ -204,6 +214,10 @@ let sketchPoints = [], sketchTurnSigns = [], sketchOrientation = 1;
 let currentDiagonalInput = 0;
 let completedCeilings = [];
 let selectedMaterial = 'Мат', selectedColor = 'Белый';
+let PROFILE_OPTIONS = ['Стандартный', 'Теневой', 'Парящий'];
+let activeProfileName = 'Стандартный';
+let selectedEdgeForEdit = null;
+
 let state = 'DRAWING';
 let usedExactGeometry = false;
 let camera = { x: 0, y: 0, zoom: 1 };
@@ -930,19 +944,87 @@ function solveExactGeometry() {
 }
 
 // --- UI flow ---
-function handleCanvasTap(worldPos) {
-    if (state !== 'DRAWING') return;
-    if (points.length >= 3) {
-        let distToFirst = Math.hypot(worldPos.x - points[0].x, worldPos.y - points[0].y) * camera.zoom;
-        if (distToFirst < 40) { closePolygon(); return; }
+function distToSegment(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+function findNearestEdgeIndex(worldPos) {
+    if (!isClosed || points.length < 2) return -1;
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < points.length; i++) {
+        const d = distToSegment(worldPos, points[i], points[(i + 1) % points.length]) * camera.zoom;
+        if (d < bestD) { bestD = d; best = i; }
     }
-    if (!checkIntersectionValid(worldPos)) {
-        showToast("Линии не должны пересекаться!", 2000);
+    return bestD < 28 ? best : -1;
+}
+function findNearestDiagonalIndex(worldPos) {
+    if (!selectedDiagonals.length) return -1;
+    let best = -1, bestD = Infinity;
+    selectedDiagonals.forEach((d, idx) => {
+        if (d.p1 >= points.length || d.p2 >= points.length) return;
+        const dist = distToSegment(worldPos, points[d.p1], points[d.p2]) * camera.zoom;
+        if (dist < bestD) { bestD = dist; best = idx; }
+    });
+    return bestD < 28 ? best : -1;
+}
+function handleCanvasTap(worldPos) {
+    if (state === 'DRAWING') {
+        if (points.length >= 3) {
+            let distToFirst = Math.hypot(worldPos.x - points[0].x, worldPos.y - points[0].y) * camera.zoom;
+            if (distToFirst < 40) { closePolygon(); return; }
+        }
+        if (!checkIntersectionValid(worldPos)) {
+            showToast("Линии не должны пересекаться!", 2000);
+            return;
+        }
+        points.push({ x: worldPos.x, y: worldPos.y, letter: getLetter(points.length) });
+        updateUI(); draw();
         return;
     }
-    points.push({ x: worldPos.x, y: worldPos.y, letter: getLetter(points.length) });
-    updateUI(); draw();
+    if (state === 'INPUT_SIDES' || state === 'DONE' || state === 'ASSIGN_PROFILES') {
+        const ei = findNearestEdgeIndex(worldPos);
+        if (ei >= 0) {
+            if (state === 'ASSIGN_PROFILES') {
+                selectedEdgeForEdit = ei;
+                document.getElementById('profile-side-label').innerText =
+                    'Сторона: ' + edges[ei].label + ' → ' + (edges[ei].profile || 'Стандартный');
+                highlightProfileButtons();
+                draw();
+                return;
+            }
+            if (state === 'DONE') {
+                state = 'INPUT_SIDES';
+                statusText.innerText = 'Правка размеров';
+                document.getElementById('results-panel').classList.remove('active');
+                document.getElementById('bottom-input-bar').classList.add('active');
+            }
+            currentInputEdge = ei;
+            selectedEdgeForEdit = ei;
+            updateInputUI();
+            showToast('Сторона ' + edges[ei].label + ' — введите размер', 2000);
+            return;
+        }
+    }
+    if (state === 'INPUT_DIAGONALS' || state === 'DONE' || state === 'INPUT_SIDES') {
+        const di = findNearestDiagonalIndex(worldPos);
+        if (di >= 0 && selectedDiagonals[di]) {
+            if (state !== 'INPUT_DIAGONALS') {
+                state = 'INPUT_DIAGONALS';
+                statusText.innerText = 'Правка диагоналей';
+                document.getElementById('results-panel').classList.remove('active');
+                document.getElementById('bottom-input-bar').classList.add('active');
+            }
+            currentDiagonalInput = di;
+            updateInputUI();
+            showToast('Диагональ ' + selectedDiagonals[di].label + ' — введите размер', 2000);
+        }
+    }
 }
+
 
 function toggleDiagonalByIndex(idx) {
     const d = availableDiagonals[idx];
@@ -979,7 +1061,8 @@ function closePolygon() {
         startIdx: i,
         endIdx: (i + 1) % points.length,
         label: `${p.letter}-${points[(i + 1) % points.length].letter}`,
-        lengthCm: null
+        lengthCm: null,
+        profile: 'Стандартный'
     }));
     currentInputEdge = 0;
     showToast('Эскиз сохранён. Введите реальные размеры сторон в сантиметрах. Форма подстроится под них.', 4500);
@@ -999,7 +1082,14 @@ function updateInputUI() {
     document.getElementById('side-label').innerText = `${item.label} =`;
     document.getElementById('side-input').value = (item.lengthCm != null ? item.lengthCm : '');
     document.getElementById('side-input').placeholder = 'см';
-    document.getElementById('prev-side-btn').style.display = (isDiag ? currentDiagonalInput : currentInputEdge) > 0 ? 'inline-block' : 'none';
+    const prevBtn = document.getElementById('prev-side-btn');
+    if (isDiag) {
+        prevBtn.style.display = 'inline-block';
+        prevBtn.innerText = currentDiagonalInput > 0 ? 'Назад' : '← Стороны';
+    } else {
+        prevBtn.style.display = currentInputEdge > 0 ? 'inline-block' : 'none';
+        prevBtn.innerText = 'Назад';
+    }
     const btn = document.querySelector('#input-row .btn-next');
     if (btn) btn.innerText = isDiag && currentDiagonalInput === selectedDiagonals.length - 1 ? 'Готово' : 'Далее';
     document.getElementById('side-input').focus();
@@ -1009,6 +1099,7 @@ function updateInputUI() {
 function prevSide() {
     if (state === 'INPUT_DIAGONALS') {
         if (currentDiagonalInput > 0) { currentDiagonalInput--; updateInputUI(); }
+        else { backToSidesFromDiagonals(); }
         return;
     }
     if (currentInputEdge > 0) { currentInputEdge--; updateInputUI(); }
@@ -1022,11 +1113,30 @@ function saveSideAndNext() {
     }
     if (state === 'INPUT_DIAGONALS') { saveDiagonalAndNext(val); return; }
     edges[currentInputEdge].lengthCm = val;
-    currentInputEdge++;
-    if (currentInputEdge >= edges.length) {
+    // Если все стороны заполнены — дальше диагонали (или пересчёт если уже были)
+    if (allSideLengthsKnown()) {
+        document.getElementById('bottom-input-bar').classList.remove('active');
+        // Если уже была геометрия — просто остаёмся / идём к материалу после диагоналей
+        if (document.getElementById('diagonals-panel') && state === 'INPUT_SIDES') {
+            initDiagonals();
+        } else {
+            showToast('Размер сохранён', 1500);
+        }
+        return;
+    }
+    // Следующая пустая сторона
+    let next = -1;
+    for (let i = 0; i < edges.length; i++) {
+        const idx = (currentInputEdge + 1 + i) % edges.length;
+        if (!Number.isFinite(edges[idx].lengthCm) || edges[idx].lengthCm <= 0) { next = idx; break; }
+    }
+    if (next >= 0) {
+        currentInputEdge = next;
+        updateInputUI();
+    } else {
         document.getElementById('bottom-input-bar').classList.remove('active');
         initDiagonals();
-    } else updateInputUI();
+    }
 }
 
 function updateDiagonalSelectionUI() {
@@ -1040,6 +1150,19 @@ function updateDiagonalSelectionUI() {
     }).join('');
     const minNeeded = Math.max(0, points.length - 3);
     info.innerText = `Выбрано: ${selectedDiagonals.length}. Для точного построения желательно ≥ ${minNeeded}. Можно пропустить.`;
+}
+
+function backToSidesFromDiagonals() {
+    document.getElementById('diagonals-panel').classList.remove('active');
+    document.getElementById('bottom-input-bar').classList.remove('active');
+    state = 'INPUT_SIDES';
+    statusText.innerText = 'Правка сторон (тап по стороне)';
+    currentInputEdge = 0;
+    selectedDiagonals = selectedDiagonals || [];
+    document.getElementById('bottom-input-bar').classList.add('active');
+    updateInputUI();
+    showToast('Можно тапнуть сторону и исправить размер', 3000);
+    draw();
 }
 
 function initDiagonals() {
@@ -1134,13 +1257,54 @@ function selectMat(matName, btnEl) {
 function finishMaterialSelection() {
     selectedColor = document.getElementById('color-input').value.trim() || 'Белый';
     document.getElementById('material-panel').classList.remove('active');
+    openProfilesPanel();
+}
+function openProfilesPanel() {
+    state = 'ASSIGN_PROFILES';
+    statusText.innerText = 'Профили по сторонам';
+    edges.forEach(e => { if (!e.profile) e.profile = 'Стандартный'; });
+    selectedEdgeForEdit = 0;
+    document.getElementById('profile-buttons').innerHTML = PROFILE_OPTIONS.map(name =>
+        '<button type="button" class="diag-select-btn" data-profile="' + name + '" onclick="selectProfile(\'' + name + '\')">' + name + '</button>'
+    ).join('');
+    document.getElementById('profile-side-label').innerText =
+        'Сторона: ' + (edges[0] ? edges[0].label : '') + ' → ' + (edges[0] ? edges[0].profile : '');
+    document.getElementById('profiles-panel').classList.add('active');
+    highlightProfileButtons();
+    autoFitCamera(); draw();
+    showToast('Тапните сторону и выберите профиль', 3000);
+}
+function highlightProfileButtons() {
+    const cur = (selectedEdgeForEdit != null && edges[selectedEdgeForEdit])
+        ? edges[selectedEdgeForEdit].profile : activeProfileName;
+    document.querySelectorAll('#profile-buttons .diag-select-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.getAttribute('data-profile') === cur);
+    });
+}
+function selectProfile(name) {
+    activeProfileName = name;
+    if (selectedEdgeForEdit != null && edges[selectedEdgeForEdit]) {
+        edges[selectedEdgeForEdit].profile = name;
+        document.getElementById('profile-side-label').innerText =
+            'Сторона: ' + edges[selectedEdgeForEdit].label + ' → ' + name;
+    }
+    highlightProfileButtons(); draw();
+}
+function applyProfileToAll() {
+    const name = activeProfileName || 'Стандартный';
+    edges.forEach(e => { e.profile = name; });
+    showToast('Профиль «' + name + '» на все стороны', 2000);
+    highlightProfileButtons(); draw();
+}
+function finishProfiles() {
+    document.getElementById('profiles-panel').classList.remove('active');
     state = 'DONE';
     statusText.innerText = 'Готово';
     document.getElementById('results-panel').classList.add('active');
     updateCeilingsList();
-    autoFitCamera();
-    draw();
+    autoFitCamera(); draw();
 }
+
 
 // --- Multi-ceiling ---
 function getCurrentCeilingPayload() {
@@ -1160,6 +1324,7 @@ function getCurrentCeilingPayload() {
         diagonals: diags,
         material: selectedMaterial,
         color: selectedColor,
+        profiles: edges.map(e => e.profile || 'Стандартный'),
         used_exact: usedExactGeometry
     };
 }
@@ -1283,7 +1448,8 @@ function sendToBot() {
                 sides_cm: c.sides_cm,
                 diagonals: c.diagonals || [],
                 material: c.material || 'Мат',
-                color: c.color || 'Белый'
+                color: c.color || 'Белый',
+                profiles: c.profiles || []
             }))
         };
         webApp.sendData(JSON.stringify(payload));
@@ -1432,7 +1598,11 @@ function draw() {
         let s1 = toScreen(points[i].x, points[i].y);
         let s2 = toScreen(points[nxt].x, points[nxt].y);
         ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-        if (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) {
+        const isSelectedSide = (
+            (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) ||
+            (state === 'ASSIGN_PROFILES' && selectedEdgeForEdit === i)
+        );
+        if (isSelectedSide) {
             ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
         } else {
             ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
