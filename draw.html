@@ -128,6 +128,29 @@
             border-radius: 5px; padding: 4px 8px; font-size: 0.8rem; cursor: pointer;
         }
         .hint { font-size: 0.88rem; color: #555; margin-bottom: 8px; line-height: 1.35; }
+        .install-modes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .install-mode-btn {
+            flex: 1; min-width: 72px; padding: 8px 6px; border: 1px solid #ccc;
+            background: #f8f9fa; border-radius: 8px; font-size: 0.82rem; font-weight: 600;
+            text-align: center; cursor: pointer; touch-action: manipulation;
+        }
+        .install-mode-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .fixture-list { max-height: 16vh; overflow-y: auto; margin: 8px 0; }
+        .fixture-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px;
+            padding: 6px 8px; margin-bottom: 4px; font-size: 0.85rem;
+        }
+        .fixture-row button {
+            background: var(--danger); color: #fff; border: none; border-radius: 4px;
+            padding: 3px 8px; font-size: 0.75rem; cursor: pointer;
+        }
+        .profile-pick { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .profile-pick button {
+            flex: 1; min-width: 90px; padding: 8px; border: 1px solid #ccc;
+            background: #f8f9fa; border-radius: 6px; font-weight: 600; cursor: pointer;
+        }
+        .profile-pick button.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
     </style>
 </head>
 <body>
@@ -165,7 +188,6 @@
         <div id="diag-list-container" class="diag-buttons-grid"></div>
         <div id="diag-selected-info" class="diag-item" style="margin-top:8px;">Выбрано: 0</div>
         <div style="display:flex; gap:8px; margin-top:10px;">
-            <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="backToSidesFromDiagonals()">← Стороны</button>
             <button class="btn btn-outline" style="flex:1; padding:12px;" onclick="skipDiagonals()">Пропустить</button>
             <button class="btn btn-success" style="flex:1; padding:12px;" onclick="finishDiagonals()">Далее</button>
         </div>
@@ -182,16 +204,61 @@
             <label>Цвет:</label>
             <input type="text" id="color-input" value="Белый" placeholder="Например: Белый, 001">
         </div>
-        <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Сформировать чертёж</button>
+        <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Далее: монтаж</button>
     </div>
 
-    <div id="profiles-panel" class="bottom-panel">
-        <div class="panel-title">Профиль по сторонам</div>
-        <div class="hint">Тапните сторону на чертеже и выберите профиль.</div>
-        <div id="profile-side-label" style="font-weight:bold;margin-bottom:8px;">Сторона: —</div>
-        <div id="profile-buttons" class="diag-buttons-grid"></div>
-        <button class="btn btn-outline" style="width:100%;margin-top:8px;padding:10px;" onclick="applyProfileToAll()">Применить ко всем сторонам</button>
-        <button class="btn btn-success" style="width:100%;margin-top:8px;padding:12px;" onclick="finishProfiles()">Готово</button>
+    <div id="install-panel" class="bottom-panel">
+        <div class="panel-title">Монтажные элементы</div>
+        <div class="hint">Необязательно. На PNG для монтажников — всё видно; в PDF для производства — нет.</div>
+        <div class="install-modes">
+            <button type="button" class="install-mode-btn active" id="imode-profile" onclick="setInstallMode('profile')">Профиль</button>
+            <button type="button" class="install-mode-btn" id="imode-lighting" onclick="setInstallMode('lighting')">Освещение</button>
+            <button type="button" class="install-mode-btn" id="imode-cornice" onclick="setInstallMode('cornice')">Карниз</button>
+        </div>
+        <div id="install-hint" class="hint">Выберите профиль, затем тапните стороны. Если стороны не указаны — профиль на все.</div>
+
+        <!-- Профиль: сначала выбор, потом стороны -->
+        <div id="profile-tools" style="display:block;">
+            <div class="profile-pick" id="profile-pick">
+                <button type="button" class="selected" onclick="selectProfileBrush('Стандартный', this)">Стандартный</button>
+                <button type="button" onclick="selectProfileBrush('Теневой', this)">Теневой</button>
+                <button type="button" onclick="selectProfileBrush('Парящий', this)">Парящий</button>
+            </div>
+            <button class="btn btn-outline" style="width:100%;margin-top:8px;padding:10px;" onclick="applyProfileToAll()">Применить ко всем сторонам</button>
+        </div>
+
+        <!-- Освещение: светильник / люстра / полоса -->
+        <div id="lighting-tools" style="display:none;">
+            <div class="install-modes" style="margin-top:4px;">
+                <button type="button" class="install-mode-btn active" id="lmode-spot" onclick="setLightingSub('spot')">Светильник</button>
+                <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстра</button>
+                <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Световая полоса</button>
+            </div>
+            <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:8px;padding:10px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
+            <div id="strip-tools" style="display:none;margin-top:8px;">
+                <div class="hint" id="strip-live-len">Длина: 0 см — тапайте точки полосы</div>
+                <div class="color-row">
+                    <label>Длина:</label>
+                    <input type="number" id="strip-length-input" placeholder="см (авто)" inputmode="decimal" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;">
+                    <span>см</span>
+                </div>
+                <div style="display:flex;gap:6px;margin-top:6px;">
+                    <button class="btn btn-outline" style="flex:1;padding:10px;" onclick="undoStripPoint()">↩ Точка</button>
+                    <button class="btn btn-accent" style="flex:1;padding:10px;" onclick="finishStrip()">✓ Готово полосу</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="color-row" id="cornice-offset-row" style="display:none;">
+            <label>Вынос:</label>
+            <input type="number" id="cornice-offset-input" value="5" min="1" max="50" step="1" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;">
+            <span>см</span>
+        </div>
+        <div id="fixture-list" class="fixture-list"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-outline" style="flex:1;padding:12px;" onclick="skipInstall()">Пропустить</button>
+            <button class="btn btn-success" style="flex:1;padding:12px;" onclick="finishInstall()">Готово</button>
+        </div>
     </div>
 
     <div id="results-panel" class="bottom-panel">
@@ -214,13 +281,19 @@ let sketchPoints = [], sketchTurnSigns = [], sketchOrientation = 1;
 let currentDiagonalInput = 0;
 let completedCeilings = [];
 let selectedMaterial = 'Мат', selectedColor = 'Белый';
-let PROFILE_OPTIONS = ['Стандартный', 'Теневой', 'Парящий'];
-let activeProfileName = 'Стандартный';
-let selectedEdgeForEdit = null;
-
 let state = 'DRAWING';
 let usedExactGeometry = false;
 let camera = { x: 0, y: 0, zoom: 1 };
+// Монтаж
+let sideProfiles = [];       // имя профиля на каждое ребро
+let fixtures = [];           // spot | chandelier | strip | cornice
+let installMode = 'profile'; // profile | lighting | cornice
+let lightingSub = 'spot';    // spot | chandelier | strip
+let selectedProfileName = 'Стандартный';
+let profileEdgesPainted = false; // были ли тапы по сторонам после выбора профиля
+let stripDraft = [];         // точки текущей световой полосы (см)
+let stripPreviewLen = 0;
+const PROFILE_COLORS = { 'Стандартный': '#2c3e50', 'Теневой': '#8e44ad', 'Парящий': '#e67e22' };
 
 function getTelegramWebApp() {
     return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
@@ -944,7 +1017,47 @@ function solveExactGeometry() {
 }
 
 // --- UI flow ---
-function distToSegment(p, a, b) {
+function handleCanvasTap(worldPos) {
+    if (state === 'INSTALL') {
+        handleInstallTap(worldPos);
+        return;
+    }
+    if (state !== 'DRAWING') return;
+    if (points.length >= 3) {
+        let distToFirst = Math.hypot(worldPos.x - points[0].x, worldPos.y - points[0].y) * camera.zoom;
+        if (distToFirst < 40) { closePolygon(); return; }
+    }
+    if (!checkIntersectionValid(worldPos)) {
+        showToast("Линии не должны пересекаться!", 2000);
+        return;
+    }
+    points.push({ x: worldPos.x, y: worldPos.y, letter: getLetter(points.length) });
+    updateUI(); draw();
+}
+
+function pointInPolygon(pt, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+        const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
+            (pt.x < (xj - xi) * (pt.y - yi) / ((yj - yi) || 1e-12) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function nearestEdgeIndex(worldPos) {
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < points.length; i++) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        const d = distPointToSegment(worldPos, a, b);
+        if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+}
+
+function distPointToSegment(p, a, b) {
     const dx = b.x - a.x, dy = b.y - a.y;
     const len2 = dx * dx + dy * dy;
     if (len2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
@@ -952,77 +1065,299 @@ function distToSegment(p, a, b) {
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
-function findNearestEdgeIndex(worldPos) {
-    if (!isClosed || points.length < 2) return -1;
-    let best = -1, bestD = Infinity;
+
+function twoNearestEdgeOffsetsCm(worldPos) {
+    const dists = [];
     for (let i = 0; i < points.length; i++) {
-        const d = distToSegment(worldPos, points[i], points[(i + 1) % points.length]) * camera.zoom;
-        if (d < bestD) { bestD = d; best = i; }
+        const a = points[i], b = points[(i + 1) % points.length];
+        dists.push({ i, d: distPointToSegment(worldPos, a, b) });
     }
-    return bestD < 28 ? best : -1;
+    dists.sort((u, v) => u.d - v.d);
+    return {
+        offset_wall_a_cm: Math.round(dists[0].d * 10) / 10,
+        offset_wall_b_cm: Math.round((dists[1] ? dists[1].d : dists[0].d) * 10) / 10,
+        edge_a: dists[0].i,
+        edge_b: dists[1] ? dists[1].i : dists[0].i
+    };
 }
-function findNearestDiagonalIndex(worldPos) {
-    if (!selectedDiagonals.length) return -1;
-    let best = -1, bestD = Infinity;
-    selectedDiagonals.forEach((d, idx) => {
-        if (d.p1 >= points.length || d.p2 >= points.length) return;
-        const dist = distToSegment(worldPos, points[d.p1], points[d.p2]) * camera.zoom;
-        if (dist < bestD) { bestD = dist; best = idx; }
+
+function polylineLength(pts) {
+    let L = 0;
+    for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+    return L;
+}
+
+function stripWallOffsets(stripPts) {
+    const offs = [];
+    if (!stripPts.length) return offs;
+    const ends = [stripPts[0], stripPts[stripPts.length - 1]];
+    ends.forEach((p, idx) => {
+        const o = twoNearestEdgeOffsetsCm(p);
+        offs.push({
+            end: idx === 0 ? 'start' : 'end',
+            offset_wall_a_cm: o.offset_wall_a_cm,
+            offset_wall_b_cm: o.offset_wall_b_cm,
+            edge_a: o.edge_a,
+            edge_b: o.edge_b
+        });
     });
-    return bestD < 28 ? best : -1;
+    return offs;
 }
-function handleCanvasTap(worldPos) {
-    if (state === 'DRAWING') {
-        if (points.length >= 3) {
-            let distToFirst = Math.hypot(worldPos.x - points[0].x, worldPos.y - points[0].y) * camera.zoom;
-            if (distToFirst < 40) { closePolygon(); return; }
-        }
-        if (!checkIntersectionValid(worldPos)) {
-            showToast("Линии не должны пересекаться!", 2000);
-            return;
-        }
-        points.push({ x: worldPos.x, y: worldPos.y, letter: getLetter(points.length) });
-        updateUI(); draw();
+
+function handleInstallTap(worldPos) {
+    if (installMode === 'profile') {
+        const ei = nearestEdgeIndex(worldPos);
+        sideProfiles[ei] = selectedProfileName;
+        profileEdgesPainted = true;
+        const lab = edges[ei] ? edges[ei].label : `${ei}`;
+        showToast(`${lab}: ${selectedProfileName}`, 1800);
+        updateFixtureList();
+        draw();
         return;
     }
-    if (state === 'INPUT_SIDES' || state === 'DONE' || state === 'ASSIGN_PROFILES') {
-        const ei = findNearestEdgeIndex(worldPos);
-        if (ei >= 0) {
-            if (state === 'ASSIGN_PROFILES') {
-                selectedEdgeForEdit = ei;
-                document.getElementById('profile-side-label').innerText =
-                    'Сторона: ' + edges[ei].label + ' → ' + (edges[ei].profile || 'Стандартный');
-                highlightProfileButtons();
-                draw();
-                return;
-            }
-            if (state === 'DONE') {
-                state = 'INPUT_SIDES';
-                statusText.innerText = 'Правка размеров';
-                document.getElementById('results-panel').classList.remove('active');
-                document.getElementById('bottom-input-bar').classList.add('active');
-            }
-            currentInputEdge = ei;
-            selectedEdgeForEdit = ei;
-            updateInputUI();
-            showToast('Сторона ' + edges[ei].label + ' — введите размер', 2000);
+    if (installMode === 'cornice') {
+        const ei = nearestEdgeIndex(worldPos);
+        const off = parseFloat(document.getElementById('cornice-offset-input').value) || 5;
+        fixtures = fixtures.filter(f => !(f.type === 'cornice' && f.edge_index === ei));
+        fixtures.push({
+            type: 'cornice',
+            edge_index: ei,
+            offset_cm: off,
+            x: (points[ei].x + points[(ei + 1) % points.length].x) / 2,
+            y: (points[ei].y + points[(ei + 1) % points.length].y) / 2,
+            label: `Карниз ${edges[ei] ? edges[ei].label : ei}`
+        });
+        updateFixtureList();
+        showToast(`Карниз на ${edges[ei] ? edges[ei].label : ei}, вынос ${off} см`, 2000);
+        draw();
+        return;
+    }
+    if (installMode === 'lighting') {
+        if (lightingSub === 'strip') {
+            stripDraft.push({ x: worldPos.x, y: worldPos.y });
+            stripPreviewLen = polylineLength(stripDraft);
+            const live = document.getElementById('strip-live-len');
+            if (live) live.innerText = `Длина: ${stripPreviewLen.toFixed(1)} см — точек: ${stripDraft.length}`;
+            const inp = document.getElementById('strip-length-input');
+            if (inp && !inp.dataset.manual) inp.value = stripPreviewLen.toFixed(1);
+            draw();
             return;
         }
-    }
-    if (state === 'INPUT_DIAGONALS' || state === 'DONE' || state === 'INPUT_SIDES') {
-        const di = findNearestDiagonalIndex(worldPos);
-        if (di >= 0 && selectedDiagonals[di]) {
-            if (state !== 'INPUT_DIAGONALS') {
-                state = 'INPUT_DIAGONALS';
-                statusText.innerText = 'Правка диагоналей';
-                document.getElementById('results-panel').classList.remove('active');
-                document.getElementById('bottom-input-bar').classList.add('active');
-            }
-            currentDiagonalInput = di;
-            updateInputUI();
-            showToast('Диагональ ' + selectedDiagonals[di].label + ' — введите размер', 2000);
+        if (!pointInPolygon(worldPos, points)) {
+            showToast('Ставьте точку внутри контура', 2000);
+            return;
         }
+        if (lightingSub === 'chandelier') {
+            const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
+            fixtures.push({ type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n });
+            showToast(`Люстра L${n}`, 2000);
+        } else {
+            const off = twoNearestEdgeOffsetsCm(worldPos);
+            const n = fixtures.filter(f => f.type === 'spot').length + 1;
+            fixtures.push({
+                type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
+                offset_wall_a_cm: off.offset_wall_a_cm, offset_wall_b_cm: off.offset_wall_b_cm
+            });
+            showToast(`Светильник S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`, 2500);
+        }
+        updateFixtureList();
+        draw();
     }
+}
+
+function selectProfileBrush(name, el) {
+    selectedProfileName = name;
+    profileEdgesPainted = false;
+    document.querySelectorAll('#profile-pick button').forEach(b => b.classList.remove('selected'));
+    if (el) el.classList.add('selected');
+    showToast(`Профиль «${name}»: тапните стороны или «Применить ко всем»`, 3000);
+}
+
+function applyProfileToAll() {
+    sideProfiles = points.map(() => selectedProfileName);
+    profileEdgesPainted = true;
+    updateFixtureList();
+    draw();
+    showToast(`Профиль «${selectedProfileName}» на всех сторонах`, 2000);
+}
+
+function setInstallMode(mode) {
+    if (installMode === 'profile' && mode !== 'profile' && !profileEdgesPainted) {
+        sideProfiles = points.map(() => selectedProfileName);
+    }
+    installMode = mode;
+    stripDraft = [];
+    stripPreviewLen = 0;
+    document.querySelectorAll('#install-panel > .install-modes > .install-mode-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('imode-' + mode);
+    if (btn) btn.classList.add('active');
+    const hint = document.getElementById('install-hint');
+    const pt = document.getElementById('profile-tools');
+    const lt = document.getElementById('lighting-tools');
+    const cr = document.getElementById('cornice-offset-row');
+    if (pt) pt.style.display = mode === 'profile' ? 'block' : 'none';
+    if (lt) lt.style.display = mode === 'lighting' ? 'block' : 'none';
+    if (cr) cr.style.display = mode === 'cornice' ? 'flex' : 'none';
+    if (mode === 'profile') {
+        hint.innerText = 'Выберите профиль, тапните стороны. Без тапов — на все стороны.';
+    } else if (mode === 'lighting') {
+        setLightingSub(lightingSub || 'spot');
+    } else if (mode === 'cornice') {
+        hint.innerText = 'Тапните по стороне — карниз вдоль неё';
+    }
+    updateFixtureList();
+    draw();
+}
+
+function setLightingSub(sub) {
+    lightingSub = sub;
+    stripDraft = [];
+    stripPreviewLen = 0;
+    ['spot', 'chandelier', 'strip'].forEach(s => {
+        const b = document.getElementById('lmode-' + s);
+        if (b) b.classList.toggle('active', s === sub);
+    });
+    const hint = document.getElementById('install-hint');
+    const centerBtn = document.getElementById('chandelier-center-btn');
+    const stripTools = document.getElementById('strip-tools');
+    if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
+    if (stripTools) stripTools.style.display = sub === 'strip' ? 'block' : 'none';
+    if (sub === 'spot') hint.innerText = 'Освещение → светильник: тап внутри контура';
+    else if (sub === 'chandelier') hint.innerText = 'Освещение → люстра: тап или «по центру» (можно несколько)';
+    else if (sub === 'strip') {
+        hint.innerText = 'Освещение → полоса: рисуйте точками, длина считается сразу';
+        const live = document.getElementById('strip-live-len');
+        if (live) live.innerText = 'Длина: 0 см — тапайте точки полосы';
+        const inp = document.getElementById('strip-length-input');
+        if (inp) { inp.value = ''; delete inp.dataset.manual; }
+    }
+    draw();
+}
+
+function placeChandelierCenter() {
+    if (points.length < 3) return;
+    let cx = 0, cy = 0;
+    points.forEach(p => { cx += p.x; cy += p.y; });
+    cx /= points.length; cy /= points.length;
+    const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
+    fixtures.push({ type: 'chandelier', x: cx, y: cy, label: 'L' + n });
+    updateFixtureList();
+    draw();
+    showToast(`Люстра L${n} по центру`, 2000);
+}
+
+function undoStripPoint() {
+    if (stripDraft.length) stripDraft.pop();
+    stripPreviewLen = polylineLength(stripDraft);
+    const live = document.getElementById('strip-live-len');
+    if (live) live.innerText = `Длина: ${stripPreviewLen.toFixed(1)} см — точек: ${stripDraft.length}`;
+    const inp = document.getElementById('strip-length-input');
+    if (inp && !inp.dataset.manual) inp.value = stripPreviewLen ? stripPreviewLen.toFixed(1) : '';
+    draw();
+}
+
+function finishStrip() {
+    if (stripDraft.length < 2) {
+        showToast('Нужно минимум 2 точки полосы', 2000);
+        return;
+    }
+    let len = polylineLength(stripDraft);
+    const inp = document.getElementById('strip-length-input');
+    if (inp && inp.value) {
+        const manual = parseFloat(String(inp.value).replace(',', '.'));
+        if (Number.isFinite(manual) && manual > 0) len = manual;
+    }
+    const n = fixtures.filter(f => f.type === 'strip').length + 1;
+    const offsets = stripWallOffsets(stripDraft);
+    fixtures.push({
+        type: 'strip',
+        points: stripDraft.map(p => ({ x: p.x, y: p.y })),
+        length_cm: Math.round(len * 10) / 10,
+        label: 'P' + n,
+        wall_offsets: offsets,
+        x: stripDraft[0].x,
+        y: stripDraft[0].y
+    });
+    stripDraft = [];
+    stripPreviewLen = 0;
+    if (inp) { inp.value = ''; delete inp.dataset.manual; }
+    const live = document.getElementById('strip-live-len');
+    if (live) live.innerText = 'Длина: 0 см — тапайте точки полосы';
+    updateFixtureList();
+    draw();
+    showToast(`Полоса P${n}: ${len.toFixed(1)} см`, 2500);
+}
+
+function updateFixtureList() {
+    const box = document.getElementById('fixture-list');
+    if (!box) return;
+    const lines = [];
+    sideProfiles.forEach((p, i) => {
+        if (p && p !== 'Стандартный') {
+            const lab = edges[i] ? edges[i].label : i;
+            lines.push(`<div class="fixture-row"><span>📐 ${lab}: ${p}</span><span></span></div>`);
+        }
+    });
+    fixtures.forEach((f, idx) => {
+        let t = f.label || f.type;
+        if (f.type === 'spot') t = `💡 ${f.label} (${f.offset_wall_a_cm}/${f.offset_wall_b_cm} см)`;
+        if (f.type === 'cornice') t = `🪟 ${f.label} ${f.offset_cm} см`;
+        if (f.type === 'chandelier') t = `💡 Люстра ${f.label}`;
+        if (f.type === 'strip') t = `💡 Полоса ${f.label}: ${f.length_cm} см`;
+        lines.push(`<div class="fixture-row"><span>${t}</span><button type="button" onclick="removeFixture(${idx})">✕</button></div>`);
+    });
+    box.innerHTML = lines.length ? lines.join('') : '<div style="color:#888;font-size:0.85rem;">Пока пусто — можно пропустить</div>';
+}
+
+function removeFixture(idx) {
+    fixtures.splice(idx, 1);
+    let sn = 1, ln = 1, pn = 1;
+    fixtures.forEach(f => {
+        if (f.type === 'spot') f.label = 'S' + (sn++);
+        if (f.type === 'chandelier') f.label = 'L' + (ln++);
+        if (f.type === 'strip') f.label = 'P' + (pn++);
+    });
+    updateFixtureList();
+    draw();
+}
+
+function openInstallPanel() {
+    state = 'INSTALL';
+    statusText.innerText = 'Монтажные элементы';
+    if (!sideProfiles.length || sideProfiles.length !== points.length) {
+        sideProfiles = points.map(() => 'Стандартный');
+    }
+    profileEdgesPainted = false;
+    stripDraft = [];
+    installMode = 'profile';
+    lightingSub = 'spot';
+    setInstallMode('profile');
+    updateFixtureList();
+    document.getElementById('install-panel').classList.add('active');
+    autoFitCamera();
+    draw();
+    showToast('Профиль → Освещение → Карниз. Можно пропустить.', 3500);
+}
+
+function skipInstall() {
+    fixtures = [];
+    sideProfiles = points.map(() => 'Стандартный');
+    stripDraft = [];
+    finishInstall();
+}
+
+function finishInstall() {
+    if (installMode === 'profile' && !profileEdgesPainted) {
+        sideProfiles = points.map(() => selectedProfileName);
+    }
+    stripDraft = [];
+    document.getElementById('install-panel').classList.remove('active');
+    state = 'DONE';
+    statusText.innerText = 'Готово';
+    document.getElementById('results-panel').classList.add('active');
+    updateCeilingsList();
+    autoFitCamera();
+    draw();
 }
 
 
@@ -1061,8 +1396,7 @@ function closePolygon() {
         startIdx: i,
         endIdx: (i + 1) % points.length,
         label: `${p.letter}-${points[(i + 1) % points.length].letter}`,
-        lengthCm: null,
-        profile: 'Стандартный'
+        lengthCm: null
     }));
     currentInputEdge = 0;
     showToast('Эскиз сохранён. Введите реальные размеры сторон в сантиметрах. Форма подстроится под них.', 4500);
@@ -1082,14 +1416,7 @@ function updateInputUI() {
     document.getElementById('side-label').innerText = `${item.label} =`;
     document.getElementById('side-input').value = (item.lengthCm != null ? item.lengthCm : '');
     document.getElementById('side-input').placeholder = 'см';
-    const prevBtn = document.getElementById('prev-side-btn');
-    if (isDiag) {
-        prevBtn.style.display = 'inline-block';
-        prevBtn.innerText = currentDiagonalInput > 0 ? 'Назад' : '← Стороны';
-    } else {
-        prevBtn.style.display = currentInputEdge > 0 ? 'inline-block' : 'none';
-        prevBtn.innerText = 'Назад';
-    }
+    document.getElementById('prev-side-btn').style.display = (isDiag ? currentDiagonalInput : currentInputEdge) > 0 ? 'inline-block' : 'none';
     const btn = document.querySelector('#input-row .btn-next');
     if (btn) btn.innerText = isDiag && currentDiagonalInput === selectedDiagonals.length - 1 ? 'Готово' : 'Далее';
     document.getElementById('side-input').focus();
@@ -1099,7 +1426,6 @@ function updateInputUI() {
 function prevSide() {
     if (state === 'INPUT_DIAGONALS') {
         if (currentDiagonalInput > 0) { currentDiagonalInput--; updateInputUI(); }
-        else { backToSidesFromDiagonals(); }
         return;
     }
     if (currentInputEdge > 0) { currentInputEdge--; updateInputUI(); }
@@ -1113,30 +1439,11 @@ function saveSideAndNext() {
     }
     if (state === 'INPUT_DIAGONALS') { saveDiagonalAndNext(val); return; }
     edges[currentInputEdge].lengthCm = val;
-    // Если все стороны заполнены — дальше диагонали (или пересчёт если уже были)
-    if (allSideLengthsKnown()) {
-        document.getElementById('bottom-input-bar').classList.remove('active');
-        // Если уже была геометрия — просто остаёмся / идём к материалу после диагоналей
-        if (document.getElementById('diagonals-panel') && state === 'INPUT_SIDES') {
-            initDiagonals();
-        } else {
-            showToast('Размер сохранён', 1500);
-        }
-        return;
-    }
-    // Следующая пустая сторона
-    let next = -1;
-    for (let i = 0; i < edges.length; i++) {
-        const idx = (currentInputEdge + 1 + i) % edges.length;
-        if (!Number.isFinite(edges[idx].lengthCm) || edges[idx].lengthCm <= 0) { next = idx; break; }
-    }
-    if (next >= 0) {
-        currentInputEdge = next;
-        updateInputUI();
-    } else {
+    currentInputEdge++;
+    if (currentInputEdge >= edges.length) {
         document.getElementById('bottom-input-bar').classList.remove('active');
         initDiagonals();
-    }
+    } else updateInputUI();
 }
 
 function updateDiagonalSelectionUI() {
@@ -1150,19 +1457,6 @@ function updateDiagonalSelectionUI() {
     }).join('');
     const minNeeded = Math.max(0, points.length - 3);
     info.innerText = `Выбрано: ${selectedDiagonals.length}. Для точного построения желательно ≥ ${minNeeded}. Можно пропустить.`;
-}
-
-function backToSidesFromDiagonals() {
-    document.getElementById('diagonals-panel').classList.remove('active');
-    document.getElementById('bottom-input-bar').classList.remove('active');
-    state = 'INPUT_SIDES';
-    statusText.innerText = 'Правка сторон (тап по стороне)';
-    currentInputEdge = 0;
-    selectedDiagonals = selectedDiagonals || [];
-    document.getElementById('bottom-input-bar').classList.add('active');
-    updateInputUI();
-    showToast('Можно тапнуть сторону и исправить размер', 3000);
-    draw();
 }
 
 function initDiagonals() {
@@ -1257,54 +1551,8 @@ function selectMat(matName, btnEl) {
 function finishMaterialSelection() {
     selectedColor = document.getElementById('color-input').value.trim() || 'Белый';
     document.getElementById('material-panel').classList.remove('active');
-    openProfilesPanel();
+    openInstallPanel();
 }
-function openProfilesPanel() {
-    state = 'ASSIGN_PROFILES';
-    statusText.innerText = 'Профили по сторонам';
-    edges.forEach(e => { if (!e.profile) e.profile = 'Стандартный'; });
-    selectedEdgeForEdit = 0;
-    document.getElementById('profile-buttons').innerHTML = PROFILE_OPTIONS.map(name =>
-        '<button type="button" class="diag-select-btn" data-profile="' + name + '" onclick="selectProfile(\'' + name + '\')">' + name + '</button>'
-    ).join('');
-    document.getElementById('profile-side-label').innerText =
-        'Сторона: ' + (edges[0] ? edges[0].label : '') + ' → ' + (edges[0] ? edges[0].profile : '');
-    document.getElementById('profiles-panel').classList.add('active');
-    highlightProfileButtons();
-    autoFitCamera(); draw();
-    showToast('Тапните сторону и выберите профиль', 3000);
-}
-function highlightProfileButtons() {
-    const cur = (selectedEdgeForEdit != null && edges[selectedEdgeForEdit])
-        ? edges[selectedEdgeForEdit].profile : activeProfileName;
-    document.querySelectorAll('#profile-buttons .diag-select-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.getAttribute('data-profile') === cur);
-    });
-}
-function selectProfile(name) {
-    activeProfileName = name;
-    if (selectedEdgeForEdit != null && edges[selectedEdgeForEdit]) {
-        edges[selectedEdgeForEdit].profile = name;
-        document.getElementById('profile-side-label').innerText =
-            'Сторона: ' + edges[selectedEdgeForEdit].label + ' → ' + name;
-    }
-    highlightProfileButtons(); draw();
-}
-function applyProfileToAll() {
-    const name = activeProfileName || 'Стандартный';
-    edges.forEach(e => { e.profile = name; });
-    showToast('Профиль «' + name + '» на все стороны', 2000);
-    highlightProfileButtons(); draw();
-}
-function finishProfiles() {
-    document.getElementById('profiles-panel').classList.remove('active');
-    state = 'DONE';
-    statusText.innerText = 'Готово';
-    document.getElementById('results-panel').classList.add('active');
-    updateCeilingsList();
-    autoFitCamera(); draw();
-}
-
 
 // --- Multi-ceiling ---
 function getCurrentCeilingPayload() {
@@ -1318,14 +1566,43 @@ function getCurrentCeilingPayload() {
     const diags = selectedDiagonals
         .filter(d => Number.isFinite(d.lengthCm) && d.lengthCm > 0)
         .map(d => [d.p1, d.p2]);
+    const profiles = sideProfiles.length === points.length
+        ? sideProfiles.slice()
+        : points.map(() => 'Стандартный');
+    const fxOut = fixtures.map(f => {
+        const o = {
+            type: f.type,
+            x: (f.x || 0) / 100,
+            y: (f.y || 0) / 100,
+            label: f.label || ''
+        };
+        if (f.type === 'spot') {
+            o.offset_wall_a_cm = f.offset_wall_a_cm;
+            o.offset_wall_b_cm = f.offset_wall_b_cm;
+        }
+        if (f.type === 'cornice') {
+            o.edge_index = f.edge_index;
+            o.offset_cm = f.offset_cm;
+        }
+        if (f.type === 'strip') {
+            o.points = (f.points || []).map(p => ({ x: p.x / 100, y: p.y / 100 }));
+            o.length_cm = f.length_cm;
+            o.wall_offsets = f.wall_offsets || [];
+        }
+        if (f.type === 'chandelier') {
+            /* x,y already set */
+        }
+        return o;
+    });
     return {
         points: ptsMeters,
         sides_cm: sides,
         diagonals: diags,
         material: selectedMaterial,
         color: selectedColor,
-        profiles: edges.map(e => e.profile || 'Стандартный'),
-        used_exact: usedExactGeometry
+        used_exact: usedExactGeometry,
+        profiles: profiles,
+        fixtures: fxOut
     };
 }
 
@@ -1356,6 +1633,10 @@ function updateCeilingsList() {
 }
 
 function addCeiling() {
+    if (state === 'INSTALL') {
+        showToast('Нажмите «Готово» или «Пропустить» в монтаже.', 2500);
+        return;
+    }
     if (state !== 'DONE') {
         showToast('Сначала завершите текущий потолок.', 2500);
         return;
@@ -1384,11 +1665,14 @@ function resetCurrentDrawing(full = true) {
     currentDiagonalInput = 0;
     selectedMaterial = 'Мат'; selectedColor = 'Белый';
     usedExactGeometry = false;
+    sideProfiles = []; fixtures = []; installMode = 'profile'; lightingSub = 'spot'; profileEdgesPainted = false; stripDraft = []; stripPreviewLen = 0;
     state = 'DRAWING';
     statusText.innerText = 'Черчение контура';
     document.getElementById('bottom-input-bar').classList.remove('active');
     document.getElementById('diagonals-panel').classList.remove('active');
     document.getElementById('material-panel').classList.remove('active');
+    const ip = document.getElementById('install-panel');
+    if (ip) ip.classList.remove('active');
     if (full) {
         document.getElementById('results-panel').classList.remove('active');
         completedCeilings = [];
@@ -1449,7 +1733,8 @@ function sendToBot() {
                 diagonals: c.diagonals || [],
                 material: c.material || 'Мат',
                 color: c.color || 'Белый',
-                profiles: c.profiles || []
+                profiles: c.profiles || [],
+                fixtures: c.fixtures || []
             }))
         };
         webApp.sendData(JSON.stringify(payload));
@@ -1476,7 +1761,7 @@ function copyData() {
 
 // --- Drawing ---
 function drawSummaryCardOnCanvas() {
-    if (state !== 'DONE' && state !== 'SELECT_MATERIAL') return;
+    if (state !== 'DONE' && state !== 'SELECT_MATERIAL' && state !== 'INSTALL') return;
     let maxY = Math.max(...points.map(p => p.y));
     let minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
     let cx = (minX + maxX) / 2;
@@ -1592,18 +1877,19 @@ function draw() {
         ctx.setLineDash([]);
     }
 
+    const showInstall = (state === 'INSTALL' || state === 'DONE');
+
     for (let i = 0; i < points.length; i++) {
         let nxt = (i + 1) % points.length;
         if (!isClosed && nxt === 0) continue;
         let s1 = toScreen(points[i].x, points[i].y);
         let s2 = toScreen(points[nxt].x, points[nxt].y);
         ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-        const isSelectedSide = (
-            (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) ||
-            (state === 'ASSIGN_PROFILES' && selectedEdgeForEdit === i)
-        );
-        if (isSelectedSide) {
+        if (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) {
             ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
+        } else if (showInstall && sideProfiles[i]) {
+            ctx.strokeStyle = PROFILE_COLORS[sideProfiles[i]] || '#2c3e50';
+            ctx.lineWidth = 3.2;
         } else {
             ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
         }
@@ -1619,6 +1905,98 @@ function draw() {
             ctx.fillStyle = '#d32f2f';
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(String(text), mX, mY);
+        }
+        if (showInstall && sideProfiles[i] && sideProfiles[i] !== 'Стандартный') {
+            const short = { 'Теневой': 'Тен.', 'Парящий': 'Пар.' }[sideProfiles[i]] || sideProfiles[i];
+            let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+            ctx.font = 'bold 11px Arial';
+            ctx.fillStyle = PROFILE_COLORS[sideProfiles[i]] || '#333';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText(short, mX, mY + 12);
+        }
+    }
+
+    // Монтажные элементы на canvas
+    if (showInstall && fixtures.length) {
+        fixtures.forEach(f => {
+            if (f.type === 'cornice' && typeof f.edge_index === 'number' && points[f.edge_index]) {
+                const i = f.edge_index;
+                const a = points[i], b = points[(i + 1) % points.length];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const len = Math.hypot(dx, dy) || 1;
+                let nx = -dy / len, ny = dx / len;
+                const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+                const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+                const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+                const off = (f.offset_cm || 5);
+                const s1 = toScreen(a.x + nx * off, a.y + ny * off);
+                const s2 = toScreen(b.x + nx * off, b.y + ny * off);
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2.5; ctx.stroke();
+                return;
+            }
+            const sp = toScreen(f.x, f.y);
+            if (f.type === 'spot') {
+                ctx.beginPath();
+                ctx.fillStyle = '#f39c12'; ctx.strokeStyle = '#b9770e'; ctx.lineWidth = 2;
+                ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(sp.x - 4, sp.y); ctx.lineTo(sp.x + 4, sp.y); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 4); ctx.lineTo(sp.x, sp.y + 4); ctx.stroke();
+                ctx.fillStyle = '#b9770e'; ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                ctx.fillText(f.label || 'S', sp.x + 10, sp.y - 4);
+            } else if (f.type === 'chandelier') {
+                ctx.beginPath();
+                ctx.fillStyle = '#c0392b'; ctx.strokeStyle = '#7b241c'; ctx.lineWidth = 2;
+                ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+                ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y - 5); ctx.lineTo(sp.x + 5, sp.y + 5); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sp.x + 5, sp.y - 5); ctx.lineTo(sp.x - 5, sp.y + 5); ctx.stroke();
+                ctx.fillStyle = '#c0392b'; ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                ctx.fillText(f.label || 'L', sp.x + 12, sp.y - 4);
+            } else if (f.type === 'strip' && f.points && f.points.length >= 2) {
+                ctx.beginPath();
+                const p0 = toScreen(f.points[0].x, f.points[0].y);
+                ctx.moveTo(p0.x, p0.y);
+                for (let k = 1; k < f.points.length; k++) {
+                    const pk = toScreen(f.points[k].x, f.points[k].y);
+                    ctx.lineTo(pk.x, pk.y);
+                }
+                ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                ctx.stroke();
+                const mid = f.points[Math.floor(f.points.length / 2)];
+                const sm = toScreen(mid.x, mid.y);
+                ctx.fillStyle = '#b7950b'; ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                ctx.fillText(`${f.label || 'P'} ${f.length_cm}см`, sm.x, sm.y - 6);
+            }
+        });
+    }
+
+    // Черновик световой полосы
+    if (showInstall && stripDraft && stripDraft.length) {
+        ctx.beginPath();
+        const s0 = toScreen(stripDraft[0].x, stripDraft[0].y);
+        ctx.moveTo(s0.x, s0.y);
+        for (let k = 1; k < stripDraft.length; k++) {
+            const sk = toScreen(stripDraft[k].x, stripDraft[k].y);
+            ctx.lineTo(sk.x, sk.y);
+        }
+        ctx.strokeStyle = '#f39c12'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]);
+        ctx.stroke(); ctx.setLineDash([]);
+        stripDraft.forEach(p => {
+            const sp = toScreen(p.x, p.y);
+            ctx.beginPath(); ctx.fillStyle = '#f39c12';
+            ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2); ctx.fill();
+        });
+        if (stripPreviewLen > 0) {
+            const last = stripDraft[stripDraft.length - 1];
+            const sl = toScreen(last.x, last.y);
+            ctx.fillStyle = '#e67e22'; ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'left'; ctx.fillText(stripPreviewLen.toFixed(1) + ' см', sl.x + 8, sl.y - 8);
         }
     }
 
@@ -1643,7 +2021,13 @@ const webApp = getTelegramWebApp();
 if (webApp) {
     webApp.ready();
     if (typeof webApp.expand === 'function') webApp.expand();
-    if (typeof webApp.enableClosingConfirmation === 'function') webApp.enableClosingConfirmation();
+    // enableClosingConfirmation с Bot API 6.2; в клиенте 6.0 его нет
+    try {
+        if (webApp.isVersionAtLeast && webApp.isVersionAtLeast('6.2') &&
+            typeof webApp.enableClosingConfirmation === 'function') {
+            webApp.enableClosingConfirmation();
+        }
+    } catch (e) { /* старый клиент Telegram */ }
 } else {
     showToast("⚠️ Откройте Draw через кнопку Telegram", 5000);
 }
