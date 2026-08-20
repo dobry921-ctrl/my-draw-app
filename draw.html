@@ -265,16 +265,28 @@
         </div>
     </div>
 
-    <div id="ceiling-switcher" class="bottom-panel" style="display:none;padding-bottom:8px;">
+    <div id="ceiling-switcher" class="bottom-panel">
         <div class="panel-title">Потолки заказа</div>
         <div id="switcher-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-        <div class="hint" id="switcher-hint">Переключайтесь между потолками для редактирования</div>
-        <button class="btn btn-accent" style="width:100%;padding:10px;margin-top:6px;" onclick="editCurrentCeilingFull()">✏️ Редактировать этот потолок</button>
+        <div class="hint" id="switcher-hint">Выберите потолок, затем что править</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+            <button class="btn btn-accent" style="flex:1;min-width:120px;padding:10px;" onclick="editCurrentCeilingFull()">📏 Размеры</button>
+            <button class="btn btn-outline" style="flex:1;min-width:120px;padding:10px;" onclick="editMaterialOnly()">🧵 Материал</button>
+            <button class="btn btn-outline" style="flex:1;min-width:120px;padding:10px;" onclick="editInstallOnly()">💡 Монтаж</button>
+        </div>
     </div>
 
     <div id="results-panel" class="bottom-panel">
-        <div class="panel-title">Готовые потолки в заказе</div>
+        <div class="panel-title" id="results-title">Готовые потолки в заказе</div>
         <div id="ceilings-list" class="ceilings-list"></div>
+        <div id="edit-actions" style="display:none;margin-bottom:8px;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <button class="btn btn-accent" style="flex:1;min-width:100px;padding:10px;" onclick="editCurrentCeilingFull()">📏 Размеры</button>
+                <button class="btn btn-outline" style="flex:1;min-width:100px;padding:10px;" onclick="editMaterialOnly()">🧵 Материал</button>
+                <button class="btn btn-outline" style="flex:1;min-width:100px;padding:10px;" onclick="editInstallOnly()">💡 Монтаж</button>
+            </div>
+            <div class="hint" style="margin-top:6px;">Сначала выберите потолок в списке, затем раздел для правки</div>
+        </div>
         <button class="btn btn-accent" id="add-ceiling-btn" onclick="addCeiling()" style="width:100%; margin-bottom:8px;">➕ Добавить ещё потолок</button>
         <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
         <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
@@ -1654,9 +1666,14 @@ function loadEditCeilings(ceilings, orderId) {
     if (sendBtn) sendBtn.textContent = '💾 Сохранить изменения в заказ';
     const addBtn = document.getElementById('add-ceiling-btn');
     if (addBtn) addBtn.style.display = 'none';
-    showCeilingSwitcher();
     loadCeilingIntoEditor(0);
-    showToast('Редактирование заказа: потолок 1 из ' + completedCeilings.length, 4000);
+    showCeilingSwitcher();
+    document.getElementById('results-panel').classList.add('active');
+    const ea = document.getElementById('edit-actions');
+    if (ea) ea.style.display = 'block';
+    const title = document.getElementById('results-title');
+    if (title) title.innerText = 'Редактирование замера';
+    showToast('Выберите потолок и нажмите Размеры / Материал / Монтаж', 4500);
 }
 
 function normalizeIncomingCeiling(c) {
@@ -1688,16 +1705,18 @@ function normalizeIncomingCeiling(c) {
 function showCeilingSwitcher() {
     const bar = document.getElementById('ceiling-switcher');
     if (!bar) return;
-    bar.style.display = 'block';
     bar.classList.add('active');
     renderSwitcherBtns();
+    const ea = document.getElementById('edit-actions');
+    if (ea) ea.style.display = isEditMode ? 'block' : 'none';
+    const title = document.getElementById('results-title');
+    if (title && isEditMode) title.innerText = 'Редактирование замера';
 }
 
 function hideCeilingSwitcher() {
     const bar = document.getElementById('ceiling-switcher');
     if (!bar) return;
     bar.classList.remove('active');
-    bar.style.display = 'none';
 }
 
 function renderSwitcherBtns() {
@@ -1804,27 +1823,58 @@ function loadCeilingIntoEditor(idx) {
 }
 
 function editCurrentCeilingFull() {
-    // Вернуться к вводу сторон → материал → монтаж для текущего
     if (points.length < 3) {
         showToast('Нет контура', 2000);
         return;
     }
     saveEditorToCompleted();
-    // открыть ввод длин сторон заново
     state = 'INPUT_SIDES';
     currentInputEdge = 0;
     statusText.innerText = 'Размеры сторон';
     document.getElementById('results-panel').classList.remove('active');
     hideCeilingSwitcher();
     document.getElementById('bottom-input-bar').classList.add('active');
-    const inp = document.getElementById('side-input');
-    if (inp && edges[0]) {
-        inp.value = edges[0].lengthCm != null ? edges[0].lengthCm : '';
-        inp.focus();
-    }
+    updateInputUI();
     updateUI();
     draw();
-    showToast('Меняйте размеры. Далее — диагонали / материал / монтаж.', 3500);
+    showToast('Введите размеры сторон по очереди', 3500);
+}
+
+function editMaterialOnly() {
+    if (points.length < 3) {
+        showToast('Нет контура', 2000);
+        return;
+    }
+    saveEditorToCompleted();
+    state = 'SELECT_MATERIAL';
+    statusText.innerText = 'Материал и цвет';
+    document.getElementById('results-panel').classList.remove('active');
+    hideCeilingSwitcher();
+    document.getElementById('bottom-input-bar').classList.remove('active');
+    document.getElementById('diagonals-panel').classList.remove('active');
+    const ip = document.getElementById('install-panel');
+    if (ip) ip.classList.remove('active');
+    document.getElementById('material-panel').classList.add('active');
+    document.querySelectorAll('.mat-btn').forEach(b => {
+        b.classList.toggle('selected', b.textContent.trim() === selectedMaterial);
+    });
+    const ci = document.getElementById('color-input');
+    if (ci) ci.value = selectedColor || 'Белый';
+    draw();
+    showToast('Выберите материал и цвет, затем «Далее: монтаж»', 3000);
+}
+
+function editInstallOnly() {
+    if (points.length < 3) {
+        showToast('Нет контура', 2000);
+        return;
+    }
+    saveEditorToCompleted();
+    document.getElementById('results-panel').classList.remove('active');
+    hideCeilingSwitcher();
+    document.getElementById('material-panel').classList.remove('active');
+    openInstallPanel();
+    showToast('Профиль, освещение, карнизы — затем «Готово»', 3000);
 }
 
 function getCurrentCeilingPayload() {
