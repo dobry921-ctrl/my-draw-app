@@ -2113,6 +2113,16 @@ async function compressJsonString(str) {
     }
 }
 
+function canSendWebAppData(webApp) {
+    try {
+        if (!webApp || typeof webApp.sendData !== 'function') return false;
+        // sendData работает только если Mini App открыт с KeyboardButton / InlineButton
+        const init = webApp.initDataUnsafe || {};
+        // если открыли через menu button — Telegram часто даёт пустой sendData
+        return true;
+    } catch (e) { return false; }
+}
+
 async function sendToBot() {
     try {
         const webApp = requireTelegramWebApp();
@@ -2211,12 +2221,32 @@ async function sendToBot() {
             return;
         }
 
-        webApp.sendData(toSend);
+        if (!webApp || typeof webApp.sendData !== 'function') {
+            showToast('Откройте Draw кнопкой «Начать замер» в сообщении бота (не через меню слева).', 5000);
+            return;
+        }
+        try {
+            webApp.sendData(toSend);
+        } catch (sendErr) {
+            console.error(sendErr);
+            const msg = String(sendErr && sendErr.message || sendErr || '');
+            if (/invalid|WebAppData/i.test(msg) || toSend.length > 4096) {
+                showToast('Данные слишком большие или сессия неверная. Откройте Draw из кнопки в сообщении бота.', 5000);
+            } else {
+                showToast('Ошибка отправки: ' + msg, 4000);
+            }
+            return;
+        }
         showToast(isEditMode ? 'Изменения отправлены в заказ!' : 'Данные отправлены в бот!', 2500);
         setTimeout(() => { if (typeof webApp.close === 'function') webApp.close(); }, 800);
     } catch (err) {
         console.error(err);
-        showToast('Ошибка отправки: ' + (err.message || err), 4000);
+        const msg = String(err && err.message || err || '');
+        if (/WebAppDataInvalid|invalid/i.test(msg)) {
+            showToast('Нельзя отправить: откройте Draw кнопкой «📐 Начать замер» в сообщении бота.', 5500);
+        } else {
+            showToast('Ошибка отправки: ' + msg, 4000);
+        }
     }
 }
 
