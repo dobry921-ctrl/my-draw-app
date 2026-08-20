@@ -288,7 +288,7 @@
             <div class="hint" style="margin-top:6px;">Сначала выберите потолок в списке, затем раздел для правки</div>
         </div>
         <button class="btn btn-accent" id="add-ceiling-btn" onclick="addCeiling()" style="width:100%; margin-bottom:8px;">➕ Добавить ещё потолок</button>
-        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
+        <button class="send-btn" id="send-btn" onclick="sendToBot().catch(function(e){showToast(String(e&&e.message||e),5000)})">📤 Отправить весь замер</button>
         <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
     </div>
 
@@ -2124,131 +2124,130 @@ function canSendWebAppData(webApp) {
 }
 
 async function sendToBot() {
+    const showErr = (m) => { console.error(m); showToast(m, 5500); };
     try {
-        const webApp = requireTelegramWebApp();
-        if (state === 'DONE' && points.length >= 3) {
-            const current = getCurrentCeilingPayload();
-            const already = completedCeilings.some(c =>
-                c.sides_cm.length === current.sides_cm.length &&
-                c.sides_cm.every((v, i) => Math.abs(v - current.sides_cm[i]) < 0.01)
-            );
-            if (!already) completedCeilings.push(current);
-        }
-        if (completedCeilings.length === 0) {
-            showToast('Нет ни одного потолка для отправки.', 3000);
+        showToast('Подготовка данных…', 1500);
+        const webApp = getTelegramWebApp();
+        if (!webApp) {
+            showErr('Нет Telegram WebApp. Откройте Draw кнопкой «Начать замер» внизу в боте.');
             return;
         }
-        if (completedCeilings.length > 30) {
-            showToast('Слишком много потолков (максимум 30).', 3000);
+        // Без initData — часто открыто не с Keyboard/Inline → sendData молчит
+        if (!webApp.initData) {
+            showErr('Откройте Draw кнопкой «📐 Начать замер» внизу экрана бота (не из браузера и не из меню слева).');
             return;
-        }
-        if (isEditMode && editCeilingIndex >= 0) {
-            saveEditorToCompleted();
         }
 
-        const payload = buildCompactPayload();
-        // нормализуем fixtures units — getCurrentCeilingPayload уже в метрах
+        // Забрать текущий потолок из любого «готового» состояния
+        if (points.length >= 3 && (state === 'DONE' || state === 'INSTALL' || state === 'SELECT_MATERIAL' || state === 'INPUT_SIDES' || isClosed)) {
+            try {
+                if (state === 'INSTALL' || state === 'SELECT_MATERIAL' || state === 'DONE') {
+                    if (isEditMode && editCeilingIndex >= 0) {
+                        saveEditorToCompleted();
+                    } else {
+                        const current = getCurrentCeilingPayload();
+                        if (current.points && current.points.length >= 3) {
+                            const already = completedCeilings.some(c =>
+                                c.sides_cm && current.sides_cm &&
+                                c.sides_cm.length === current.sides_cm.length &&
+                                c.sides_cm.every((v, i) => Math.abs(Number(v) - Number(current.sides_cm[i])) < 0.01)
+                            );
+                            if (!already) completedCeilings.push(current);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('capture current', e);
+            }
+        }
+
+        if (!completedCeilings.length && points.length >= 3) {
+            try {
+                completedCeilings.push(getCurrentCeilingPayload());
+            } catch (e) {
+                showErr('Не удалось собрать чертёж: ' + (e.message || e));
+                return;
+            }
+        }
+
+        if (completedCeilings.length === 0) {
+            showErr('Нет потолка для отправки. Замкните контур и укажите размеры.');
+            return;
+        }
+
+        let payload = buildCompactPayload();
+        // fixtures из completedCeilings (метры после getCurrentCeilingPayload)
         payload.ceilings = completedCeilings.map((c, idx) => {
-            const base = payload.ceilings[idx];
-            // points/sides already compact; fixtures from getCurrentCeilingPayload are in meters
+            const base = payload.ceilings[idx] || {};
             const fx = (c.fixtures || []).map(f => {
-                if (f.type === 'spot') {
-                    return {
-                        t: 's',
-                        x: roundN(f.x > 50 ? f.x / 100 : f.x, 3),
-                        y: roundN(f.y > 50 ? f.y / 100 : f.y, 3),
-                        a: f.offset_wall_a_cm, b: f.offset_wall_b_cm, l: f.label
-                    };
-                }
-                if (f.type === 'chandelier') {
-                    return {
-                        t: 'c',
-                        x: roundN(f.x > 50 ? f.x / 100 : f.x, 3),
-                        y: roundN(f.y > 50 ? f.y / 100 : f.y, 3),
-                        l: f.label
-                    };
-                }
-                if (f.type === 'cornice') {
-                    return { t: 'k', e: f.edge_index, o: f.offset_cm, l: f.label };
-                }
+                const nx = (v) => roundN((Number(v) > 50 ? Number(v) / 100 : Number(v)) || 0, 3);
+                if (f.type === 'spot') return { t: 's', x: nx(f.x), y: nx(f.y), a: f.offset_wall_a_cm, b: f.offset_wall_b_cm, l: f.label };
+                if (f.type === 'chandelier') return { t: 'c', x: nx(f.x), y: nx(f.y), l: f.label };
+                if (f.type === 'cornice') return { t: 'k', e: f.edge_index, o: f.offset_cm, l: f.label };
                 if (f.type === 'strip') {
                     return {
                         t: 'p',
-                        pts: (f.points || []).map(p => [
-                            roundN(p.x > 50 ? p.x / 100 : p.x, 3),
-                            roundN(p.y > 50 ? p.y / 100 : p.y, 3)
-                        ]),
-                        len: f.length_cm, l: f.label, wo: f.wall_offsets
+                        pts: (f.points || []).map(p => [nx(p.x), nx(p.y)]),
+                        len: f.length_cm, l: f.label
                     };
                 }
-                return { t: f.type, x: f.x, y: f.y, l: f.label };
+                return { t: f.type || 's', x: nx(f.x), y: nx(f.y), l: f.label };
             });
             return Object.assign({}, base, { fx });
         });
+        if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
 
-        let raw = JSON.stringify(payload);
-        let toSend = raw;
-
-        if (raw.length > 3500) {
-            const compressed = await compressJsonString(raw);
-            if (compressed) {
-                const z = bytesToB64Url(compressed);
-                const wrapped = JSON.stringify({ type: 'drawing_set_z', z: z });
-                if (wrapped.length < raw.length) {
-                    toSend = wrapped;
-                    raw = wrapped;
+        let toSend = JSON.stringify(payload);
+        if (toSend.length > 3200) {
+            try {
+                const compressed = await compressJsonString(toSend);
+                if (compressed) {
+                    const wrapped = JSON.stringify({ type: 'drawing_set_z', z: bytesToB64Url(compressed) });
+                    if (wrapped.length < toSend.length) toSend = wrapped;
                 }
-            }
+            } catch (ce) { console.warn('compress', ce); }
         }
-
-        // ещё раз урезать wall_offsets у полос, если всё ещё велико
+        // убрать лишнее
         if (toSend.length > 4000) {
-            payload.ceilings.forEach(c => {
-                (c.fx || []).forEach(f => { if (f.t === 'p') delete f.wo; });
-            });
-            raw = JSON.stringify(payload);
-            const compressed = await compressJsonString(raw);
-            if (compressed) {
-                toSend = JSON.stringify({ type: 'drawing_set_z', z: bytesToB64Url(compressed) });
-            } else {
-                toSend = raw;
-            }
+            payload.ceilings.forEach(c => { (c.fx || []).forEach(f => { delete f.wo; delete f.l; }); });
+            toSend = JSON.stringify(payload);
+            try {
+                const compressed = await compressJsonString(toSend);
+                if (compressed) {
+                    const wrapped = JSON.stringify({ type: 'drawing_set_z', z: bytesToB64Url(compressed) });
+                    if (wrapped.length < toSend.length) toSend = wrapped;
+                }
+            } catch (ce2) {}
         }
 
         if (toSend.length > 4096) {
-            showToast('Слишком много данных (' + toSend.length + ' байт). Упростите полосы или разбейте заказ.', 5000);
-            console.warn('sendData too large', toSend.length, toSend.slice(0, 200));
+            showErr('Слишком много данных (' + toSend.length + ' байт из 4096). Уберите часть полос и отправьте снова.');
             return;
         }
 
-        if (!webApp || typeof webApp.sendData !== 'function') {
-            showToast('Откройте Draw кнопкой «Начать замер» в сообщении бота (не через меню слева).', 5000);
+        if (typeof webApp.sendData !== 'function') {
+            showErr('sendData недоступен. Откройте Draw кнопкой «Начать замер» внизу в боте.');
             return;
         }
+
+        showToast('Отправка (' + toSend.length + ' байт)…', 2000);
         try {
             webApp.sendData(toSend);
         } catch (sendErr) {
-            console.error(sendErr);
-            const msg = String(sendErr && sendErr.message || sendErr || '');
-            if (/invalid|WebAppData/i.test(msg) || toSend.length > 4096) {
-                showToast('Данные слишком большие или сессия неверная. Откройте Draw из кнопки в сообщении бота.', 5000);
-            } else {
-                showToast('Ошибка отправки: ' + msg, 4000);
-            }
+            showErr('Ошибка sendData: ' + (sendErr.message || sendErr) + '. Откройте Draw с кнопки внизу бота.');
             return;
         }
-        showToast(isEditMode ? 'Изменения отправлены в заказ!' : 'Данные отправлены в бот!', 2500);
-        setTimeout(() => { if (typeof webApp.close === 'function') webApp.close(); }, 800);
+
+        try { if (webApp.HapticFeedback) webApp.HapticFeedback.notificationOccurred('success'); } catch (h) {}
+        showToast(isEditMode ? 'Отправлено! Проверьте чат с ботом.' : 'Отправлено в бот! Закройте Draw и смотрите чат.', 4000);
+        setTimeout(() => {
+            try { if (typeof webApp.close === 'function') webApp.close(); } catch (c) {}
+        }, 600);
     } catch (err) {
-        console.error(err);
-        const msg = String(err && err.message || err || '');
-        if (/WebAppDataInvalid|invalid/i.test(msg)) {
-            showToast('Нельзя отправить: откройте Draw кнопкой «📐 Начать замер» в сообщении бота.', 5500);
-        } else {
-            showToast('Ошибка отправки: ' + msg, 4000);
-        }
+        showErr('Ошибка: ' + (err && err.message ? err.message : err));
     }
 }
+
 
 function copyData() {
     try {
