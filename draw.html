@@ -288,7 +288,7 @@
             <div class="hint" style="margin-top:6px;">Сначала выберите потолок в списке, затем раздел для правки</div>
         </div>
         <button class="btn btn-accent" id="add-ceiling-btn" onclick="addCeiling()" style="width:100%; margin-bottom:8px;">➕ Добавить ещё потолок</button>
-        <button class="send-btn" id="send-btn" onclick="sendToBot().catch(function(e){showToast(String(e&&e.message||e),5000)})">📤 Отправить весь замер</button>
+        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
         <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
     </div>
 
@@ -2123,23 +2123,22 @@ function canSendWebAppData(webApp) {
     } catch (e) { return false; }
 }
 
-async function sendToBot() {
+function sendToBot() {
+    // ВАЖНО для iOS: sendData должен вызываться СИНХРОННО из клика пользователя.
+    // Любой await до sendData ломает жест → на iPhone «ничего не происходит».
     function note(m) {
         console.log('[sendToBot]', m);
         try { showToast(String(m), 4500); } catch (e) {}
     }
     try {
-        note('Подготовка…');
         const webApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
         if (!webApp) {
             note('Нет Telegram.WebApp');
-            alert('Откройте Draw внутри Telegram кнопкой «Начать замер».');
+            alert('Откройте Draw внутри Telegram.');
             return;
         }
         try { webApp.ready(); } catch (e) {}
-        try { if (webApp.expand) webApp.expand(); } catch (e) {}
 
-        // Собрать текущий потолок (статус «Готово» / монтаж / материал)
         if (points.length >= 3) {
             try {
                 if (isEditMode && editCeilingIndex >= 0) {
@@ -2155,39 +2154,36 @@ async function sendToBot() {
                         if (!already) completedCeilings.push(current);
                     }
                 }
-            } catch (e) { console.warn('capture', e); }
+            } catch (e) { console.warn(e); }
         }
         if (!completedCeilings.length && points.length >= 3) {
             try { completedCeilings.push(getCurrentCeilingPayload()); } catch (e) {}
         }
         if (!completedCeilings.length) {
-            note('Нет потолка. Замкните контур и введите размеры, затем «Отправить».');
+            note('Нет потолка для отправки.');
             return;
         }
 
-        const ceilingsOut = completedCeilings.map(c => {
-            const toM = (v) => {
-                const n = Number(v);
-                if (!Number.isFinite(n)) return 0;
-                return roundN(Math.abs(n) > 50 ? n / 100 : n, 3);
-            };
-            const pts = (c.points || []).map(p => ({
-                x: roundN(Number(p.x), 4),
-                y: roundN(Number(p.y), 4),
-                letter: p.letter
-            }));
-            // points из payload уже в метрах (getCurrentCeilingPayload)
-            const ptsM = pts.map(p => ({
-                x: roundN(Math.abs(p.x) > 50 ? p.x / 100 : p.x, 4),
-                y: roundN(Math.abs(p.y) > 50 ? p.y / 100 : p.y, 4),
-                letter: p.letter
-            }));
-            const sides = (c.sides_cm || []).map(s => roundN(s, 1));
-            const fx = (c.fixtures || []).map(f => {
+        const toM = function (v) {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return 0;
+            return roundN(Math.abs(n) > 50 ? n / 100 : n, 3);
+        };
+
+        const ceilingsOut = completedCeilings.map(function (c) {
+            const ptsM = (c.points || []).map(function (p) {
+                return {
+                    x: roundN(Math.abs(Number(p.x)) > 50 ? Number(p.x) / 100 : Number(p.x), 4),
+                    y: roundN(Math.abs(Number(p.y)) > 50 ? Number(p.y) / 100 : Number(p.y), 4),
+                    letter: p.letter
+                };
+            });
+            const sides = (c.sides_cm || []).map(function (s) { return roundN(s, 1); });
+            const fx = (c.fixtures || []).map(function (f) {
                 if (f.type === 'strip') {
                     return {
                         type: 'strip',
-                        points: (f.points || []).map(p => ({ x: toM(p.x), y: toM(p.y) })),
+                        points: (f.points || []).map(function (p) { return { x: toM(p.x), y: toM(p.y) }; }),
                         length_cm: f.length_cm || 0
                     };
                 }
@@ -2215,47 +2211,47 @@ async function sendToBot() {
         const payload = { type: 'drawing_set', ceilings: ceilingsOut };
         if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
 
+        // Без async-сжатия: на iOS нельзя ждать Promise до sendData
         let toSend = JSON.stringify(payload);
-        if (toSend.length > 3500) {
-            try {
-                const compressed = await compressJsonString(toSend);
-                if (compressed) {
-                    const wrapped = JSON.stringify({ type: 'drawing_set_z', z: bytesToB64Url(compressed) });
-                    if (wrapped.length < toSend.length) toSend = wrapped;
-                }
-            } catch (e) { console.warn(e); }
+        if (toSend.length > 4096) {
+            // урезать полосы синхронно
+            ceilingsOut.forEach(function (c) {
+                (c.fixtures || []).forEach(function (f) {
+                    if (f.type === 'strip' && f.points && f.points.length > 2) {
+                        f.points = [f.points[0], f.points[f.points.length - 1]];
+                    }
+                    delete f.offset_wall_a_cm;
+                    delete f.offset_wall_b_cm;
+                });
+            });
+            toSend = JSON.stringify(payload);
         }
         if (toSend.length > 4096) {
-            note('Слишком много данных: ' + toSend.length + ' байт. Упростите полосы.');
+            note('Слишком много данных (' + toSend.length + ' байт). Уберите часть полос.');
             return;
         }
 
         if (typeof webApp.sendData !== 'function') {
-            note('sendData недоступен в этой версии Telegram');
-            alert('sendData недоступен. Обновите Telegram.');
+            note('sendData недоступен');
             return;
         }
 
-        // На iOS initData иногда пустой — всё равно пробуем sendData
-        note('Отправка ' + toSend.length + ' байт…');
+        // Синхронный вызов — критично для iPhone
+        webApp.sendData(toSend);
+        note('Отправлено (' + toSend.length + ' б). Смотрите чат.');
         try {
-            webApp.sendData(toSend);
-        } catch (sendErr) {
-            const msg = String(sendErr && sendErr.message || sendErr);
-            note('Ошибка: ' + msg);
-            alert('Не удалось отправить: ' + msg + '\n\nЗакройте Draw и откройте снова кнопкой «Начать замер» внизу.');
-            return;
-        }
-
-        note('Отправлено! Смотрите чат с ботом.');
-        try { if (webApp.HapticFeedback) webApp.HapticFeedback.notificationOccurred('success'); } catch (e) {}
+            if (webApp.HapticFeedback && webApp.HapticFeedback.notificationOccurred) {
+                webApp.HapticFeedback.notificationOccurred('success');
+            }
+        } catch (e) {}
+        // close с задержкой — после sendData, не до
         setTimeout(function () {
-            try { webApp.close(); } catch (e) {}
-        }, 400);
+            try { if (webApp.close) webApp.close(); } catch (e) {}
+        }, 800);
     } catch (err) {
         console.error(err);
         note('Ошибка: ' + (err && err.message ? err.message : err));
-        alert('Ошибка: ' + (err && err.message ? err.message : err));
+        try { alert('Ошибка: ' + (err && err.message ? err.message : err)); } catch (e) {}
     }
 }
 
