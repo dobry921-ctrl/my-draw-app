@@ -1386,6 +1386,7 @@ function finishInstall() {
         saveEditorToCompleted();
         showCeilingSwitcher();
         renderSwitcherBtns();
+        showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
     }
     updateCeilingsList();
     autoFitCamera();
@@ -2030,7 +2031,89 @@ function autoFitCamera() {
     camera.y = canvas.height / 2 - ((minY + maxY) / 2) * camera.zoom;
 }
 
-function sendToBot() {
+function roundN(v, n) {
+    const p = Math.pow(10, n);
+    return Math.round(Number(v) * p) / p;
+}
+
+/** Компактный payload — меньше 4096 байт для Telegram.WebApp.sendData */
+function buildCompactPayload() {
+    const ceilings = completedCeilings.map(c => {
+        const pts = (c.points || []).map(p => [roundN(p.x, 4), roundN(p.y, 4)]);
+        const sides = (c.sides_cm || []).map(s => roundN(s, 1));
+        const diags = (c.diagonals || []).map(d => {
+            if (Array.isArray(d)) return [d[0], d[1]];
+            return [d.p1, d.p2];
+        });
+        const profiles = c.profiles || [];
+        const fx = (c.fixtures || []).map(f => {
+            const t = f.type;
+            if (t === 'spot') {
+                return {
+                    t: 's',
+                    x: roundN((f.x || 0) > 50 ? (f.x / 100) : f.x, 3),
+                    y: roundN((f.y || 0) > 50 ? (f.y / 100) : f.y, 3),
+                    a: f.offset_wall_a_cm, b: f.offset_wall_b_cm, l: f.label
+                };
+            }
+            if (t === 'chandelier') {
+                return {
+                    t: 'c',
+                    x: roundN((f.x || 0) > 50 ? (f.x / 100) : f.x, 3),
+                    y: roundN((f.y || 0) > 50 ? (f.y / 100) : f.y, 3),
+                    l: f.label
+                };
+            }
+            if (t === 'cornice') {
+                return { t: 'k', e: f.edge_index, o: f.offset_cm, l: f.label };
+            }
+            if (t === 'strip') {
+                const ptsCm = f.points || [];
+                return {
+                    t: 'p',
+                    pts: ptsCm.map(p => [
+                        roundN((p.x > 50 ? p.x / 100 : p.x), 3),
+                        roundN((p.y > 50 ? p.y / 100 : p.y), 3)
+                    ]),
+                    len: f.length_cm,
+                    l: f.label,
+                    wo: f.wall_offsets
+                };
+            }
+            return { t: t, x: f.x, y: f.y, l: f.label };
+        });
+        return {
+            pts, s: sides, d: diags,
+            m: c.material || 'Мат', col: c.color || 'Белый',
+            pr: profiles, fx
+        };
+    });
+    const payload = { type: 'drawing_set', v: 2, ceilings };
+    if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
+    return payload;
+}
+
+function bytesToB64Url(bytes) {
+    let bin = '';
+    const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function compressJsonString(str) {
+    const input = new TextEncoder().encode(str);
+    if (typeof CompressionStream === 'undefined') return null;
+    try {
+        const cs = new CompressionStream('deflate');
+        const stream = new Blob([input]).stream().pipeThrough(cs);
+        const ab = await new Response(stream).arrayBuffer();
+        return new Uint8Array(ab);
+    } catch (e) {
+        return null;
+    }
+}
+
+async function sendToBot() {
     try {
         const webApp = requireTelegramWebApp();
         if (state === 'DONE' && points.length >= 3) {
@@ -2052,22 +2135,83 @@ function sendToBot() {
         if (isEditMode && editCeilingIndex >= 0) {
             saveEditorToCompleted();
         }
-        const payload = {
-            type: 'drawing_set',
-            ceilings: completedCeilings.map(c => ({
-                points: c.points,
-                sides_cm: c.sides_cm,
-                diagonals: c.diagonals || [],
-                material: c.material || 'Мат',
-                color: c.color || 'Белый',
-                profiles: c.profiles || [],
-                fixtures: c.fixtures || []
-            }))
-        };
-        if (isEditMode && editOrderId != null) {
-            payload.edit_order_id = editOrderId;
+
+        const payload = buildCompactPayload();
+        // нормализуем fixtures units — getCurrentCeilingPayload уже в метрах
+        payload.ceilings = completedCeilings.map((c, idx) => {
+            const base = payload.ceilings[idx];
+            // points/sides already compact; fixtures from getCurrentCeilingPayload are in meters
+            const fx = (c.fixtures || []).map(f => {
+                if (f.type === 'spot') {
+                    return {
+                        t: 's',
+                        x: roundN(f.x > 50 ? f.x / 100 : f.x, 3),
+                        y: roundN(f.y > 50 ? f.y / 100 : f.y, 3),
+                        a: f.offset_wall_a_cm, b: f.offset_wall_b_cm, l: f.label
+                    };
+                }
+                if (f.type === 'chandelier') {
+                    return {
+                        t: 'c',
+                        x: roundN(f.x > 50 ? f.x / 100 : f.x, 3),
+                        y: roundN(f.y > 50 ? f.y / 100 : f.y, 3),
+                        l: f.label
+                    };
+                }
+                if (f.type === 'cornice') {
+                    return { t: 'k', e: f.edge_index, o: f.offset_cm, l: f.label };
+                }
+                if (f.type === 'strip') {
+                    return {
+                        t: 'p',
+                        pts: (f.points || []).map(p => [
+                            roundN(p.x > 50 ? p.x / 100 : p.x, 3),
+                            roundN(p.y > 50 ? p.y / 100 : p.y, 3)
+                        ]),
+                        len: f.length_cm, l: f.label, wo: f.wall_offsets
+                    };
+                }
+                return { t: f.type, x: f.x, y: f.y, l: f.label };
+            });
+            return Object.assign({}, base, { fx });
+        });
+
+        let raw = JSON.stringify(payload);
+        let toSend = raw;
+
+        if (raw.length > 3500) {
+            const compressed = await compressJsonString(raw);
+            if (compressed) {
+                const z = bytesToB64Url(compressed);
+                const wrapped = JSON.stringify({ type: 'drawing_set_z', z: z });
+                if (wrapped.length < raw.length) {
+                    toSend = wrapped;
+                    raw = wrapped;
+                }
+            }
         }
-        webApp.sendData(JSON.stringify(payload));
+
+        // ещё раз урезать wall_offsets у полос, если всё ещё велико
+        if (toSend.length > 4000) {
+            payload.ceilings.forEach(c => {
+                (c.fx || []).forEach(f => { if (f.t === 'p') delete f.wo; });
+            });
+            raw = JSON.stringify(payload);
+            const compressed = await compressJsonString(raw);
+            if (compressed) {
+                toSend = JSON.stringify({ type: 'drawing_set_z', z: bytesToB64Url(compressed) });
+            } else {
+                toSend = raw;
+            }
+        }
+
+        if (toSend.length > 4096) {
+            showToast('Слишком много данных (' + toSend.length + ' байт). Упростите полосы или разбейте заказ.', 5000);
+            console.warn('sendData too large', toSend.length, toSend.slice(0, 200));
+            return;
+        }
+
+        webApp.sendData(toSend);
         showToast(isEditMode ? 'Изменения отправлены в заказ!' : 'Данные отправлены в бот!', 2500);
         setTimeout(() => { if (typeof webApp.close === 'function') webApp.close(); }, 800);
     } catch (err) {
