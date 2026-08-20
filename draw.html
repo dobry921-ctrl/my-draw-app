@@ -151,7 +151,11 @@
             background: #f8f9fa; border-radius: 6px; font-weight: 600; cursor: pointer;
         }
         .profile-pick button.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
-    </style>
+    
+.sw-btn { flex:1; min-width:70px; padding:10px 8px; border-radius:8px; border:2px solid #ccc; background:#f5f5f5; font-weight:600; font-size:0.85rem; }
+.sw-btn.active { border-color:#1a73e8; background:#e8f0fe; color:#1a73e8; }
+.sw-btn.has-edit { border-color:#34a853; }
+</style>
 </head>
 <body>
     <div id="top-bar">
@@ -261,6 +265,13 @@
         </div>
     </div>
 
+    <div id="ceiling-switcher" class="bottom-panel" style="display:none;padding-bottom:8px;">
+        <div class="panel-title">Потолки заказа</div>
+        <div id="switcher-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+        <div class="hint" id="switcher-hint">Переключайтесь между потолками для редактирования</div>
+        <button class="btn btn-accent" style="width:100%;padding:10px;margin-top:6px;" onclick="editCurrentCeilingFull()">✏️ Редактировать этот потолок</button>
+    </div>
+
     <div id="results-panel" class="bottom-panel">
         <div class="panel-title">Готовые потолки в заказе</div>
         <div id="ceilings-list" class="ceilings-list"></div>
@@ -280,6 +291,10 @@ let isClosed = false, currentInputEdge = 0;
 let sketchPoints = [], sketchTurnSigns = [], sketchOrientation = 1;
 let currentDiagonalInput = 0;
 let completedCeilings = [];
+let editOrderId = null;          // редактирование существующего заказа
+let editCeilingIndex = -1;       // индекс текущего потолка в completedCeilings при правке
+let isEditMode = false;
+
 let selectedMaterial = 'Мат', selectedColor = 'Белый';
 let state = 'DRAWING';
 let usedExactGeometry = false;
@@ -1353,8 +1368,13 @@ function finishInstall() {
     stripDraft = [];
     document.getElementById('install-panel').classList.remove('active');
     state = 'DONE';
-    statusText.innerText = 'Готово';
+    statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово';
     document.getElementById('results-panel').classList.add('active');
+    if (isEditMode && editCeilingIndex >= 0) {
+        saveEditorToCompleted();
+        showCeilingSwitcher();
+        renderSwitcherBtns();
+    }
     updateCeilingsList();
     autoFitCamera();
     draw();
@@ -1554,7 +1574,259 @@ function finishMaterialSelection() {
     openInstallPanel();
 }
 
-// --- Multi-ceiling ---
+// --- Multi-ceiling / Edit mode ---
+
+function b64urlToBytes(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+}
+
+async function inflatePayload(bytes) {
+    if (typeof DecompressionStream !== 'undefined') {
+        for (const fmt of ['deflate', 'deflate-raw', 'gzip']) {
+            try {
+                const ds = new DecompressionStream(fmt);
+                const stream = new Blob([bytes]).stream().pipeThrough(ds);
+                const ab = await new Response(stream).arrayBuffer();
+                const text = new TextDecoder().decode(ab);
+                if (text && text[0] === '{') return text;
+            } catch (e) { /* try next */ }
+        }
+    }
+    try {
+        const text = new TextDecoder().decode(bytes);
+        if (text && text[0] === '{') return text;
+    } catch (e2) {}
+    return null;
+}
+
+function parseEditQuery() {
+    try {
+        const q = new URLSearchParams(location.search);
+        const mode = q.get('mode') || '';
+        const oid = q.get('oid') || q.get('order_id') || '';
+        const d = q.get('d') || '';
+        if (mode === 'edit' && oid) {
+            isEditMode = true;
+            editOrderId = parseInt(oid, 10) || oid;
+        }
+        return { mode, oid, d };
+    } catch (e) {
+        return { mode: '', oid: '', d: '' };
+    }
+}
+
+async function tryLoadEditFromUrl() {
+    const { mode, oid, d } = parseEditQuery();
+    if (mode !== 'edit' || !d) return false;
+    try {
+        const bytes = b64urlToBytes(d);
+        let jsonStr = null;
+        // zlib header 0x78
+        if (bytes[0] === 0x78 && typeof DecompressionStream !== 'undefined') {
+            jsonStr = await inflatePayload(bytes);
+        } else {
+            jsonStr = new TextDecoder().decode(bytes);
+        }
+        if (!jsonStr) return false;
+        const data = JSON.parse(jsonStr);
+        const ceilings = data.ceilings || data;
+        if (!Array.isArray(ceilings) || !ceilings.length) return false;
+        loadEditCeilings(ceilings, data.order_id || oid);
+        return true;
+    } catch (e) {
+        console.error('edit load failed', e);
+        showToast('Не удалось загрузить заказ для правки', 4000);
+        return false;
+    }
+}
+
+function loadEditCeilings(ceilings, orderId) {
+    isEditMode = true;
+    editOrderId = orderId != null ? orderId : editOrderId;
+    completedCeilings = ceilings.map(normalizeIncomingCeiling);
+    editCeilingIndex = 0;
+    const sendBtn = document.getElementById('send-btn');
+    if (sendBtn) sendBtn.textContent = '💾 Сохранить изменения в заказ';
+    const addBtn = document.getElementById('add-ceiling-btn');
+    if (addBtn) addBtn.style.display = 'none';
+    showCeilingSwitcher();
+    loadCeilingIntoEditor(0);
+    showToast('Редактирование заказа: потолок 1 из ' + completedCeilings.length, 4000);
+}
+
+function normalizeIncomingCeiling(c) {
+    // bot stores coords in meters, sides_cm, profiles, fixtures
+    let pts = c.points;
+    if ((!pts || !pts.length) && c.coords) {
+        pts = (c.coords || []).map((p, i) => {
+            if (Array.isArray(p)) return { x: p[0], y: p[1], letter: String.fromCharCode(65 + i) };
+            return { x: p.x, y: p.y, letter: p.letter || String.fromCharCode(65 + i) };
+        });
+    }
+    pts = (pts || []).map((p, i) => ({
+        x: typeof p.x === 'number' ? p.x : 0,
+        y: typeof p.y === 'number' ? p.y : 0,
+        letter: p.letter || String.fromCharCode(65 + i)
+    }));
+    return {
+        points: pts,
+        sides_cm: (c.sides_cm || []).map(Number),
+        diagonals: c.diagonals || [],
+        material: c.material_type || c.material || 'Мат',
+        color: c.material_color || c.color || 'Белый',
+        profiles: c.profiles || [],
+        fixtures: c.fixtures || [],
+        used_exact: !!c.used_exact
+    };
+}
+
+function showCeilingSwitcher() {
+    const bar = document.getElementById('ceiling-switcher');
+    if (!bar) return;
+    bar.style.display = 'block';
+    bar.classList.add('active');
+    renderSwitcherBtns();
+}
+
+function hideCeilingSwitcher() {
+    const bar = document.getElementById('ceiling-switcher');
+    if (!bar) return;
+    bar.classList.remove('active');
+    bar.style.display = 'none';
+}
+
+function renderSwitcherBtns() {
+    const box = document.getElementById('switcher-btns');
+    if (!box) return;
+    box.innerHTML = completedCeilings.map((c, i) => {
+        const area = calcAreaM2(c.points || []);
+        const active = i === editCeilingIndex ? 'active' : '';
+        return `<button type="button" class="sw-btn ${active}" onclick="switchCeiling(${i})">№${i + 1}<br><small>${area.toFixed(1)} м²</small></button>`;
+    }).join('');
+    const hint = document.getElementById('switcher-hint');
+    if (hint) {
+        hint.innerText = isEditMode
+            ? `Заказ #${editOrderId}: потолок ${editCeilingIndex + 1} из ${completedCeilings.length}. Можно править размеры, диагонали, освещение, карнизы.`
+            : '';
+    }
+}
+
+function saveEditorToCompleted() {
+    if (editCeilingIndex < 0 || editCeilingIndex >= completedCeilings.length) return;
+    if (points.length >= 3 && edges.length) {
+        completedCeilings[editCeilingIndex] = getCurrentCeilingPayload();
+    }
+}
+
+function switchCeiling(idx) {
+    if (idx < 0 || idx >= completedCeilings.length) return;
+    // сохранить текущий, если в режиме DONE/INSTALL с данными
+    if (state === 'DONE' || state === 'INSTALL' || state === 'SELECT_MATERIAL') {
+        saveEditorToCompleted();
+    } else if (state === 'DRAWING' && points.length >= 3 && isClosed) {
+        saveEditorToCompleted();
+    }
+    loadCeilingIntoEditor(idx);
+}
+
+function loadCeilingIntoEditor(idx) {
+    const c = completedCeilings[idx];
+    if (!c) return;
+    editCeilingIndex = idx;
+    // points in payload are meters → cm for canvas
+    points = (c.points || []).map((p, i) => ({
+        x: p.x * 100,
+        y: p.y * 100,
+        letter: p.letter || String.fromCharCode(65 + i)
+    }));
+    isClosed = points.length >= 3;
+    const sides = c.sides_cm || [];
+    edges = [];
+    for (let i = 0; i < points.length; i++) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        edges.push({
+            p1: i, p2: (i + 1) % points.length,
+            label: `${a.letter}-${b.letter}`,
+            lengthCm: sides[i] != null ? Number(sides[i]) : Math.hypot(b.x - a.x, b.y - a.y)
+        });
+    }
+    selectedDiagonals = (c.diagonals || []).map(d => {
+        const i = Array.isArray(d) ? d[0] : d.p1;
+        const j = Array.isArray(d) ? d[1] : d.p2;
+        return {
+            p1: i, p2: j,
+            label: `${points[i] ? points[i].letter : i}-${points[j] ? points[j].letter : j}`,
+            lengthCm: null
+        };
+    });
+    availableDiagonals = [];
+    selectedMaterial = c.material || 'Мат';
+    selectedColor = c.color || 'Белый';
+    usedExactGeometry = !!c.used_exact;
+    sideProfiles = (c.profiles && c.profiles.length === points.length)
+        ? c.profiles.slice()
+        : points.map(() => 'Стандартный');
+    // fixtures: meters → cm
+    fixtures = (c.fixtures || []).map(f => {
+        const o = Object.assign({}, f);
+        if (o.x != null) o.x = Number(o.x) * (Math.abs(Number(o.x)) < 50 ? 100 : 1);
+        if (o.y != null) o.y = Number(o.y) * (Math.abs(Number(o.y)) < 50 ? 100 : 1);
+        if (o.type === 'strip' && o.points) {
+            o.points = o.points.map(p => ({
+                x: Number(p.x) * (Math.abs(Number(p.x)) < 50 ? 100 : 1),
+                y: Number(p.y) * (Math.abs(Number(p.y)) < 50 ? 100 : 1)
+            }));
+        }
+        return o;
+    });
+    stripDraft = [];
+    profileEdgesPainted = true;
+    state = 'DONE';
+    statusText.innerText = isEditMode
+        ? `Правка потолка №${idx + 1}`
+        : 'Готово';
+    document.getElementById('bottom-input-bar').classList.remove('active');
+    document.getElementById('diagonals-panel').classList.remove('active');
+    document.getElementById('material-panel').classList.remove('active');
+    const ip = document.getElementById('install-panel');
+    if (ip) ip.classList.remove('active');
+    document.getElementById('results-panel').classList.add('active');
+    if (isEditMode) showCeilingSwitcher();
+    renderSwitcherBtns();
+    updateCeilingsList();
+    autoFitCamera();
+    draw();
+}
+
+function editCurrentCeilingFull() {
+    // Вернуться к вводу сторон → материал → монтаж для текущего
+    if (points.length < 3) {
+        showToast('Нет контура', 2000);
+        return;
+    }
+    saveEditorToCompleted();
+    // открыть ввод длин сторон заново
+    state = 'INPUT_SIDES';
+    currentInputEdge = 0;
+    statusText.innerText = 'Размеры сторон';
+    document.getElementById('results-panel').classList.remove('active');
+    hideCeilingSwitcher();
+    document.getElementById('bottom-input-bar').classList.add('active');
+    const inp = document.getElementById('side-input');
+    if (inp && edges[0]) {
+        inp.value = edges[0].lengthCm != null ? edges[0].lengthCm : '';
+        inp.focus();
+    }
+    updateUI();
+    draw();
+    showToast('Меняйте размеры. Далее — диагонали / материал / монтаж.', 3500);
+}
+
 function getCurrentCeilingPayload() {
     // Координаты в метрах
     const ptsMeters = points.map(p => ({
@@ -1623,11 +1895,13 @@ function updateCeilingsList() {
         return;
     }
     list.innerHTML = completedCeilings.map((c, idx) => {
-        const area = calcAreaM2(c.points);
-        const perim = (c.sides_cm.reduce((a, b) => a + b, 0) / 100).toFixed(2);
-        return `<div class="ceiling-item">
-            <span>#${idx + 1}: ${c.material}, ${c.color} · ${area.toFixed(2)} м² · ${perim} м</span>
-            <button onclick="removeCeiling(${idx})">✕</button>
+        const area = calcAreaM2(c.points || []);
+        const perim = ((c.sides_cm || []).reduce((a, b) => a + Number(b || 0), 0) / 100).toFixed(2);
+        const cur = idx === editCeilingIndex ? ' style="outline:2px solid #1a73e8;"' : '';
+        return `<div class="ceiling-item"${cur}>
+            <span onclick="switchCeiling(${idx})" style="cursor:pointer;flex:1;">#${idx + 1}: ${c.material || '—'}, ${c.color || '—'} · ${area.toFixed(2)} м² · ${perim} м</span>
+            <button type="button" onclick="switchCeiling(${idx})" title="Открыть">✏️</button>
+            ${isEditMode ? '' : `<button type="button" onclick="removeCeiling(${idx})">✕</button>`}
         </div>`;
     }).join('');
 }
@@ -1725,6 +1999,9 @@ function sendToBot() {
             showToast('Слишком много потолков (максимум 30).', 3000);
             return;
         }
+        if (isEditMode && editCeilingIndex >= 0) {
+            saveEditorToCompleted();
+        }
         const payload = {
             type: 'drawing_set',
             ceilings: completedCeilings.map(c => ({
@@ -1737,8 +2014,11 @@ function sendToBot() {
                 fixtures: c.fixtures || []
             }))
         };
+        if (isEditMode && editOrderId != null) {
+            payload.edit_order_id = editOrderId;
+        }
         webApp.sendData(JSON.stringify(payload));
-        showToast('Данные отправлены в бот!', 2500);
+        showToast(isEditMode ? 'Изменения отправлены в заказ!' : 'Данные отправлены в бот!', 2500);
         setTimeout(() => { if (typeof webApp.close === 'function') webApp.close(); }, 800);
     } catch (err) {
         console.error(err);
@@ -2021,15 +2301,18 @@ const webApp = getTelegramWebApp();
 if (webApp) {
     webApp.ready();
     if (typeof webApp.expand === 'function') webApp.expand();
-    // enableClosingConfirmation с Bot API 6.2; в клиенте 6.0 его нет
     try {
         if (webApp.isVersionAtLeast && webApp.isVersionAtLeast('6.2') &&
             typeof webApp.enableClosingConfirmation === 'function') {
             webApp.enableClosingConfirmation();
         }
     } catch (e) { /* старый клиент Telegram */ }
+    tryLoadEditFromUrl().then(loaded => {
+        if (loaded) console.log('Edit mode loaded');
+    });
 } else {
     showToast("⚠️ Откройте Draw через кнопку Telegram", 5000);
+    tryLoadEditFromUrl();
 }
 </script>
 </body>
