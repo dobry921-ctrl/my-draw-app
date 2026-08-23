@@ -2124,23 +2124,19 @@ function canSendWebAppData(webApp) {
 }
 
 function sendToBot() {
-    // ВАЖНО для iOS: sendData должен вызываться СИНХРОННО из клика пользователя.
-    // Любой await до sendData ломает жест → на iPhone «ничего не происходит».
+    // iOS: только синхронный код до sendData. Лимит Telegram: 4096 байт.
     function note(m) {
         console.log('[sendToBot]', m);
-        try { showToast(String(m), 4500); } catch (e) {}
+        try { showToast(String(m), 5000); } catch (e) {}
     }
     try {
         const webApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
         if (!webApp) {
             note('Нет Telegram.WebApp');
-            alert('Откройте Draw внутри Telegram.');
             return;
         }
         try { webApp.ready(); } catch (e) {}
 
-        // Несколько потолков: не сравнивать только по длинам сторон
-        // (два одинаковых помещения раньше схлопывались в один).
         function sameCeilingGeom(a, b) {
             if (!a || !b || !a.points || !b.points) return false;
             if (a.points.length !== b.points.length) return false;
@@ -2158,11 +2154,9 @@ function sendToBot() {
                     const current = getCurrentCeilingPayload();
                     if (current.points && current.points.length >= 3) {
                         const last = completedCeilings[completedCeilings.length - 1];
-                        // тот же контур на холсте (обновили монтаж) — заменить последний
                         if (last && sameCeilingGeom(last, current)) {
                             completedCeilings[completedCeilings.length - 1] = current;
                         } else {
-                            // новый потолок — всегда добавить, даже если стороны как у предыдущего
                             completedCeilings.push(current);
                         }
                     }
@@ -2173,72 +2167,93 @@ function sendToBot() {
             note('Нет потолка для отправки.');
             return;
         }
-        note('Потолков к отправке: ' + completedCeilings.length);
 
-        const toM = function (v) {
-            const n = Number(v);
-            if (!Number.isFinite(n)) return 0;
-            return roundN(Math.abs(n) > 50 ? n / 100 : n, 3);
-        };
-
-        const ceilingsOut = completedCeilings.map(function (c) {
-            const ptsM = (c.points || []).map(function (p) {
-                return {
-                    x: roundN(Math.abs(Number(p.x)) > 50 ? Number(p.x) / 100 : Number(p.x), 4),
-                    y: roundN(Math.abs(Number(p.y)) > 50 ? Number(p.y) / 100 : Number(p.y), 4),
-                    letter: p.letter
-                };
-            });
-            const sides = (c.sides_cm || []).map(function (s) { return roundN(s, 1); });
-            const fx = (c.fixtures || []).map(function (f) {
-                if (f.type === 'strip') {
-                    return {
-                        type: 'strip',
-                        points: (f.points || []).map(function (p) { return { x: toM(p.x), y: toM(p.y) }; }),
-                        length_cm: f.length_cm || 0
-                    };
-                }
-                if (f.type === 'cornice') {
-                    return { type: 'cornice', edge_index: f.edge_index, offset_cm: f.offset_cm || 5 };
-                }
-                return {
-                    type: f.type || 'spot',
-                    x: toM(f.x), y: toM(f.y),
-                    offset_wall_a_cm: f.offset_wall_a_cm,
-                    offset_wall_b_cm: f.offset_wall_b_cm
-                };
-            });
-            return {
-                points: ptsM,
-                sides_cm: sides,
-                diagonals: c.diagonals || [],
-                material: c.material || 'Мат',
-                color: c.color || 'Белый',
-                profiles: c.profiles || [],
-                fixtures: fx
-            };
-        });
-
-        const payload = { type: 'drawing_set', ceilings: ceilingsOut };
-        if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
-
-        // Без async-сжатия: на iOS нельзя ждать Promise до sendData
-        let toSend = JSON.stringify(payload);
-        if (toSend.length > 4096) {
-            // урезать полосы синхронно
-            ceilingsOut.forEach(function (c) {
-                (c.fixtures || []).forEach(function (f) {
-                    if (f.type === 'strip' && f.points && f.points.length > 2) {
-                        f.points = [f.points[0], f.points[f.points.length - 1]];
-                    }
-                    delete f.offset_wall_a_cm;
-                    delete f.offset_wall_b_cm;
-                });
-            });
-            toSend = JSON.stringify(payload);
+        function r(v, n) {
+            const x = Number(v);
+            if (!Number.isFinite(x)) return 0;
+            const p = Math.pow(10, n);
+            return Math.round(x * p) / p;
         }
-        if (toSend.length > 4096) {
-            note('Слишком много данных (' + toSend.length + ' байт). Уберите часть полос.');
+        function toM(v) {
+            const x = Number(v);
+            if (!Number.isFinite(x)) return 0;
+            return r(Math.abs(x) > 50 ? x / 100 : x, 3);
+        }
+
+        // Компактный формат (короткие ключи) — меньше 4096 байт
+        function buildLevel(level) {
+            // level 0: полный, 1: без wall offsets, 2: полосы только length, 3: без fixtures, 4: без diagonals
+            return completedCeilings.map(function (c) {
+                const pts = (c.points || []).map(function (p) {
+                    return [r(toM(p.x), 3), r(toM(p.y), 3)];
+                });
+                const sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
+                let diags = [];
+                if (level < 4) {
+                    diags = (c.diagonals || []).map(function (d) {
+                        if (Array.isArray(d)) return [d[0], d[1]];
+                        return [d.p1, d.p2];
+                    });
+                }
+                const profiles = (c.profiles || []).slice();
+                let fx = [];
+                if (level < 3) {
+                    fx = (c.fixtures || []).map(function (f) {
+                        if (f.type === 'strip') {
+                            const o = { t: 'p', len: r(f.length_cm || 0, 1) };
+                            if (level < 2) {
+                                o.pts = (f.points || []).map(function (p) {
+                                    return [toM(p.x), toM(p.y)];
+                                });
+                            }
+                            return o;
+                        }
+                        if (f.type === 'cornice') {
+                            return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
+                        }
+                        if (f.type === 'chandelier') {
+                            return { t: 'c', x: toM(f.x), y: toM(f.y) };
+                        }
+                        // spot
+                        const s = { t: 's', x: toM(f.x), y: toM(f.y) };
+                        if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
+                        if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
+                        return s;
+                    });
+                }
+                return {
+                    pts: pts,
+                    s: sides,
+                    d: diags,
+                    m: c.material || 'Мат',
+                    col: c.color || 'Белый',
+                    pr: profiles,
+                    fx: fx
+                };
+            });
+        }
+
+        let toSend = null;
+        let usedLevel = 0;
+        for (let level = 0; level <= 4; level++) {
+            const payload = {
+                type: 'drawing_set',
+                v: 2,
+                ceilings: buildLevel(level)
+            };
+            if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
+            const s = JSON.stringify(payload);
+            if (s.length <= 4096) {
+                toSend = s;
+                usedLevel = level;
+                break;
+            }
+            toSend = s;
+            usedLevel = level;
+        }
+
+        if (!toSend || toSend.length > 4096) {
+            note('Слишком много данных (' + (toSend ? toSend.length : 0) + ' байт, лимит 4096). Отправьте меньше потолков или полос.');
             return;
         }
 
@@ -2247,22 +2262,27 @@ function sendToBot() {
             return;
         }
 
-        // Синхронный вызов — критично для iPhone
-        webApp.sendData(toSend);
-        note('Отправлено (' + toSend.length + ' б). Смотрите чат.');
+        try {
+            webApp.sendData(toSend);
+        } catch (sendErr) {
+            note('Ошибка: ' + (sendErr.message || sendErr));
+            return;
+        }
+
+        const extra = usedLevel >= 3 ? ' (освещение урезано из‑за лимита)' :
+                      usedLevel >= 2 ? ' (точки полос упрощены)' : '';
+        note('Отправлено ' + completedCeilings.length + ' пот., ' + toSend.length + ' б' + extra);
         try {
             if (webApp.HapticFeedback && webApp.HapticFeedback.notificationOccurred) {
                 webApp.HapticFeedback.notificationOccurred('success');
             }
         } catch (e) {}
-        // close с задержкой — после sendData, не до
         setTimeout(function () {
             try { if (webApp.close) webApp.close(); } catch (e) {}
         }, 800);
     } catch (err) {
         console.error(err);
         note('Ошибка: ' + (err && err.message ? err.message : err));
-        try { alert('Ошибка: ' + (err && err.message ? err.message : err)); } catch (e) {}
     }
 }
 
