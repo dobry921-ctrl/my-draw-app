@@ -1973,7 +1973,7 @@ function addCeiling() {
     }
     completedCeilings.push(payload);
     updateCeilingsList();
-    showToast(`Потолок №${completedCeilings.length} добавлен. Рисуйте следующий.`, 3000);
+    showToast(`Потолок №${completedCeilings.length} сохранён. Нарисуйте следующий или «Отправить» все.`, 3500);
     resetCurrentDrawing(false);
 }
 
@@ -2139,6 +2139,17 @@ function sendToBot() {
         }
         try { webApp.ready(); } catch (e) {}
 
+        // Несколько потолков: не сравнивать только по длинам сторон
+        // (два одинаковых помещения раньше схлопывались в один).
+        function sameCeilingGeom(a, b) {
+            if (!a || !b || !a.points || !b.points) return false;
+            if (a.points.length !== b.points.length) return false;
+            for (let i = 0; i < a.points.length; i++) {
+                if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
+                if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
+            }
+            return true;
+        }
         if (points.length >= 3) {
             try {
                 if (isEditMode && editCeilingIndex >= 0) {
@@ -2146,23 +2157,23 @@ function sendToBot() {
                 } else {
                     const current = getCurrentCeilingPayload();
                     if (current.points && current.points.length >= 3) {
-                        const already = completedCeilings.some(c =>
-                            c.sides_cm && current.sides_cm &&
-                            c.sides_cm.length === current.sides_cm.length &&
-                            c.sides_cm.every((v, i) => Math.abs(Number(v) - Number(current.sides_cm[i])) < 0.05)
-                        );
-                        if (!already) completedCeilings.push(current);
+                        const last = completedCeilings[completedCeilings.length - 1];
+                        // тот же контур на холсте (обновили монтаж) — заменить последний
+                        if (last && sameCeilingGeom(last, current)) {
+                            completedCeilings[completedCeilings.length - 1] = current;
+                        } else {
+                            // новый потолок — всегда добавить, даже если стороны как у предыдущего
+                            completedCeilings.push(current);
+                        }
                     }
                 }
             } catch (e) { console.warn(e); }
-        }
-        if (!completedCeilings.length && points.length >= 3) {
-            try { completedCeilings.push(getCurrentCeilingPayload()); } catch (e) {}
         }
         if (!completedCeilings.length) {
             note('Нет потолка для отправки.');
             return;
         }
+        note('Потолков к отправке: ' + completedCeilings.length);
 
         const toM = function (v) {
             const n = Number(v);
