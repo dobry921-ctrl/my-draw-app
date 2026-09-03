@@ -244,7 +244,7 @@
     </div>
 
     <div id="bottom-input-bar" class="bottom-panel">
-        <button class="collapse-btn" onclick="togglePanel('bottom-input-bar')">✕</button>
+        <!-- Убрана кнопка collapse-btn (крестик) -->
         <div id="input-row" onclick="focusSideInput()">
             <button class="btn btn-outline" id="prev-side-btn" onclick="prevSide()" style="display: none;">Назад</button>
             <div id="side-label">A-B =</div>
@@ -311,7 +311,7 @@
 
         <div class="color-row" id="cornice-offset-row" style="display:none;">
             <label>Вынос:</label>
-            <input type="number" id="cornice-offset-input" value="5" min="1" max="50" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;">
+            <input type="number" id="cornice-offset-input" value="20" min="1" max="50" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;">
             <span>см</span>
         </div>
         <div id="fixture-list" class="fixture-list"></div>
@@ -1211,7 +1211,8 @@
             }
             if (installMode === 'cornice') {
                 const ei = nearestEdgeIndex(worldPos);
-                const off = parseFloat(document.getElementById('cornice-offset-input').value) || 5;
+                // Используем значение из поля, по умолчанию 20
+                const off = parseFloat(document.getElementById('cornice-offset-input').value) || 20;
                 fixtures = fixtures.filter(f => !(f.type === 'cornice' && f.edge_index === ei));
                 fixtures.push({
                     type: 'cornice',
@@ -1834,6 +1835,7 @@
             if (addBtn) addBtn.style.display = 'none';
             loadCeilingIntoEditor(0);
             showCeilingSwitcher();
+            renderSwitcherBtns();
             document.getElementById('results-panel').classList.add('active');
             const ea = document.getElementById('edit-actions');
             if (ea) ea.style.display = 'block';
