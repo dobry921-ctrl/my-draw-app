@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260903g</title>
+    <title>ПРО Замер потолков v20260903h</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -78,6 +78,10 @@
             opacity: 1 !important;
             pointer-events: auto !important;
         }
+        .bottom-panel.active,
+        .bottom-panel.active * {
+            pointer-events: auto !important;
+        }
         #install-panel.active { z-index: 160; min-height: 40vh; }
         #bottom-input-bar.active { z-index: 180; }
         #saved-chip {
@@ -92,6 +96,9 @@
         #side-input {
             flex-grow: 1; background: #f8f9fa; border: 1px solid #ced4da;
             padding: 10px; border-radius: 6px; font-size: 1.1rem; min-width: 0;
+            pointer-events: auto !important;
+            -webkit-user-select: text;
+            user-select: text;
         }
         .btn-next { background-color: var(--accent); padding: 10px 18px; white-space: nowrap; }
         .panel-title { font-weight: bold; font-size: 1.05rem; margin-bottom: 10px; }
@@ -196,10 +203,10 @@
     </div>
 
     <div id="bottom-input-bar" class="bottom-panel">
-        <div id="input-row">
+        <div id="input-row" onclick="focusSideInput()">
             <button class="btn btn-outline" id="prev-side-btn" onclick="prevSide()" style="display: none;">Назад</button>
             <div id="side-label">A-B =</div>
-            <input type="number" inputmode="decimal" id="side-input" placeholder="см">
+            <input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" autocomplete="off" enterkeyhint="next" id="side-input" placeholder="см">
             <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
         </div>
     </div>
@@ -442,6 +449,71 @@ canvas.addEventListener('wheel', e => {
     camera.y = mouseY - worldY * camera.zoom;
     draw();
 }, { passive: false });
+
+function isTypingSides() {
+    return state === 'INPUT_SIDES' || state === 'INPUT_DIAGONALS';
+}
+
+function focusSideInput() {
+    const inp = document.getElementById('side-input');
+    if (!inp) return;
+    try { inp.removeAttribute('readonly'); } catch (e) {}
+    const go = function () {
+        try {
+            inp.focus({ preventScroll: false });
+            if (typeof inp.select === 'function' && inp.value) {
+                /* caret at end, not full select — so typing continues */
+                const len = String(inp.value).length;
+                inp.setSelectionRange(len, len);
+            }
+        } catch (e) {}
+    };
+    go();
+    requestAnimationFrame(go);
+    setTimeout(go, 50);
+    setTimeout(go, 200);
+}
+
+window.addEventListener('keydown', function (e) {
+    if (!isTypingSides()) return;
+    const inp = document.getElementById('side-input');
+    if (!inp) return;
+    const bar = document.getElementById('bottom-input-bar');
+    if (!bar || !bar.classList.contains('active')) return;
+
+    const ae = document.activeElement;
+    const inOtherField = ae && ae !== inp && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+    if (inOtherField) return;
+
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        saveSideAndNext();
+        return;
+    }
+    if (ae === inp) return; // нативное поведение, если поле уже в фокусе
+
+    // Telegram Desktop часто не даёт programmatic focus — вводим с клавиатуры сами
+    if (e.key === 'Backspace') {
+        e.preventDefault();
+        inp.value = String(inp.value || '').slice(0, -1);
+        focusSideInput();
+        return;
+    }
+    if (e.key === 'Delete') {
+        e.preventDefault();
+        inp.value = '';
+        focusSideInput();
+        return;
+    }
+    if ((e.key >= '0' && e.key <= '9') || e.key === '.' || e.key === ',' || e.key === 'Decimal') {
+        e.preventDefault();
+        const ch = (e.key === ',' || e.key === 'Decimal') ? '.' : e.key;
+        let v = String(inp.value || '');
+        if (ch === '.' && v.indexOf('.') >= 0) return;
+        inp.value = v + ch;
+        focusSideInput();
+    }
+}, true);
 
 // --- Geometry helpers ---
 function doIntersect(p1, p2, p3, p4) {
@@ -1520,8 +1592,8 @@ function updateInputUI() {
     document.getElementById('prev-side-btn').style.display = (isDiag ? currentDiagonalInput : currentInputEdge) > 0 ? 'inline-block' : 'none';
     const btn = document.querySelector('#input-row .btn-next');
     if (btn) btn.innerText = isDiag && currentDiagonalInput === selectedDiagonals.length - 1 ? 'Готово' : 'Далее';
-    document.getElementById('side-input').focus();
     draw();
+    focusSideInput();
 }
 
 function prevSide() {
