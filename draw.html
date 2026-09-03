@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков</title>
+    <title>ПРО Замер потолков v20260903c</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <style>
         :root {
             --bg-color: #f0f2f5;
@@ -60,13 +62,15 @@
         }
         .bottom-panel {
             position: absolute; bottom: 0; left: 0; width: 100%;
-            background-color: var(--top-bg); box-shadow: 0 -4px 15px rgba(0,0,0,0.15);
-            display: none; flex-direction: column; z-index: 100;
+            background-color: var(--top-bg); box-shadow: 0 -4px 20px rgba(0,0,0,0.25);
+            display: none; flex-direction: column; z-index: 150;
             padding: 15px;
             border-top-left-radius: 14px; border-top-right-radius: 14px;
-            max-height: 55vh; overflow-y: auto;
+            max-height: 70vh; overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
-        .bottom-panel.active { display: flex; }
+        .bottom-panel.active { display: flex !important; visibility: visible !important; opacity: 1 !important; }
+        #install-panel.active { z-index: 160; min-height: 40vh; }
         #input-row { display: flex; align-items: center; gap: 8px; width: 100%; }
         #side-label { font-weight: bold; font-size: 1.1rem; white-space: nowrap; }
         #side-input {
@@ -208,7 +212,7 @@
             <label>Цвет:</label>
             <input type="text" id="color-input" value="Белый" placeholder="Например: Белый, 001">
         </div>
-        <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Далее: монтаж</button>
+        <button class="btn btn-success" style="width:100%; padding:12px;" onclick="finishMaterialSelection()">Далее: профиль и освещение →</button>
     </div>
 
     <div id="install-panel" class="bottom-panel">
@@ -1350,7 +1354,7 @@ function removeFixture(idx) {
 
 function openInstallPanel() {
     state = 'INSTALL';
-    statusText.innerText = 'Монтажные элементы';
+    statusText.innerText = 'Профиль / Освещение / Карниз';
     if (!sideProfiles.length || sideProfiles.length !== points.length) {
         sideProfiles = points.map(() => 'Стандартный');
     }
@@ -1358,12 +1362,23 @@ function openInstallPanel() {
     stripDraft = [];
     installMode = 'profile';
     lightingSub = 'spot';
+    // закрыть другие панели
+    ['bottom-input-bar','diagonals-panel','material-panel','results-panel'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.remove('active');
+    });
     setInstallMode('profile');
     updateFixtureList();
-    document.getElementById('install-panel').classList.add('active');
+    var panel = document.getElementById('install-panel');
+    if (panel) {
+        panel.classList.add('active');
+        panel.style.display = 'flex';
+        panel.scrollTop = 0;
+        try { panel.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) {}
+    }
     autoFitCamera();
     draw();
-    showToast('Профиль → Освещение → Карниз. Можно пропустить.', 3500);
+    showToast('Выберите: Профиль → Освещение → Карниз, затем «Готово»', 4000);
 }
 
 function skipInstall() {
@@ -2124,23 +2139,48 @@ function canSendWebAppData(webApp) {
 }
 
 async function sendToBot() {
-    // iOS: только синхронный код до sendData. Лимит Telegram: 4096 байт.
     function note(m) {
         console.log('[sendToBot]', m);
-        try { showToast(String(m), 5000); } catch (e) {}
+        try { showToast(String(m), 5500); } catch (e) {}
+    }
+    function byteLen(s) {
+        try { return new TextEncoder().encode(s).length; } catch (e) { return s.length; }
+    }
+    function toUrlB64(bytes) {
+        var bin = '';
+        for (var i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+        }
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    async function deflateB64(str) {
+        if (typeof CompressionStream === 'undefined') return null;
+        try {
+            var data = new TextEncoder().encode(str);
+            var cs = new CompressionStream('deflate');
+            var w = cs.writable.getWriter();
+            await w.write(data);
+            await w.close();
+            var buf = await new Response(cs.readable).arrayBuffer();
+            return toUrlB64(new Uint8Array(buf));
+        } catch (e) {
+            console.warn('deflate', e);
+            return null;
+        }
     }
     try {
-        const webApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
-        if (!webApp) {
-            note('Нет Telegram.WebApp');
+        var webApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+        if (!webApp) { note('Нет Telegram.WebApp — откройте через кнопку бота'); return; }
+        try { webApp.ready(); } catch (e) {}
+        if (typeof webApp.sendData !== 'function') {
+            note('sendData недоступен. Откройте Draw кнопкой «Начать замер» в чате (не из меню).');
             return;
         }
-        try { webApp.ready(); } catch (e) {}
 
         function sameCeilingGeom(a, b) {
             if (!a || !b || !a.points || !b.points) return false;
             if (a.points.length !== b.points.length) return false;
-            for (let i = 0; i < a.points.length; i++) {
+            for (var i = 0; i < a.points.length; i++) {
                 if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
                 if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
             }
@@ -2151,9 +2191,9 @@ async function sendToBot() {
                 if (isEditMode && editCeilingIndex >= 0) {
                     saveEditorToCompleted();
                 } else {
-                    const current = getCurrentCeilingPayload();
+                    var current = getCurrentCeilingPayload();
                     if (current.points && current.points.length >= 3) {
-                        const last = completedCeilings[completedCeilings.length - 1];
+                        var last = completedCeilings[completedCeilings.length - 1];
                         if (last && sameCeilingGeom(last, current)) {
                             completedCeilings[completedCeilings.length - 1] = current;
                         } else {
@@ -2169,38 +2209,49 @@ async function sendToBot() {
         }
 
         function r(v, n) {
-            const x = Number(v);
+            var x = Number(v);
             if (!Number.isFinite(x)) return 0;
-            const p = Math.pow(10, n);
+            var p = Math.pow(10, n);
             return Math.round(x * p) / p;
         }
         function toM(v) {
-            const x = Number(v);
+            var x = Number(v);
             if (!Number.isFinite(x)) return 0;
             return r(Math.abs(x) > 50 ? x / 100 : x, 3);
         }
 
-        // Компактный формат (короткие ключи) — меньше 4096 байт
+        // level: 0 full, 1 no wall offsets, 2 strip len only,
+        // 3 no fixtures, 4 no diags, 5 spots capped 40, 6 spots capped 20
         function buildLevel(level) {
-            // level 0: полный, 1: без wall offsets, 2: полосы только length, 3: без fixtures, 4: без diagonals
             return completedCeilings.map(function (c) {
-                const pts = (c.points || []).map(function (p) {
+                var pts = (c.points || []).map(function (p) {
                     return [r(toM(p.x), 3), r(toM(p.y), 3)];
                 });
-                const sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
-                let diags = [];
+                var sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
+                var diags = [];
                 if (level < 4) {
                     diags = (c.diagonals || []).map(function (d) {
-                        if (Array.isArray(d)) return [d[0], d[1]];
-                        return [d.p1, d.p2];
+                        if (Array.isArray(d)) return [d[0]|0, d[1]|0];
+                        return [d.p1|0, d.p2|0];
                     });
                 }
-                const profiles = (c.profiles || []).slice();
-                let fx = [];
+                var profiles = (c.profiles || []).slice();
+                var fx = [];
                 if (level < 3) {
-                    fx = (c.fixtures || []).map(function (f) {
+                    var list = (c.fixtures || []).slice();
+                    if (level >= 6) {
+                        // оставить люстры/карнизы/полосы + 20 спотов
+                        var spots = list.filter(function (f) { return f.type === 'spot'; });
+                        var rest = list.filter(function (f) { return f.type !== 'spot'; });
+                        list = rest.concat(spots.slice(0, 20));
+                    } else if (level >= 5) {
+                        var spots5 = list.filter(function (f) { return f.type === 'spot'; });
+                        var rest5 = list.filter(function (f) { return f.type !== 'spot'; });
+                        list = rest5.concat(spots5.slice(0, 40));
+                    }
+                    fx = list.map(function (f) {
                         if (f.type === 'strip') {
-                            const o = { t: 'p', len: r(f.length_cm || 0, 1) };
+                            var o = { t: 'p', len: r(f.length_cm || 0, 1) };
                             if (level < 2) {
                                 o.pts = (f.points || []).map(function (p) {
                                     return [toM(p.x), toM(p.y)];
@@ -2214,36 +2265,31 @@ async function sendToBot() {
                         if (f.type === 'chandelier') {
                             return { t: 'c', x: toM(f.x), y: toM(f.y) };
                         }
-                        // spot
-                        const s = { t: 's', x: toM(f.x), y: toM(f.y) };
+                        var s = { t: 's', x: toM(f.x), y: toM(f.y) };
                         if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
                         if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
                         return s;
                     });
                 }
-                return {
-                    pts: pts,
-                    s: sides,
-                    d: diags,
-                    m: c.material || 'Мат',
-                    col: c.color || 'Белый',
-                    pr: profiles,
-                    fx: fx
-                };
+                return { pts: pts, s: sides, d: diags, m: c.material || 'Мат', col: c.color || 'Белый', pr: profiles, fx: fx };
             });
         }
 
-        let toSend = null;
-        let usedLevel = 0;
-        for (let level = 0; level <= 4; level++) {
-            const payload = {
-                type: 'drawing_set',
-                v: 2,
-                ceilings: buildLevel(level)
-            };
+        function makePayload(level) {
+            var payload = { type: 'drawing_set', v: 2, ceilings: buildLevel(level) };
             if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
-            const s = JSON.stringify(payload);
-            if (s.length <= 4096) {
+            return JSON.stringify(payload);
+        }
+
+        var LIMIT = 4096;
+        var toSend = null;
+        var usedLevel = 0;
+        var noteExtra = '';
+
+        // 1) plain compact levels
+        for (var level = 0; level <= 6; level++) {
+            var s = makePayload(level);
+            if (byteLen(s) <= LIMIT) {
                 toSend = s;
                 usedLevel = level;
                 break;
@@ -2252,90 +2298,42 @@ async function sendToBot() {
             usedLevel = level;
         }
 
-        // Если даже level 4 не влез — zlib-сжатие (бот умеет drawing_set_z)
-        async function deflateUrlSafeB64(str) {
-            if (typeof CompressionStream === 'undefined') return null;
-            try {
-                const data = new TextEncoder().encode(str);
-                const cs = new CompressionStream('deflate');
-                const w = cs.writable.getWriter();
-                w.write(data); w.close();
-                const buf = await new Response(cs.readable).arrayBuffer();
-                const bytes = new Uint8Array(buf);
-                let bin = '';
-                const chunk = 0x8000;
-                for (let i = 0; i < bytes.length; i += chunk) {
-                    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-                }
-                return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-            } catch (e) {
-                console.warn('deflate fail', e);
-                return null;
-            }
-        }
-
-        let compressedExtra = '';
-        if (!toSend || toSend.length > 4096) {
-            // пробуем сжать лучший (самый полный) вариант, который ещё строим
-            const best = JSON.stringify({
-                type: 'drawing_set',
-                v: 2,
-                ceilings: buildLevel(0),
-                ...(isEditMode && editOrderId != null ? { edit_order_id: editOrderId } : {})
-            });
-            const z = await deflateUrlSafeB64(best);
-            if (z) {
-                const wrapped = JSON.stringify({ type: 'drawing_set_z', z: z });
-                if (wrapped.length <= 4096) {
+        // 2) always try zlib if still large (or even if fits — skip if already fits)
+        if (!toSend || byteLen(toSend) > LIMIT) {
+            for (var lv = 0; lv <= 6; lv++) {
+                var raw = makePayload(lv);
+                var zb = await deflateB64(raw);
+                if (!zb) continue;
+                var wrapped = JSON.stringify({ type: 'drawing_set_z', z: zb });
+                if (byteLen(wrapped) <= LIMIT) {
                     toSend = wrapped;
-                    usedLevel = 0;
-                    compressedExtra = ' (сжато)';
-                }
-            }
-            if (!toSend || toSend.length > 4096) {
-                // сжать урезанный
-                for (let level = 1; level <= 4; level++) {
-                    const s = JSON.stringify({
-                        type: 'drawing_set',
-                        v: 2,
-                        ceilings: buildLevel(level),
-                        ...(isEditMode && editOrderId != null ? { edit_order_id: editOrderId } : {})
-                    });
-                    const z2 = await deflateUrlSafeB64(s);
-                    if (!z2) continue;
-                    const wrapped2 = JSON.stringify({ type: 'drawing_set_z', z: z2 });
-                    if (wrapped2.length <= 4096) {
-                        toSend = wrapped2;
-                        usedLevel = level;
-                        compressedExtra = ' (сжато)';
-                        break;
-                    }
+                    usedLevel = lv;
+                    noteExtra = ' (сжато)';
+                    break;
                 }
             }
         }
 
-        if (!toSend || toSend.length > 4096) {
-            note('Слишком много данных (' + (toSend ? toSend.length : 0) + ' байт, лимит 4096). Отправьте меньше потолков или полос.');
-            return;
-        }
-
-        if (typeof webApp.sendData !== 'function') {
-            note('sendData недоступен');
+        if (!toSend || byteLen(toSend) > LIMIT) {
+            note('Слишком много данных (' + (toSend ? byteLen(toSend) : 0) + ' байт, лимит 4096). Уберите часть светильников и отправьте снова.');
             return;
         }
 
         try {
             webApp.sendData(toSend);
         } catch (sendErr) {
-            note('Ошибка: ' + (sendErr.message || sendErr));
+            var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
+            // частый случай: всё ещё > 4096 по байтам или открыто не с кнопки
+            note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате и/или уберите часть светильников.');
             return;
         }
 
-        const extra = compressedExtra || (
-            usedLevel >= 3 ? ' (освещение урезано из‑за лимита)' :
-            usedLevel >= 2 ? ' (точки полос упрощены)' : ''
-        );
-        note('Отправлено ' + completedCeilings.length + ' пот., ' + toSend.length + ' б' + extra);
+        if (usedLevel >= 6) noteExtra += ' (светильники урезаны до 20)';
+        else if (usedLevel >= 5) noteExtra += ' (светильники урезаны до 40)';
+        else if (usedLevel >= 3) noteExtra += ' (освещение не передано)';
+        else if (usedLevel >= 2) noteExtra += ' (полосы упрощены)';
+
+        note('Отправлено ' + completedCeilings.length + ' пот., ' + byteLen(toSend) + ' б' + noteExtra);
         try {
             if (webApp.HapticFeedback && webApp.HapticFeedback.notificationOccurred) {
                 webApp.HapticFeedback.notificationOccurred('success');
@@ -2349,6 +2347,7 @@ async function sendToBot() {
         note('Ошибка: ' + (err && err.message ? err.message : err));
     }
 }
+
 
 
 function copyData() {
