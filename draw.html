@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260903d</title>
+    <title>ПРО Замер потолков v20260903c</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -1714,8 +1714,7 @@ function normalizeIncomingCeiling(c) {
         color: c.material_color || c.color || 'Белый',
         profiles: c.profiles || [],
         fixtures: c.fixtures || [],
-        used_exact: !!c.used_exact,
-        unit: c.unit || 'm'
+        used_exact: !!c.used_exact
     };
 }
 
@@ -1770,30 +1769,16 @@ function switchCeiling(idx) {
     loadCeilingIntoEditor(idx);
 }
 
-/** Перевод координат payload → canvas (см). Контракт: unit==='m' или значения < 50 → метры. */
-function metersToCanvasCm(val) {
-    const x = Number(val);
-    if (!Number.isFinite(x)) return 0;
-    // Явный unit или типичные метры комнаты (< 50 м)
-    return x * 100;
-}
-
 function loadCeilingIntoEditor(idx) {
     const c = completedCeilings[idx];
     if (!c) return;
     editCeilingIndex = idx;
-    // points в payload всегда в метрах (unit: 'm') → canvas в см
-    points = (c.points || []).map((p, i) => {
-        let x = Number(p.x), y = Number(p.y);
-        // Защита от старых payload, где по ошибке уже см
-        if (c.unit !== 'm' && (Math.abs(x) > 50 || Math.abs(y) > 50)) {
-            // уже см — не трогаем
-        } else {
-            x = metersToCanvasCm(x);
-            y = metersToCanvasCm(y);
-        }
-        return { x, y, letter: p.letter || String.fromCharCode(65 + i) };
-    });
+    // points in payload are meters → cm for canvas
+    points = (c.points || []).map((p, i) => ({
+        x: p.x * 100,
+        y: p.y * 100,
+        letter: p.letter || String.fromCharCode(65 + i)
+    }));
     isClosed = points.length >= 3;
     const sides = c.sides_cm || [];
     edges = [];
@@ -1815,25 +1800,22 @@ function loadCeilingIntoEditor(idx) {
         };
     });
     availableDiagonals = [];
-    selectedMaterial = c.material || c.material_type || 'Мат';
-    selectedColor = c.color || c.material_color || 'Белый';
+    selectedMaterial = c.material || 'Мат';
+    selectedColor = c.color || 'Белый';
     usedExactGeometry = !!c.used_exact;
     sideProfiles = (c.profiles && c.profiles.length === points.length)
         ? c.profiles.slice()
         : points.map(() => 'Стандартный');
-    // fixtures: метры → см canvas
+    // fixtures: meters → cm
     fixtures = (c.fixtures || []).map(f => {
         const o = Object.assign({}, f);
-        const asCm = (v) => {
-            const n = Number(v);
-            if (!Number.isFinite(n)) return 0;
-            if (c.unit !== 'm' && Math.abs(n) > 50) return n; // уже см
-            return n * 100;
-        };
-        if (o.x != null) o.x = asCm(o.x);
-        if (o.y != null) o.y = asCm(o.y);
+        if (o.x != null) o.x = Number(o.x) * (Math.abs(Number(o.x)) < 50 ? 100 : 1);
+        if (o.y != null) o.y = Number(o.y) * (Math.abs(Number(o.y)) < 50 ? 100 : 1);
         if (o.type === 'strip' && o.points) {
-            o.points = o.points.map(p => ({ x: asCm(p.x), y: asCm(p.y) }));
+            o.points = o.points.map(p => ({
+                x: Number(p.x) * (Math.abs(Number(p.x)) < 50 ? 100 : 1),
+                y: Number(p.y) * (Math.abs(Number(p.y)) < 50 ? 100 : 1)
+            }));
         }
         return o;
     });
@@ -1912,8 +1894,7 @@ function editInstallOnly() {
 }
 
 function getCurrentCeilingPayload() {
-    // КОНТРАКТ: points/fixtures.x,y всегда в МЕТРАХ. sides_cm/length_cm — в сантиметрах.
-    // Canvas внутри Draw работает в сантиметрах → делим на 100 при выгрузке.
+    // Координаты в метрах
     const ptsMeters = points.map(p => ({
         x: p.x / 100,
         y: p.y / 100,
@@ -1946,6 +1927,9 @@ function getCurrentCeilingPayload() {
             o.length_cm = f.length_cm;
             o.wall_offsets = f.wall_offsets || [];
         }
+        if (f.type === 'chandelier') {
+            /* x,y already set */
+        }
         return o;
     });
     return {
@@ -1956,8 +1940,7 @@ function getCurrentCeilingPayload() {
         color: selectedColor,
         used_exact: usedExactGeometry,
         profiles: profiles,
-        fixtures: fxOut,
-        unit: 'm'   // явный контракт для бота — не угадывать см/м
+        fixtures: fxOut
     };
 }
 
@@ -2225,20 +2208,47 @@ async function sendToBot() {
             return;
         }
 
+        // Санитарные пределы — зеркало проверок на стороне бота (web_app_data).
+        // Цель: сообщить об ошибке сразу в интерфейсе, а не после round-trip к боту.
+        var MAX_VERTICES = 200;
+        var MAX_SIDE_CM = 10000;   // 100 м
+        var MAX_AREA_M2 = 5000;
+        for (var ci = 0; ci < completedCeilings.length; ci++) {
+            var cc = completedCeilings[ci];
+            var ptsN = (cc.points || []).length;
+            if (ptsN > MAX_VERTICES) {
+                note('Потолок №' + (ci + 1) + ': слишком сложная фигура (' + ptsN + ' вершин, максимум ' + MAX_VERTICES + ').');
+                return;
+            }
+            var sidesArr = cc.sides_cm || [];
+            for (var si = 0; si < sidesArr.length; si++) {
+                var sVal = Number(sidesArr[si]);
+                if (!Number.isFinite(sVal) || sVal <= 0) {
+                    note('Потолок №' + (ci + 1) + ': некорректная длина стороны. Проверьте чертёж.');
+                    return;
+                }
+                if (sVal > MAX_SIDE_CM) {
+                    note('Потолок №' + (ci + 1) + ': сторона длиннее ' + (MAX_SIDE_CM / 100) + ' м. Проверьте чертёж.');
+                    return;
+                }
+            }
+            var areaVal = calcAreaM2(cc.points || []);
+            if (!Number.isFinite(areaVal) || areaVal <= 0 || areaVal > MAX_AREA_M2) {
+                note('Потолок №' + (ci + 1) + ': площадь (' + areaVal.toFixed(1) + ' м²) выглядит нереалистично.');
+                return;
+            }
+        }
+
         function r(v, n) {
             var x = Number(v);
             if (!Number.isFinite(x)) return 0;
             var p = Math.pow(10, n);
             return Math.round(x * p) / p;
         }
-        // points/fixtures в completedCeilings уже в МЕТРАХ (getCurrentCeilingPayload).
-        // Не делить повторно — только округлить.
-        function asM(v) {
+        function toM(v) {
             var x = Number(v);
             if (!Number.isFinite(x)) return 0;
-            // Защита: если кто-то положил см (> 50) — один раз в метры
-            if (Math.abs(x) > 50) x = x / 100;
-            return r(x, 3);
+            return r(Math.abs(x) > 50 ? x / 100 : x, 3);
         }
 
         // level: 0 full, 1 no wall offsets, 2 strip len only,
@@ -2246,7 +2256,7 @@ async function sendToBot() {
         function buildLevel(level) {
             return completedCeilings.map(function (c) {
                 var pts = (c.points || []).map(function (p) {
-                    return [asM(p.x), asM(p.y)];
+                    return [r(toM(p.x), 3), r(toM(p.y), 3)];
                 });
                 var sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
                 var diags = [];
@@ -2260,15 +2270,8 @@ async function sendToBot() {
                 var fx = [];
                 if (level < 3) {
                     var list = (c.fixtures || []).slice();
-                    // Приоритет: люстры/карнизы/полосы > споты
-                    var priority = function (f) {
-                        if (f.type === 'chandelier') return 0;
-                        if (f.type === 'cornice') return 1;
-                        if (f.type === 'strip') return 2;
-                        return 3;
-                    };
-                    list.sort(function (a, b) { return priority(a) - priority(b); });
                     if (level >= 6) {
+                        // оставить люстры/карнизы/полосы + 20 спотов
                         var spots = list.filter(function (f) { return f.type === 'spot'; });
                         var rest = list.filter(function (f) { return f.type !== 'spot'; });
                         list = rest.concat(spots.slice(0, 20));
@@ -2282,7 +2285,7 @@ async function sendToBot() {
                             var o = { t: 'p', len: r(f.length_cm || 0, 1) };
                             if (level < 2) {
                                 o.pts = (f.points || []).map(function (p) {
-                                    return [asM(p.x), asM(p.y)];
+                                    return [toM(p.x), toM(p.y)];
                                 });
                             }
                             return o;
@@ -2291,31 +2294,20 @@ async function sendToBot() {
                             return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
                         }
                         if (f.type === 'chandelier') {
-                            return { t: 'c', x: asM(f.x), y: asM(f.y) };
+                            return { t: 'c', x: toM(f.x), y: toM(f.y) };
                         }
-                        var s = { t: 's', x: asM(f.x), y: asM(f.y) };
+                        var s = { t: 's', x: toM(f.x), y: toM(f.y) };
                         if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
                         if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
                         return s;
                     });
                 }
-                return {
-                    pts: pts, s: sides, d: diags,
-                    m: c.material || 'Мат', col: c.color || 'Белый',
-                    pr: profiles, fx: fx, u: 'm'
-                };
+                return { pts: pts, s: sides, d: diags, m: c.material || 'Мат', col: c.color || 'Белый', pr: profiles, fx: fx };
             });
         }
 
         function makePayload(level) {
-            var payload = {
-                type: 'drawing_set',
-                v: 3,
-                unit: 'm',
-                truncate_level: level,
-                truncated: level > 0,
-                ceilings: buildLevel(level)
-            };
+            var payload = { type: 'drawing_set', v: 2, ceilings: buildLevel(level) };
             if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
             return JSON.stringify(payload);
         }
@@ -2324,29 +2316,33 @@ async function sendToBot() {
         var toSend = null;
         var usedLevel = 0;
         var noteExtra = '';
-        var usedZ = false;
 
-        // 1) Сначала zlib на каждом уровне — чаще влезает полный набор
-        for (var lv = 0; lv <= 6; lv++) {
-            var raw = makePayload(lv);
-            if (byteLen(raw) <= LIMIT) {
-                toSend = raw;
-                usedLevel = lv;
+        // 1) plain compact levels
+        for (var level = 0; level <= 6; level++) {
+            var s = makePayload(level);
+            if (byteLen(s) <= LIMIT) {
+                toSend = s;
+                usedLevel = level;
                 break;
             }
-            var zb = await deflateB64(raw);
-            if (zb) {
-                var wrapped = JSON.stringify({ type: 'drawing_set_z', v: 3, z: zb });
+            toSend = s;
+            usedLevel = level;
+        }
+
+        // 2) always try zlib if still large (or even if fits — skip if already fits)
+        if (!toSend || byteLen(toSend) > LIMIT) {
+            for (var lv = 0; lv <= 6; lv++) {
+                var raw = makePayload(lv);
+                var zb = await deflateB64(raw);
+                if (!zb) continue;
+                var wrapped = JSON.stringify({ type: 'drawing_set_z', z: zb });
                 if (byteLen(wrapped) <= LIMIT) {
                     toSend = wrapped;
                     usedLevel = lv;
-                    usedZ = true;
                     noteExtra = ' (сжато)';
                     break;
                 }
             }
-            toSend = raw;
-            usedLevel = lv;
         }
 
         if (!toSend || byteLen(toSend) > LIMIT) {
@@ -2358,15 +2354,15 @@ async function sendToBot() {
             webApp.sendData(toSend);
         } catch (sendErr) {
             var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
+            // частый случай: всё ещё > 4096 по байтам или открыто не с кнопки
             note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате и/или уберите часть светильников.');
             return;
         }
 
-        if (usedLevel >= 6) noteExtra += ' ⚠ светильники урезаны до 20';
-        else if (usedLevel >= 5) noteExtra += ' ⚠ светильники урезаны до 40';
-        else if (usedLevel >= 3) noteExtra += ' ⚠ освещение не передано';
-        else if (usedLevel >= 2) noteExtra += ' ⚠ полосы упрощены';
-        else if (usedLevel >= 1) noteExtra += ' (без отступов стен)';
+        if (usedLevel >= 6) noteExtra += ' (светильники урезаны до 20)';
+        else if (usedLevel >= 5) noteExtra += ' (светильники урезаны до 40)';
+        else if (usedLevel >= 3) noteExtra += ' (освещение не передано)';
+        else if (usedLevel >= 2) noteExtra += ' (полосы упрощены)';
 
         note('Отправлено ' + completedCeilings.length + ' пот., ' + byteLen(toSend) + ' б' + noteExtra);
         try {
