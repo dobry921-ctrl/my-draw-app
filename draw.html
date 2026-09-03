@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260903c</title>
+    <title>ПРО Замер потолков v20260903g</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -63,14 +63,30 @@
         .bottom-panel {
             position: absolute; bottom: 0; left: 0; width: 100%;
             background-color: var(--top-bg); box-shadow: 0 -4px 20px rgba(0,0,0,0.25);
-            display: none; flex-direction: column; z-index: 150;
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            flex-direction: column; z-index: 150;
             padding: 15px;
             border-top-left-radius: 14px; border-top-right-radius: 14px;
             max-height: 70vh; overflow-y: auto;
             -webkit-overflow-scrolling: touch;
         }
-        .bottom-panel.active { display: flex !important; visibility: visible !important; opacity: 1 !important; }
+        .bottom-panel.active {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
         #install-panel.active { z-index: 160; min-height: 40vh; }
+        #bottom-input-bar.active { z-index: 180; }
+        #saved-chip {
+            position: absolute; top: 12px; right: 12px; z-index: 45;
+            background: rgba(0,102,204,0.92); color: #fff;
+            font-size: 0.82rem; font-weight: 600;
+            padding: 6px 10px; border-radius: 16px;
+            display: none; pointer-events: none;
+        }
         #input-row { display: flex; align-items: center; gap: 8px; width: 100%; }
         #side-label { font-weight: bold; font-size: 1.1rem; white-space: nowrap; }
         #side-input {
@@ -175,6 +191,7 @@
     <div id="toast"></div>
     <div id="canvas-container">
         <canvas id="appCanvas"></canvas>
+        <div id="saved-chip"></div>
         <button id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
     </div>
 
@@ -1362,17 +1379,13 @@ function openInstallPanel() {
     stripDraft = [];
     installMode = 'profile';
     lightingSub = 'spot';
-    // закрыть другие панели
-    ['bottom-input-bar','diagonals-panel','material-panel','results-panel'].forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.classList.remove('active');
-    });
+    // закрыть другие панели (со сбросом inline display)
+    ['bottom-input-bar', 'diagonals-panel', 'material-panel', 'results-panel', 'ceiling-switcher'].forEach(hidePanel);
     setInstallMode('profile');
     updateFixtureList();
+    showOnlyPanel('install-panel');
     var panel = document.getElementById('install-panel');
     if (panel) {
-        panel.classList.add('active');
-        panel.style.display = 'flex';
         panel.scrollTop = 0;
         try { panel.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) {}
     }
@@ -1388,15 +1401,53 @@ function skipInstall() {
     finishInstall();
 }
 
+function hidePanel(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('active');
+    el.style.removeProperty('display');
+}
+
+function hideAllWorkPanels() {
+    [
+        'bottom-input-bar',
+        'diagonals-panel',
+        'material-panel',
+        'install-panel',
+        'results-panel',
+        'ceiling-switcher',
+    ].forEach(hidePanel);
+}
+
+function showOnlyPanel(id) {
+    hideAllWorkPanels();
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.removeProperty('display');
+    el.classList.add('active');
+}
+
+function updateSavedChip() {
+    const chip = document.getElementById('saved-chip');
+    if (!chip) return;
+    const n = completedCeilings.length;
+    if (n > 0 && state === 'DRAWING') {
+        chip.style.display = 'block';
+        chip.textContent = 'Сохранено: ' + n + ' пот. · чертите №' + (n + 1);
+    } else {
+        chip.style.display = 'none';
+    }
+}
+
 function finishInstall() {
     if (installMode === 'profile' && !profileEdgesPainted) {
         sideProfiles = points.map(() => selectedProfileName);
     }
     stripDraft = [];
-    document.getElementById('install-panel').classList.remove('active');
+    hidePanel('install-panel');
     state = 'DONE';
     statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово';
-    document.getElementById('results-panel').classList.add('active');
+    showOnlyPanel('results-panel');
     if (isEditMode && editCeilingIndex >= 0) {
         saveEditorToCompleted();
         showCeilingSwitcher();
@@ -1404,6 +1455,7 @@ function finishInstall() {
         showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
     }
     updateCeilingsList();
+    updateSavedChip();
     autoFitCamera();
     draw();
 }
@@ -1448,13 +1500,14 @@ function closePolygon() {
     }));
     currentInputEdge = 0;
     showToast('Эскиз сохранён. Введите реальные размеры сторон в сантиметрах. Форма подстроится под них.', 4500);
-    document.getElementById('bottom-input-bar').classList.add('active');
+    showOnlyPanel('bottom-input-bar');
     updateInputUI(); updateUI();
 }
 
 function updateUI() {
     document.getElementById('close-btn').style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
     document.getElementById('undo-btn').style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
+    updateSavedChip();
 }
 
 function updateInputUI() {
@@ -1526,7 +1579,7 @@ function initDiagonals() {
     availableDiagonals.filter(d => d.recommended).forEach(d => selectedDiagonals.push({ ...d, lengthCm: null }));
     updateDiagonalSelectionUI();
     showToast('Диагонали необязательны. Можно пропустить — форма подстроится под стороны.', 3500);
-    document.getElementById('diagonals-panel').classList.add('active');
+    showOnlyPanel('diagonals-panel');
     draw();
 }
 
@@ -1555,7 +1608,7 @@ window.finishDiagonals = function () {
     state = 'INPUT_DIAGONALS';
     statusText.innerText = 'Ввод длин диагоналей';
     currentDiagonalInput = 0;
-    document.getElementById('bottom-input-bar').classList.add('active');
+    showOnlyPanel('bottom-input-bar');
     updateInputUI();
 };
 
@@ -1580,7 +1633,7 @@ function saveDiagonalAndNext(val) {
 function openMaterialPanel() {
     state = 'SELECT_MATERIAL';
     statusText.innerText = 'Материал и цвет';
-    document.getElementById('material-panel').classList.add('active');
+    showOnlyPanel('material-panel');
     autoFitCamera();
     draw();
     if (!usedExactGeometry) {
@@ -1714,7 +1767,8 @@ function normalizeIncomingCeiling(c) {
         color: c.material_color || c.color || 'Белый',
         profiles: c.profiles || [],
         fixtures: c.fixtures || [],
-        used_exact: !!c.used_exact
+        used_exact: !!c.used_exact,
+        unit: c.unit || 'm'
     };
 }
 
@@ -1769,16 +1823,30 @@ function switchCeiling(idx) {
     loadCeilingIntoEditor(idx);
 }
 
+/** Перевод координат payload → canvas (см). Контракт: unit==='m' или значения < 50 → метры. */
+function metersToCanvasCm(val) {
+    const x = Number(val);
+    if (!Number.isFinite(x)) return 0;
+    // Явный unit или типичные метры комнаты (< 50 м)
+    return x * 100;
+}
+
 function loadCeilingIntoEditor(idx) {
     const c = completedCeilings[idx];
     if (!c) return;
     editCeilingIndex = idx;
-    // points in payload are meters → cm for canvas
-    points = (c.points || []).map((p, i) => ({
-        x: p.x * 100,
-        y: p.y * 100,
-        letter: p.letter || String.fromCharCode(65 + i)
-    }));
+    // points в payload всегда в метрах (unit: 'm') → canvas в см
+    points = (c.points || []).map((p, i) => {
+        let x = Number(p.x), y = Number(p.y);
+        // Защита от старых payload, где по ошибке уже см
+        if (c.unit !== 'm' && (Math.abs(x) > 50 || Math.abs(y) > 50)) {
+            // уже см — не трогаем
+        } else {
+            x = metersToCanvasCm(x);
+            y = metersToCanvasCm(y);
+        }
+        return { x, y, letter: p.letter || String.fromCharCode(65 + i) };
+    });
     isClosed = points.length >= 3;
     const sides = c.sides_cm || [];
     edges = [];
@@ -1800,22 +1868,25 @@ function loadCeilingIntoEditor(idx) {
         };
     });
     availableDiagonals = [];
-    selectedMaterial = c.material || 'Мат';
-    selectedColor = c.color || 'Белый';
+    selectedMaterial = c.material || c.material_type || 'Мат';
+    selectedColor = c.color || c.material_color || 'Белый';
     usedExactGeometry = !!c.used_exact;
     sideProfiles = (c.profiles && c.profiles.length === points.length)
         ? c.profiles.slice()
         : points.map(() => 'Стандартный');
-    // fixtures: meters → cm
+    // fixtures: метры → см canvas
     fixtures = (c.fixtures || []).map(f => {
         const o = Object.assign({}, f);
-        if (o.x != null) o.x = Number(o.x) * (Math.abs(Number(o.x)) < 50 ? 100 : 1);
-        if (o.y != null) o.y = Number(o.y) * (Math.abs(Number(o.y)) < 50 ? 100 : 1);
+        const asCm = (v) => {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return 0;
+            if (c.unit !== 'm' && Math.abs(n) > 50) return n; // уже см
+            return n * 100;
+        };
+        if (o.x != null) o.x = asCm(o.x);
+        if (o.y != null) o.y = asCm(o.y);
         if (o.type === 'strip' && o.points) {
-            o.points = o.points.map(p => ({
-                x: Number(p.x) * (Math.abs(Number(p.x)) < 50 ? 100 : 1),
-                y: Number(p.y) * (Math.abs(Number(p.y)) < 50 ? 100 : 1)
-            }));
+            o.points = o.points.map(p => ({ x: asCm(p.x), y: asCm(p.y) }));
         }
         return o;
     });
@@ -1894,7 +1965,8 @@ function editInstallOnly() {
 }
 
 function getCurrentCeilingPayload() {
-    // Координаты в метрах
+    // КОНТРАКТ: points/fixtures.x,y всегда в МЕТРАХ. sides_cm/length_cm — в сантиметрах.
+    // Canvas внутри Draw работает в сантиметрах → делим на 100 при выгрузке.
     const ptsMeters = points.map(p => ({
         x: p.x / 100,
         y: p.y / 100,
@@ -1927,9 +1999,6 @@ function getCurrentCeilingPayload() {
             o.length_cm = f.length_cm;
             o.wall_offsets = f.wall_offsets || [];
         }
-        if (f.type === 'chandelier') {
-            /* x,y already set */
-        }
         return o;
     });
     return {
@@ -1940,7 +2009,8 @@ function getCurrentCeilingPayload() {
         color: selectedColor,
         used_exact: usedExactGeometry,
         profiles: profiles,
-        fixtures: fxOut
+        fixtures: fxOut,
+        unit: 'm'   // явный контракт для бота — не угадывать см/м
     };
 }
 
@@ -1977,52 +2047,128 @@ function addCeiling() {
         showToast('Нажмите «Готово» или «Пропустить» в монтаже.', 2500);
         return;
     }
-    if (state !== 'DONE') {
+    if (state !== 'DONE' && !(isClosed && points.length >= 3 && edges.length)) {
         showToast('Сначала завершите текущий потолок.', 2500);
         return;
     }
-    const payload = getCurrentCeilingPayload();
-    if (payload.points.length < 3) {
-        showToast('Нет готового потолка.', 2000);
+    try {
+        const payload = getCurrentCeilingPayload();
+        if (!payload.points || payload.points.length < 3) {
+            showToast('Нет готового потолка.', 2000);
+            return;
+        }
+        completedCeilings.push(payload);
+    } catch (e) {
+        console.error(e);
+        showToast('Не удалось сохранить потолок.', 2500);
         return;
     }
-    completedCeilings.push(payload);
-    updateCeilingsList();
-    showToast(`Потолок №${completedCeilings.length} сохранён. Нарисуйте следующий или «Отправить» все.`, 3500);
+    startNextCeilingDrawing();
+}
+
+function startNextCeilingDrawing() {
     resetCurrentDrawing(false);
+    updateCeilingsList();
+    updateSavedChip();
+    showToast(
+        'Потолок №' + completedCeilings.length + ' сохранён. Тапайте углы следующего, затем замкните и введите размеры — как в первый раз.',
+        4500
+    );
 }
 
 function removeCeiling(idx) {
+    if (isEditMode) {
+        showToast('В режиме правки заказа удаление недоступно.', 2500);
+        return;
+    }
     completedCeilings.splice(idx, 1);
     updateCeilingsList();
     showToast('Потолок удалён.', 2000);
 }
 
 function resetCurrentDrawing(full = true) {
-    points = []; edges = []; availableDiagonals = []; selectedDiagonals = [];
-    isClosed = false; currentInputEdge = 0;
-    sketchPoints = []; sketchTurnSigns = []; sketchOrientation = 1;
+    // Геометрия и ввод
+    points = [];
+    edges = [];
+    availableDiagonals = [];
+    selectedDiagonals = [];
+    isClosed = false;
+    currentInputEdge = 0;
+    sketchPoints = [];
+    sketchTurnSigns = [];
+    sketchOrientation = 1;
     currentDiagonalInput = 0;
-    selectedMaterial = 'Мат'; selectedColor = 'Белый';
+    selectedMaterial = 'Мат';
+    selectedColor = 'Белый';
     usedExactGeometry = false;
-    sideProfiles = []; fixtures = []; installMode = 'profile'; lightingSub = 'spot'; profileEdgesPainted = false; stripDraft = []; stripPreviewLen = 0;
+    // Монтаж
+    sideProfiles = [];
+    fixtures = [];
+    installMode = 'profile';
+    lightingSub = 'spot';
+    selectedProfileName = 'Стандартный';
+    profileEdgesPainted = false;
+    stripDraft = [];
+    stripPreviewLen = 0;
+    // Не в режиме правки конкретного потолка
+    editCeilingIndex = -1;
+
     state = 'DRAWING';
-    statusText.innerText = 'Черчение контура';
-    document.getElementById('bottom-input-bar').classList.remove('active');
-    document.getElementById('diagonals-panel').classList.remove('active');
-    document.getElementById('material-panel').classList.remove('active');
-    const ip = document.getElementById('install-panel');
-    if (ip) ip.classList.remove('active');
+    statusText.innerText = full
+        ? 'Черчение контура'
+        : `Черчение контура (потолок №${completedCeilings.length + 1})`;
+
+    // Все панели + сброс inline style.display (критично для install-panel)
+    hideAllWorkPanels();
+
     if (full) {
-        document.getElementById('results-panel').classList.remove('active');
         completedCeilings = [];
-    } else {
-        document.getElementById('results-panel').classList.remove('active');
+        isEditMode = false;
+        editOrderId = null;
+        const sendBtn = document.getElementById('send-btn');
+        if (sendBtn) sendBtn.textContent = '📤 Отправить весь замер';
+        const addBtn = document.getElementById('add-ceiling-btn');
+        if (addBtn) addBtn.style.display = '';
+        const title = document.getElementById('results-title');
+        if (title) title.innerText = 'Готовые потолки в заказе';
+        const ea = document.getElementById('edit-actions');
+        if (ea) ea.style.display = 'none';
     }
+
     document.querySelectorAll('.mat-btn').forEach((b, i) => b.classList.toggle('selected', i === 0));
-    document.getElementById('color-input').value = 'Белый';
+    const colorInput = document.getElementById('color-input');
+    if (colorInput) colorInput.value = 'Белый';
+    document.querySelectorAll('#profile-pick button').forEach((b, i) => {
+        b.classList.toggle('selected', i === 0);
+    });
+    const fixtureList = document.getElementById('fixture-list');
+    if (fixtureList) fixtureList.innerHTML = '';
+
+    // сброс внутренних блоков монтажа
+    const pt = document.getElementById('profile-tools');
+    const lt = document.getElementById('lighting-tools');
+    const cr = document.getElementById('cornice-offset-row');
+    const st = document.getElementById('strip-tools');
+    const cb = document.getElementById('chandelier-center-btn');
+    if (pt) pt.style.display = 'block';
+    if (lt) lt.style.display = 'none';
+    if (cr) cr.style.display = 'none';
+    if (st) st.style.display = 'none';
+    if (cb) cb.style.display = 'none';
+
+    activePointers = [];
+    isDragging = false;
+    lastPanPos = null;
+    initialPinchDist = null;
+
     camera = { x: 0, y: 0, zoom: 1 };
-    updateUI(); draw();
+    updateUI();
+    updateSavedChip();
+    if (typeof resizeCanvas === 'function') resizeCanvas();
+    draw();
+    if (!full) {
+        showToast('Тапайте углы нового потолка. Замкните, нажав на 1-ю точку — затем введите размеры.', 4500);
+    }
 }
 
 function resetAll() {
@@ -2208,59 +2354,34 @@ async function sendToBot() {
             return;
         }
 
-        // Санитарные пределы — зеркало проверок на стороне бота (web_app_data).
-        // Цель: сообщить об ошибке сразу в интерфейсе, а не после round-trip к боту.
-        var MAX_VERTICES = 200;
-        var MAX_SIDE_CM = 10000;   // 100 м
-        var MAX_AREA_M2 = 5000;
-        for (var ci = 0; ci < completedCeilings.length; ci++) {
-            var cc = completedCeilings[ci];
-            var ptsN = (cc.points || []).length;
-            if (ptsN > MAX_VERTICES) {
-                note('Потолок №' + (ci + 1) + ': слишком сложная фигура (' + ptsN + ' вершин, максимум ' + MAX_VERTICES + ').');
-                return;
-            }
-            var sidesArr = cc.sides_cm || [];
-            for (var si = 0; si < sidesArr.length; si++) {
-                var sVal = Number(sidesArr[si]);
-                if (!Number.isFinite(sVal) || sVal <= 0) {
-                    note('Потолок №' + (ci + 1) + ': некорректная длина стороны. Проверьте чертёж.');
-                    return;
-                }
-                if (sVal > MAX_SIDE_CM) {
-                    note('Потолок №' + (ci + 1) + ': сторона длиннее ' + (MAX_SIDE_CM / 100) + ' м. Проверьте чертёж.');
-                    return;
-                }
-            }
-            var areaVal = calcAreaM2(cc.points || []);
-            if (!Number.isFinite(areaVal) || areaVal <= 0 || areaVal > MAX_AREA_M2) {
-                note('Потолок №' + (ci + 1) + ': площадь (' + areaVal.toFixed(1) + ' м²) выглядит нереалистично.');
-                return;
-            }
-        }
-
         function r(v, n) {
             var x = Number(v);
             if (!Number.isFinite(x)) return 0;
             var p = Math.pow(10, n);
             return Math.round(x * p) / p;
         }
-        function toM(v) {
+        // points/fixtures в completedCeilings уже в МЕТРАХ (getCurrentCeilingPayload).
+        // Не делить повторно — только округлить.
+        function asM(v) {
             var x = Number(v);
             if (!Number.isFinite(x)) return 0;
-            return r(Math.abs(x) > 50 ? x / 100 : x, 3);
+            // Защита: если кто-то положил см (> 50) — один раз в метры
+            if (Math.abs(x) > 50) x = x / 100;
+            return r(x, 3);
         }
 
-        // level: 0 full, 1 no wall offsets, 2 strip len only,
-        // 3 no fixtures, 4 no diags, 5 spots capped 40, 6 spots capped 20
+        // Уровни (освещение держим максимально долго!):
+        // 0 full | 1 no wall offsets | 2 strip len only
+        // 3 spots≤40 | 4 spots≤20 | 5 no spots (люстры/карнизы/полосы остаются)
+        // 6 no fixtures | 7 no diags
         function buildLevel(level) {
             return completedCeilings.map(function (c) {
                 var pts = (c.points || []).map(function (p) {
-                    return [r(toM(p.x), 3), r(toM(p.y), 3)];
+                    return [asM(p.x), asM(p.y)];
                 });
                 var sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
                 var diags = [];
-                if (level < 4) {
+                if (level < 7) {
                     diags = (c.diagonals || []).map(function (d) {
                         if (Array.isArray(d)) return [d[0]|0, d[1]|0];
                         return [d.p1|0, d.p2|0];
@@ -2268,24 +2389,25 @@ async function sendToBot() {
                 }
                 var profiles = (c.profiles || []).slice();
                 var fx = [];
-                if (level < 3) {
+                if (level < 6) {
                     var list = (c.fixtures || []).slice();
-                    if (level >= 6) {
-                        // оставить люстры/карнизы/полосы + 20 спотов
-                        var spots = list.filter(function (f) { return f.type === 'spot'; });
-                        var rest = list.filter(function (f) { return f.type !== 'spot'; });
+                    var spots = list.filter(function (f) { return f.type === 'spot'; });
+                    var rest = list.filter(function (f) { return f.type !== 'spot'; });
+                    if (level >= 5) {
+                        list = rest;
+                    } else if (level >= 4) {
                         list = rest.concat(spots.slice(0, 20));
-                    } else if (level >= 5) {
-                        var spots5 = list.filter(function (f) { return f.type === 'spot'; });
-                        var rest5 = list.filter(function (f) { return f.type !== 'spot'; });
-                        list = rest5.concat(spots5.slice(0, 40));
+                    } else if (level >= 3) {
+                        list = rest.concat(spots.slice(0, 40));
+                    } else {
+                        list = rest.concat(spots);
                     }
                     fx = list.map(function (f) {
                         if (f.type === 'strip') {
                             var o = { t: 'p', len: r(f.length_cm || 0, 1) };
                             if (level < 2) {
                                 o.pts = (f.points || []).map(function (p) {
-                                    return [toM(p.x), toM(p.y)];
+                                    return [asM(p.x), asM(p.y)];
                                 });
                             }
                             return o;
@@ -2294,20 +2416,31 @@ async function sendToBot() {
                             return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
                         }
                         if (f.type === 'chandelier') {
-                            return { t: 'c', x: toM(f.x), y: toM(f.y) };
+                            return { t: 'c', x: asM(f.x), y: asM(f.y) };
                         }
-                        var s = { t: 's', x: toM(f.x), y: toM(f.y) };
+                        var s = { t: 's', x: asM(f.x), y: asM(f.y) };
                         if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
                         if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
                         return s;
                     });
                 }
-                return { pts: pts, s: sides, d: diags, m: c.material || 'Мат', col: c.color || 'Белый', pr: profiles, fx: fx };
+                return {
+                    pts: pts, s: sides, d: diags,
+                    m: c.material || 'Мат', col: c.color || 'Белый',
+                    pr: profiles, fx: fx, u: 'm'
+                };
             });
         }
 
         function makePayload(level) {
-            var payload = { type: 'drawing_set', v: 2, ceilings: buildLevel(level) };
+            var payload = {
+                type: 'drawing_set',
+                v: 3,
+                unit: 'm',
+                truncate_level: level,
+                truncated: level > 0,
+                ceilings: buildLevel(level)
+            };
             if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
             return JSON.stringify(payload);
         }
@@ -2317,25 +2450,21 @@ async function sendToBot() {
         var usedLevel = 0;
         var noteExtra = '';
 
-        // 1) plain compact levels
-        for (var level = 0; level <= 6; level++) {
-            var s = makePayload(level);
-            if (byteLen(s) <= LIMIT) {
-                toSend = s;
-                usedLevel = level;
+        var fxTotal = 0;
+        completedCeilings.forEach(function (c) {
+            fxTotal += (c.fixtures || []).length;
+        });
+
+        for (var lv = 0; lv <= 7; lv++) {
+            var raw = makePayload(lv);
+            if (byteLen(raw) <= LIMIT) {
+                toSend = raw;
+                usedLevel = lv;
                 break;
             }
-            toSend = s;
-            usedLevel = level;
-        }
-
-        // 2) always try zlib if still large (or even if fits — skip if already fits)
-        if (!toSend || byteLen(toSend) > LIMIT) {
-            for (var lv = 0; lv <= 6; lv++) {
-                var raw = makePayload(lv);
-                var zb = await deflateB64(raw);
-                if (!zb) continue;
-                var wrapped = JSON.stringify({ type: 'drawing_set_z', z: zb });
+            var zb = await deflateB64(raw);
+            if (zb) {
+                var wrapped = JSON.stringify({ type: 'drawing_set_z', v: 3, z: zb });
                 if (byteLen(wrapped) <= LIMIT) {
                     toSend = wrapped;
                     usedLevel = lv;
@@ -2343,28 +2472,39 @@ async function sendToBot() {
                     break;
                 }
             }
+            toSend = raw;
+            usedLevel = lv;
         }
 
         if (!toSend || byteLen(toSend) > LIMIT) {
-            note('Слишком много данных (' + (toSend ? byteLen(toSend) : 0) + ' байт, лимит 4096). Уберите часть светильников и отправьте снова.');
+            note('Слишком много данных (' + (toSend ? byteLen(toSend) : 0) + ' байт, лимит 4096). Уберите часть светильников.');
             return;
         }
+
+        var sentFx = 0;
+        try {
+            var parsedLv = JSON.parse(makePayload(usedLevel));
+            (parsedLv.ceilings || []).forEach(function (c) {
+                sentFx += (c.fx || []).length;
+            });
+        } catch (e) {}
 
         try {
             webApp.sendData(toSend);
         } catch (sendErr) {
             var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
-            // частый случай: всё ещё > 4096 по байтам или открыто не с кнопки
-            note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате и/или уберите часть светильников.');
+            note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате.');
             return;
         }
 
-        if (usedLevel >= 6) noteExtra += ' (светильники урезаны до 20)';
-        else if (usedLevel >= 5) noteExtra += ' (светильники урезаны до 40)';
-        else if (usedLevel >= 3) noteExtra += ' (освещение не передано)';
-        else if (usedLevel >= 2) noteExtra += ' (полосы упрощены)';
+        if (usedLevel >= 6) noteExtra += ' ⚠ освещение НЕ передано';
+        else if (usedLevel >= 5) noteExtra += ' ⚠ споты убраны (люстры/карнизы/полосы есть)';
+        else if (usedLevel >= 4) noteExtra += ' ⚠ споты ≤20';
+        else if (usedLevel >= 3) noteExtra += ' ⚠ споты ≤40';
+        else if (usedLevel >= 2) noteExtra += ' (полосы без точек)';
+        else if (usedLevel >= 1) noteExtra += ' (без отступов стен)';
 
-        note('Отправлено ' + completedCeilings.length + ' пот., ' + byteLen(toSend) + ' б' + noteExtra);
+        note('Отправлено ' + completedCeilings.length + ' пот., освещение: ' + sentFx + '/' + fxTotal + ', ' + byteLen(toSend) + ' б' + noteExtra);
         try {
             if (webApp.HapticFeedback && webApp.HapticFeedback.notificationOccurred) {
                 webApp.HapticFeedback.notificationOccurred('success');
