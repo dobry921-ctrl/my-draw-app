@@ -500,7 +500,7 @@
         }, true);
 
         // =====================================================================
-        //  Геометрия (без изменений)
+        //  Геометрия (оригинальная без изменений)
         // =====================================================================
         function doIntersect(p1, p2, p3, p4) {
             if ((Math.hypot(p1.x-p3.x, p1.y-p3.y) < 1e-4) || (Math.hypot(p1.x-p4.x, p1.y-p4.y) < 1e-4) ||
@@ -1570,7 +1570,7 @@
             draw();
         }
 
-        // ---- Геометрические функции (без изменений) ----
+        // ---- Геометрические функции (оригинал) ----
         function toggleDiagonalByIndex(idx) {
             const d = availableDiagonals[idx];
             if (!d) return;
@@ -2209,7 +2209,6 @@
             stripDraft = [];
             stripPreviewLen = 0;
             editCeilingIndex = -1;
-            // сбрасываем drag
             dragState = null;
 
             state = 'DRAWING';
@@ -2295,44 +2294,55 @@
         }
 
         // =====================================================================
-        //  Обработчики pointer с поддержкой drag
+        //  Обработчики pointer с поддержкой drag (исправленная версия)
         // =====================================================================
 
-        // Заменяем старые обработчики новыми (удаляем старые, добавляем новые)
-        // Для этого мы сначала удалим старые, если они были (их может не быть, но мы переопределим).
-        // В коде они были добавлены ранее, но мы их перезапишем.
-        // Просто заново добавляем обработчики, они перекроют старые.
-
-        // Удаляем старые обработчики, чтобы избежать дублирования
-        // Мы не можем удалить анонимные, поэтому просто перезапишем через новые.
+        // Эти обработчики полностью заменяют старые, но сохраняют логику рисования
 
         canvas.addEventListener('pointerdown', function(e) {
-            // Запоминаем указатель
             activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
 
-            // Если мы в режиме INSTALL, проверяем, не попали ли в объект
+            // ---- Если мы в режиме INSTALL, обрабатываем монтаж / drag ----
             if (state === 'INSTALL') {
                 const rect = canvas.getBoundingClientRect();
                 const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
 
                 // Если рисуем полосу (добавляем точки)
-                if (lightingSub === 'strip' && stripDraft.length >= 0) {
-                    // при первом касании в режиме полосы – добавляем точку
-                    if (stripDraft.length === 0 || (stripDraft.length > 0 && !dragState)) {
-                        stripDraft.push({ x: worldPos.x, y: worldPos.y });
-                        stripPreviewLen = polylineLength(stripDraft);
-                        updateStripMiniPanel();
-                        updateFinishStripBtn();
-                        draw();
+                if (lightingSub === 'strip') {
+                    // Проверяем, не попали ли в существующий объект (для drag)
+                    const hit = getFixtureAtPoint(worldPos.x, worldPos.y);
+                    if (hit) {
+                        const f = hit.fixture;
+                        let cx = f.x, cy = f.y;
+                        if (f.type === 'strip' && f.points && f.points.length) {
+                            let sx = 0, sy = 0;
+                            for (const p of f.points) { sx += p.x; sy += p.y; }
+                            cx = sx / f.points.length;
+                            cy = sy / f.points.length;
+                        }
+                        dragState = {
+                            fixtureIndex: hit.index,
+                            offsetX: cx - worldPos.x,
+                            offsetY: cy - worldPos.y,
+                            isDragging: true
+                        };
+                        canvas.style.cursor = 'grabbing';
                         e.preventDefault();
                         return;
                     }
+                    // Иначе добавляем точку полосы
+                    stripDraft.push({ x: worldPos.x, y: worldPos.y });
+                    stripPreviewLen = polylineLength(stripDraft);
+                    updateStripMiniPanel();
+                    updateFinishStripBtn();
+                    draw();
+                    e.preventDefault();
+                    return;
                 }
 
-                // Проверяем попадание в существующий объект
+                // Для светильников/люстр/карнизов – проверяем попадание в объект
                 const hit = getFixtureAtPoint(worldPos.x, worldPos.y);
                 if (hit) {
-                    // Начинаем перетаскивание
                     const f = hit.fixture;
                     let cx = f.x, cy = f.y;
                     if (f.type === 'strip' && f.points && f.points.length) {
@@ -2347,19 +2357,18 @@
                         offsetY: cy - worldPos.y,
                         isDragging: true
                     };
-                    // Меняем курсор (где поддерживается)
                     canvas.style.cursor = 'grabbing';
                     e.preventDefault();
                     return;
                 }
 
-                // Если не попали, то обычный тап для создания нового объекта
+                // Иначе – обычный тап для создания нового объекта
                 handleInstallTap(worldPos);
                 e.preventDefault();
                 return;
             }
 
-            // Если не INSTALL – стандартное поведение (zoom/pan)
+            // ---- Для всех остальных состояний (DRAWING, INPUT_SIDES, etc.) ----
             if (activePointers.length === 1) {
                 lastPanPos = { x: e.clientX, y: e.clientY };
                 isDragging = false;
@@ -2370,20 +2379,18 @@
         });
 
         canvas.addEventListener('pointermove', function(e) {
-            // Обновляем позицию указателя
             let idx = activePointers.findIndex(p => p.id === e.pointerId);
             if (idx !== -1) {
                 activePointers[idx].x = e.clientX;
                 activePointers[idx].y = e.clientY;
             }
 
-            // Если есть активный drag – перемещаем объект
+            // ---- Если есть активный drag – перемещаем объект ----
             if (dragState && dragState.isDragging) {
                 const rect = canvas.getBoundingClientRect();
                 const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
                 const f = fixtures[dragState.fixtureIndex];
                 if (f) {
-                    // Перемещаем весь объект
                     if (f.type === 'strip' && f.points) {
                         const dx = (worldPos.x + dragState.offsetX) - (f.points[0].x || f.x);
                         const dy = (worldPos.y + dragState.offsetY) - (f.points[0].y || f.y);
@@ -2391,14 +2398,12 @@
                             p.x += dx;
                             p.y += dy;
                         }
-                        // обновляем центральную точку для отступов
                         f.x = f.points.reduce((s,p) => s + p.x, 0) / f.points.length;
                         f.y = f.points.reduce((s,p) => s + p.y, 0) / f.points.length;
                     } else {
                         f.x = worldPos.x + dragState.offsetX;
                         f.y = worldPos.y + dragState.offsetY;
                     }
-                    // Обновляем отступы для светильника
                     updateFixtureOffsets(f);
                     draw();
                     e.preventDefault();
@@ -2406,7 +2411,7 @@
                 return;
             }
 
-            // Если не drag, то стандартное поведение (zoom/pan)
+            // ---- Стандартное поведение (pan / pinch) ----
             if (activePointers.length === 1) {
                 let dx = e.clientX - lastPanPos.x;
                 let dy = e.clientY - lastPanPos.y;
@@ -2418,7 +2423,6 @@
                     draw();
                 }
             } else if (activePointers.length === 2) {
-                // масштабирование двумя пальцами
                 const p1 = activePointers[0], p2 = activePointers[1];
                 const currentDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
                 const rect = canvas.getBoundingClientRect();
@@ -2437,24 +2441,40 @@
         });
 
         canvas.addEventListener('pointerup', function(e) {
-            // Если был drag – фиксируем объект
+            // ---- Если был drag – фиксируем объект ----
             if (dragState && dragState.isDragging) {
                 dragState.isDragging = false;
                 dragState = null;
                 canvas.style.cursor = 'crosshair';
-                updateFixtureList(); // обновляем список, чтобы отобразить новые координаты
+                updateFixtureList();
                 draw();
+                // удаляем указатель и выходим, чтобы не вызывать handleCanvasTap
+                let idx = activePointers.findIndex(p => p.id === e.pointerId);
+                if (idx !== -1) activePointers.splice(idx, 1);
+                if (activePointers.length < 2) initialPinchDist = null;
+                if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
+                return;
             }
 
-            // Удаляем указатель из списка
+            // ---- Обработка клика (для рисования) ----
             let idx = activePointers.findIndex(p => p.id === e.pointerId);
             if (idx !== -1) activePointers.splice(idx, 1);
             if (activePointers.length < 2) initialPinchDist = null;
             if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
+
+            // Если это был клик (не pan и не pinch) и состояние не INSTALL (там уже обработано)
+            if (!isDragging && activePointers.length === 0) {
+                const rect = canvas.getBoundingClientRect();
+                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                // В INSTALL клики обрабатываются в pointerdown, поэтому здесь вызываем только для рисования
+                if (state !== 'INSTALL') {
+                    handleCanvasTap(worldPos);
+                }
+            }
+            isDragging = false;
         });
 
         canvas.addEventListener('pointercancel', function(e) {
-            // Отмена drag при потере фокуса
             if (dragState && dragState.isDragging) {
                 dragState.isDragging = false;
                 dragState = null;
@@ -2468,7 +2488,7 @@
         });
 
         // =====================================================================
-        //  Drawing
+        //  Drawing (оригинальный, с добавлением drawDragHelpers)
         // =====================================================================
         function drawSummaryCardOnCanvas() {
             if (state !== 'DONE' && state !== 'SELECT_MATERIAL' && state !== 'INSTALL') return;
