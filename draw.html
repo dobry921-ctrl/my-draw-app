@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908k</title>
+    <title>ПРО Замер потолков v20260908m</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -273,6 +273,7 @@
             <button type="button" class="btn btn-outline" onclick="restoreInstallPanelFromLight()">☰ Панель</button>
             <button type="button" class="btn btn-accent" id="rotate-strip-btn" onclick="rotateSelectedStrip(90)" style="display:none;">↻ 90°</button>
             <button type="button" class="btn btn-outline" id="rotate-strip-btn-m" onclick="rotateSelectedStrip(-90)" style="display:none;">↺ 90°</button>
+            <button type="button" class="btn btn-accent" onclick="startEvenRowMode()">📏 Ряд</button>
             <span style="font-size:0.7rem;color:#555;" id="light-drag-hint">Перетаскивайте · прилипание к линии</span>
         </div>
     </div>
@@ -358,7 +359,26 @@
                 <button type="button" class="btn btn-success" style="flex:2;min-width:120px;padding:8px;font-size:0.85rem;" onclick="placeLightingBatch()">📍 Разместить</button>
                 <button type="button" class="btn btn-outline" style="flex:1;min-width:80px;padding:8px;font-size:0.8rem;" onclick="clearLightingFixtures()">Очистить свет</button>
             </div>
-            <div class="hint" style="margin-top:6px;">После «Разместить» панель свернётся. Объекты по бокам чертежа — перетащите. Полосу: тап → ↻ повернуть. Выравнивание по сетке при перетаскивании.</div>
+            <div style="margin-top:8px;padding:6px;background:#eef6ff;border-radius:8px;border:1px solid #b5d0f0;">
+                <div class="panel-title" style="font-size:0.8rem;margin-bottom:4px;">Ряд равномерно вдоль стены</div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:90px;">Кол-во в ряду:</label>
+                    <input type="number" id="even-row-count" value="5" min="2" max="40" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+                </div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:90px;">От стены:</label>
+                    <input type="number" id="even-row-offset" value="60" min="1" max="300" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+                    <span style="font-size:0.75rem;">см</span>
+                </div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:90px;">От углов:</label>
+                    <input type="number" id="even-row-inset" value="50" min="0" max="300" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+                    <span style="font-size:0.75rem;">см</span>
+                </div>
+                <button type="button" class="btn btn-accent" style="width:100%;padding:8px;font-size:0.8rem;margin-top:2px;" onclick="startEvenRowMode()">📏 Равномерно — затем тапните стену</button>
+                <div class="hint" id="even-row-hint" style="margin-top:4px;">Пример: 5 шт, 60 см от стены, 50 см от углов → точки встанут с равным шагом.</div>
+            </div>
+            <div class="hint" style="margin-top:6px;">«Разместить» — склад по бокам + перетаскивание. «Равномерно» — сразу ряд вдоль выбранной стены.</div>
         </div>
 
         <div id="cornice-tools" style="display:none;">
@@ -1422,9 +1442,89 @@
                 return;
             }
             if (installMode === 'lighting') {
-                // размещение только через «Разместить» + перетаскивание
-                showToast('Введите кол-во и нажмите «Разместить», затем перетащите объекты', 2500);
+                if (evenRowMode) {
+                    placeEvenRowOnWall(worldPos);
+                    return;
+                }
+                showToast('«Разместить» + перетаскивание, или «Равномерно» + тап по стене', 2500);
             }
+        }
+
+        let evenRowMode = false;
+
+        function startEvenRowMode() {
+            if (points.length < 3) {
+                showToast('Сначала постройте контур', 2500);
+                return;
+            }
+            evenRowMode = true;
+            const hint = document.getElementById('even-row-hint');
+            if (hint) hint.innerText = 'Тапните стену на чертеже — ряд встанет равномерно';
+            // свернуть панель для удобства тапа
+            const panel = document.getElementById('install-panel');
+            if (panel) panel.classList.remove('active');
+            lastActivePanelId = 'install-panel';
+            showLightDragBar();
+            showToast('Тапните стену для ряда', 3000);
+            draw();
+        }
+
+        function placeEvenRowOnWall(worldPos) {
+            evenRowMode = false;
+            const ei = nearestEdgeIndex(worldPos);
+            if (ei < 0 || points.length < 2) {
+                showToast('Не удалось определить стену', 2000);
+                return;
+            }
+            const n = Math.max(2, Math.min(40, parseInt((document.getElementById('even-row-count') || {}).value, 10) || 5));
+            const offset = Math.max(1, parseFloat((document.getElementById('even-row-offset') || {}).value) || 60);
+            let inset = Math.max(0, parseFloat((document.getElementById('even-row-inset') || {}).value) || 0);
+
+            const a = points[ei], b = points[(ei + 1) % points.length];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len, uy = dy / len;
+            let nx = -uy, ny = ux;
+            // внутрь контура
+            let cx = 0, cy = 0;
+            points.forEach(p => { cx += p.x; cy += p.y; });
+            cx /= points.length; cy /= points.length;
+            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+            if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+
+            // если отступы от углов слишком большие — уменьшить
+            if (inset * 2 >= len - 1) {
+                inset = Math.max(0, (len - 2) / 2);
+            }
+            const usable = Math.max(1, len - 2 * inset);
+            const step = n === 1 ? 0 : usable / (n - 1);
+
+            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
+            const lab = edges[ei] ? edges[ei].label : (getLetter(ei) + '-' + getLetter((ei + 1) % points.length));
+
+            for (let i = 0; i < n; i++) {
+                const along = inset + i * step;
+                const x = a.x + ux * along + nx * offset;
+                const y = a.y + uy * along + ny * offset;
+                const off = twoNearestEdgeOffsetsCm({ x, y });
+                fixtures.push({
+                    type: 'spot',
+                    x, y,
+                    label: 'S' + (sn++),
+                    offset_wall_a_cm: off.offset_wall_a_cm,
+                    offset_wall_b_cm: off.offset_wall_b_cm
+                });
+            }
+
+            // подсветка стены кратко через toast
+            updateFixtureList();
+            showLightDragBar();
+            autoFitCamera();
+            draw();
+            const realStep = n > 1 ? (usable / (n - 1)) : 0;
+            showToast(`${n} светильников вдоль ${lab}: отступ ${offset} см, шаг ${realStep.toFixed(1)} см`, 4000);
+            const hint = document.getElementById('even-row-hint');
+            if (hint) hint.innerText = `Готово: ${n} шт вдоль ${lab}. Можно править перетаскиванием.`;
         }
 
         let selectedFixtureIdx = -1;
