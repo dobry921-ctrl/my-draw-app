@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908j</title>
+    <title>ПРО Замер потолков v20260908k</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -216,6 +216,18 @@
         .bottom-panel .panel-title { font-size:0.85rem; }
         .bottom-panel .hint { font-size:0.7rem; }
         #finish-strip-btn { display: none; margin-top: 4px; }
+        #light-drag-bar {
+            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+            background: rgba(255,255,255,0.96);
+            border-radius: 14px; padding: 8px 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.28);
+            z-index: 120; display: none;
+            align-items: center; gap: 8px; flex-wrap: wrap;
+            max-width: 96%; justify-content: center;
+            backdrop-filter: blur(6px);
+            border: 1px solid #c5d9f0;
+        }
+        #light-drag-bar .btn { padding: 6px 12px; font-size: 0.75rem; }
         #ai-mini-bar {
             position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
             background: rgba(255,255,255,0.96);
@@ -256,6 +268,12 @@
             <input type="number" id="strip-length-input-mini" placeholder="см" step="0.1" min="0">
             <button class="btn btn-outline" onclick="undoStripPoint()">↩</button>
             <button class="btn btn-accent" onclick="finishStrip()">✅</button>
+        </div>
+        <div id="light-drag-bar">
+            <button type="button" class="btn btn-outline" onclick="restoreInstallPanelFromLight()">☰ Панель</button>
+            <button type="button" class="btn btn-accent" id="rotate-strip-btn" onclick="rotateSelectedStrip(90)" style="display:none;">↻ 90°</button>
+            <button type="button" class="btn btn-outline" id="rotate-strip-btn-m" onclick="rotateSelectedStrip(-90)" style="display:none;">↺ 90°</button>
+            <span style="font-size:0.7rem;color:#555;" id="light-drag-hint">Перетаскивайте · прилипание к линии</span>
         </div>
     </div>
 
@@ -340,7 +358,7 @@
                 <button type="button" class="btn btn-success" style="flex:2;min-width:120px;padding:8px;font-size:0.85rem;" onclick="placeLightingBatch()">📍 Разместить</button>
                 <button type="button" class="btn btn-outline" style="flex:1;min-width:80px;padding:8px;font-size:0.8rem;" onclick="clearLightingFixtures()">Очистить свет</button>
             </div>
-            <div class="hint" style="margin-top:6px;">Можно добавить ещё раз — новые объекты снова появятся под чертежом. Удаление одной точки — в списке ниже (✕).</div>
+            <div class="hint" style="margin-top:6px;">После «Разместить» панель свернётся. Объекты по бокам чертежа — перетащите. Полосу: тап → ↻ повернуть. Выравнивание по сетке при перетаскивании.</div>
         </div>
 
         <div id="cornice-tools" style="display:none;">
@@ -520,32 +538,30 @@
             const f = fixtures[dragFixture.idx];
             if (!f) return;
             if (dragFixture.mode === 'point') {
-                f.x = worldPos.x - dragFixture.grabDx;
-                f.y = worldPos.y - dragFixture.grabDy;
+                let x = worldPos.x - dragFixture.grabDx;
+                let y = worldPos.y - dragFixture.grabDy;
+                const sn = snapPointToGuides(x, y, dragFixture.idx);
+                f.x = sn.x;
+                f.y = sn.y;
                 const off = twoNearestEdgeOffsetsCm({ x: f.x, y: f.y });
                 f.offset_wall_a_cm = off.offset_wall_a_cm;
                 f.offset_wall_b_cm = off.offset_wall_b_cm;
-                dragLiveLabel = {
-                    wx: f.x, wy: f.y,
-                    text: formatWallOffsets({ x: f.x, y: f.y })
-                };
-            } else if (dragFixture.mode === 'strip' && f.points) {
-                const nx = worldPos.x - dragFixture.grabDx;
-                const ny = worldPos.y - dragFixture.grabDy;
-                const dx = nx - (dragFixture.originX || 0);
-                const dy = ny - (dragFixture.originY || 0);
-                // move relative to last applied - store base points on drag start
-                if (dragFixture.basePoints) {
-                    f.points = dragFixture.basePoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                    f.x = f.points[0].x;
-                    f.y = f.points[0].y;
-                    f.wall_offsets = stripWallOffsets(f.points);
-                    const mid = f.points[Math.floor(f.points.length / 2)];
-                    dragLiveLabel = {
-                        wx: mid.x, wy: mid.y,
-                        text: formatWallOffsets(mid) + (f.length_cm ? `\nдлина: ${f.length_cm} см` : '')
-                    };
-                }
+                let text = formatWallOffsets({ x: f.x, y: f.y });
+                if (snapGuides.length) text += '\n∥ выравнивание';
+                dragLiveLabel = { wx: f.x, wy: f.y, text };
+            } else if (dragFixture.mode === 'strip' && f.points && dragFixture.basePoints) {
+                let dx = worldPos.x - (dragFixture.originX || 0);
+                let dy = worldPos.y - (dragFixture.originY || 0);
+                const sn = snapStripTranslate(dx, dy, dragFixture.basePoints, dragFixture.idx);
+                dx = sn.dx; dy = sn.dy;
+                f.points = dragFixture.basePoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                f.x = f.points[0].x;
+                f.y = f.points[0].y;
+                f.wall_offsets = stripWallOffsets(f.points);
+                const mid = f.points[Math.floor(f.points.length / 2)];
+                let text = formatWallOffsets(mid) + (f.length_cm ? `\nдлина: ${f.length_cm} см` : '');
+                if (snapGuides.length) text += '\n∥ выравнивание';
+                dragLiveLabel = { wx: mid.x, wy: mid.y, text };
             }
         }
 
@@ -563,6 +579,9 @@
                     const hit = hitTestFixture(worldPos);
                     if (hit) {
                         const f = fixtures[hit.idx];
+                        selectedFixtureIdx = hit.idx;
+                        updateLightDragBar();
+                        showLightDragBar();
                         if (hit.mode === 'point') {
                             dragFixture = {
                                 idx: hit.idx,
@@ -635,10 +654,10 @@
             let idx = activePointers.findIndex(p => p.id === e.pointerId);
             if (idx !== -1) {
                 if (dragFixture) {
-                    // конец перетаскивания
                     updateFixtureList();
                     dragFixture = null;
                     dragLiveLabel = null;
+                    snapGuides = [];
                     draw();
                 } else if (activePointers.length === 1 && !isDragging) {
                     let rect = canvas.getBoundingClientRect();
@@ -1408,6 +1427,47 @@
             }
         }
 
+        let selectedFixtureIdx = -1;
+        let snapGuides = []; // [{x1,y1,x2,y2}] world
+        const SNAP_CM = 10;
+
+        function showLightDragBar() {
+            const bar = document.getElementById('light-drag-bar');
+            if (bar) bar.style.display = 'flex';
+            updateLightDragBar();
+        }
+        function hideLightDragBar() {
+            const bar = document.getElementById('light-drag-bar');
+            if (bar) bar.style.display = 'none';
+        }
+        function updateLightDragBar() {
+            const f = selectedFixtureIdx >= 0 ? fixtures[selectedFixtureIdx] : null;
+            const isStrip = f && f.type === 'strip';
+            const rb = document.getElementById('rotate-strip-btn');
+            const rb2 = document.getElementById('rotate-strip-btn-m');
+            if (rb) rb.style.display = isStrip ? 'inline-block' : 'none';
+            if (rb2) rb2.style.display = isStrip ? 'inline-block' : 'none';
+            const hint = document.getElementById('light-drag-hint');
+            if (hint) {
+                if (isStrip) hint.textContent = (f.label || 'Полоса') + ' · ↻ поворот · тяните';
+                else if (f) hint.textContent = (f.label || '') + ' · тяните, прилипает к линии';
+                else hint.textContent = 'Перетаскивайте · прилипание к линии';
+            }
+        }
+        function restoreInstallPanelFromLight() {
+            hideLightDragBar();
+            showOnlyPanel('install-panel');
+            setInstallMode('lighting');
+        }
+        function collapseAfterPlace() {
+            const panel = document.getElementById('install-panel');
+            if (panel) panel.classList.remove('active');
+            lastActivePanelId = 'install-panel';
+            showLightDragBar();
+            const floatBtn = document.getElementById('float-menu-btn');
+            if (floatBtn) floatBtn.style.display = 'none';
+        }
+
         function placeLightingBatch() {
             if (points.length < 3) {
                 showToast('Сначала постройте контур', 2500);
@@ -1423,16 +1483,18 @@
             }
 
             const bb = bboxOf(points);
-            const gap = 28;
-            let cursorX = bb.minX;
-            const rowY = bb.maxY + 50;
+            const gap = 32;
+            const leftX = bb.minX - 45;
+            const rightX = bb.maxX + 45;
             let sn = fixtures.filter(f => f.type === 'spot').length + 1;
             let ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
             let pn = fixtures.filter(f => f.type === 'strip').length + 1;
 
+            // светильники — слева вертикально
+            const startY = bb.minY;
             for (let i = 0; i < nSpot; i++) {
-                const x = cursorX + i * gap;
-                const y = rowY;
+                const x = leftX;
+                const y = startY + i * gap;
                 const off = twoNearestEdgeOffsetsCm({ x, y });
                 fixtures.push({
                     type: 'spot', x, y, label: 'S' + (sn++),
@@ -1441,25 +1503,31 @@
                     staged: true
                 });
             }
-            cursorX = bb.minX;
-            const rowY2 = rowY + gap + 10;
+            // люстры — справа
             for (let i = 0; i < nCh; i++) {
                 fixtures.push({
                     type: 'chandelier',
-                    x: cursorX + i * (gap + 8),
-                    y: rowY2,
+                    x: rightX,
+                    y: startY + i * (gap + 6),
                     label: 'L' + (ln++),
                     staged: true
                 });
             }
-            const rowY3 = rowY2 + (nCh ? gap + 12 : 0);
+            // полосы — справа ниже / чередуем гориз. и вертик.
             for (let i = 0; i < nStrip; i++) {
-                const y = rowY3 + i * 22;
-                const x0 = bb.minX;
-                const pts = [
-                    { x: x0, y },
-                    { x: x0 + stripLen, y }
-                ];
+                const vertical = (i % 2 === 1);
+                let pts;
+                if (vertical) {
+                    const x = rightX + 20 + Math.floor(i / 2) * 24;
+                    const y0 = bb.minY + (bb.h || 100) * 0.15;
+                    pts = [{ x, y: y0 }, { x, y: y0 + stripLen }];
+                } else {
+                    const y = bb.maxY + 30 + Math.floor(i / 2) * 24;
+                    // лучше сбоку: слева от контура горизонтально
+                    const x0 = leftX - stripLen - 10;
+                    const yy = bb.minY + (bb.h || 100) * 0.3 + Math.floor(i / 2) * 28;
+                    pts = [{ x: x0, y: yy }, { x: x0 + stripLen, y: yy }];
+                }
                 fixtures.push({
                     type: 'strip',
                     points: pts,
@@ -1472,30 +1540,134 @@
             }
 
             updateFixtureList();
-            // кадр с учётом склада под чертежом
-            const allX = points.map(p => p.x).concat(fixtures.map(f => f.x || 0));
-            const allY = points.map(p => p.y).concat(fixtures.map(f => f.y || 0));
+            const allX = points.map(p => p.x);
+            const allY = points.map(p => p.y);
             fixtures.forEach(f => {
+                if (f.x != null) allX.push(f.x);
+                if (f.y != null) allY.push(f.y);
                 if (f.points) f.points.forEach(p => { allX.push(p.x); allY.push(p.y); });
             });
             const minX = Math.min(...allX), maxX = Math.max(...allX);
             const minY = Math.min(...allY), maxY = Math.max(...allY);
             const w = maxX - minX || 1, h = maxY - minY || 1;
-            const pad = 0.35;
-            const scaleX = canvas.width / (w * (1 + pad));
-            const scaleY = canvas.height / (h * (1 + pad));
-            camera.zoom = Math.min(scaleX, scaleY, 8);
+            const pad = 0.25;
+            camera.zoom = Math.min(canvas.width / (w * (1 + pad)), canvas.height / (h * (1 + pad)), 8);
             camera.x = canvas.width / 2 - ((minX + maxX) / 2) * camera.zoom;
             camera.y = canvas.height / 2 - ((minY + maxY) / 2) * camera.zoom;
+            collapseAfterPlace();
             draw();
-            showToast(`Размещено: ${nSpot} спот., ${nCh} люстр, ${nStrip} полос — перетащите на чертёж`, 4000);
+            showToast(`Готово: ${nSpot} спот. · ${nCh} люстр · ${nStrip} полос. Тяните на чертёж`, 3500);
         }
 
         function clearLightingFixtures() {
             fixtures = fixtures.filter(f => f.type === 'cornice');
+            selectedFixtureIdx = -1;
+            snapGuides = [];
+            hideLightDragBar();
             updateFixtureList();
             draw();
             showToast('Освещение очищено', 2000);
+        }
+
+        function rotateSelectedStrip(deg) {
+            if (selectedFixtureIdx < 0) return;
+            const f = fixtures[selectedFixtureIdx];
+            if (!f || f.type !== 'strip' || !f.points || f.points.length < 2) {
+                showToast('Выберите полосу тапом', 2000);
+                return;
+            }
+            const cx = f.points.reduce((s, p) => s + p.x, 0) / f.points.length;
+            const cy = f.points.reduce((s, p) => s + p.y, 0) / f.points.length;
+            const rad = (deg * Math.PI) / 180;
+            const cos = Math.cos(rad), sin = Math.sin(rad);
+            f.points = f.points.map(p => {
+                const dx = p.x - cx, dy = p.y - cy;
+                return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+            });
+            f.x = f.points[0].x;
+            f.y = f.points[0].y;
+            f.wall_offsets = stripWallOffsets(f.points);
+            updateFixtureList();
+            draw();
+            showToast(`Полоса ${f.label}: поворот ${deg > 0 ? '+' : ''}${deg}°`, 1500);
+        }
+
+        function snapPointToGuides(x, y, skipIdx) {
+            snapGuides = [];
+            let sx = x, sy = y;
+            const others = [];
+            fixtures.forEach((f, i) => {
+                if (i === skipIdx) return;
+                if (f.type === 'spot' || f.type === 'chandelier') {
+                    others.push({ x: f.x, y: f.y });
+                }
+                if (f.type === 'strip' && f.points) {
+                    f.points.forEach(p => others.push({ x: p.x, y: p.y }));
+                    // середина
+                    if (f.points.length >= 2) {
+                        const m = f.points[Math.floor(f.points.length / 2)];
+                        others.push({ x: m.x, y: m.y });
+                    }
+                }
+            });
+            // оси через точки
+            let bestDx = SNAP_CM + 1, bestDy = SNAP_CM + 1, gx = null, gy = null;
+            others.forEach(o => {
+                const dx = Math.abs(x - o.x);
+                const dy = Math.abs(y - o.y);
+                if (dx < bestDx) { bestDx = dx; gx = o.x; }
+                if (dy < bestDy) { bestDy = dy; gy = o.y; }
+            });
+            // также snap к горизонтали/вертикали стен (bbox center lines optional)
+            if (gx != null && bestDx <= SNAP_CM) {
+                sx = gx;
+                const ext = 80;
+                snapGuides.push({ x1: gx, y1: y - ext, x2: gx, y2: y + ext, kind: 'v' });
+            }
+            if (gy != null && bestDy <= SNAP_CM) {
+                sy = gy;
+                const ext = 80;
+                snapGuides.push({ x1: x - ext, y1: gy, x2: x + ext, y2: gy, kind: 'h' });
+            }
+            return { x: sx, y: sy };
+        }
+
+        function snapStripTranslate(dx, dy, basePoints, skipIdx) {
+            const baseMidX = basePoints.reduce((s, p) => s + p.x, 0) / basePoints.length;
+            const baseMidY = basePoints.reduce((s, p) => s + p.y, 0) / basePoints.length;
+            let midX = baseMidX + dx;
+            let midY = baseMidY + dy;
+            const snapped = snapPointToGuides(midX, midY, skipIdx);
+            midX = snapped.x;
+            midY = snapped.y;
+
+            const bdx = basePoints[basePoints.length - 1].x - basePoints[0].x;
+            const bdy = basePoints[basePoints.length - 1].y - basePoints[0].y;
+            const blen = Math.hypot(bdx, bdy) || 1;
+            const ux = bdx / blen, uy = bdy / blen;
+            const nx = -uy, ny = ux;
+
+            fixtures.forEach((f, i) => {
+                if (i === skipIdx || f.type !== 'strip' || !f.points || f.points.length < 2) return;
+                const fdx = f.points[f.points.length - 1].x - f.points[0].x;
+                const fdy = f.points[f.points.length - 1].y - f.points[0].y;
+                const fl = Math.hypot(fdx, fdy) || 1;
+                const dot = Math.abs((fdx / fl) * ux + (fdy / fl) * uy);
+                if (dot < 0.95) return;
+                const fmid = {
+                    x: f.points.reduce((s, p) => s + p.x, 0) / f.points.length,
+                    y: f.points.reduce((s, p) => s + p.y, 0) / f.points.length
+                };
+                const distN = (midX - fmid.x) * nx + (midY - fmid.y) * ny;
+                snapGuides.push({
+                    x1: fmid.x + nx * distN - ux * 120,
+                    y1: fmid.y + ny * distN - uy * 120,
+                    x2: fmid.x + nx * distN + ux * 120,
+                    y2: fmid.y + ny * distN + uy * 120,
+                    kind: 'p'
+                });
+            });
+            return { dx: midX - baseMidX, dy: midY - baseMidY };
         }
 
         function updateStripMiniPanel() {
@@ -2806,7 +2978,10 @@
             stripDraft = [];
             aiSpotPreview = null;
             aiSpotVariants = [];
+            selectedFixtureIdx = -1;
+            snapGuides = [];
             hideAiMiniBar();
+            hideLightDragBar();
             document.getElementById('strip-mini-panel').style.display = 'none';
             document.getElementById('finish-strip-btn').style.display = 'none';
             hidePanel('install-panel');
@@ -4044,6 +4219,48 @@
                     ctx.fillStyle = '#e67e22'; ctx.font = 'bold 12px Arial';
                     ctx.textAlign = 'left'; ctx.fillText(stripPreviewLen.toFixed(1) + ' см', sl.x + 8, sl.y - 8);
                 }
+            }
+
+            // Направляющие выравнивания
+            if (snapGuides && snapGuides.length) {
+                ctx.save();
+                snapGuides.forEach(g => {
+                    const s1 = toScreen(g.x1, g.y1), s2 = toScreen(g.x2, g.y2);
+                    ctx.beginPath();
+                    ctx.moveTo(s1.x, s1.y);
+                    ctx.lineTo(s2.x, s2.y);
+                    ctx.strokeStyle = g.kind === 'p' ? 'rgba(46,204,113,0.85)' : 'rgba(52,152,219,0.9)';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([6, 4]);
+                    ctx.stroke();
+                });
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+            // Рамка выбранного объекта
+            if (selectedFixtureIdx >= 0 && fixtures[selectedFixtureIdx]) {
+                const sf = fixtures[selectedFixtureIdx];
+                ctx.save();
+                ctx.strokeStyle = '#1a73e8';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 3]);
+                if (sf.type === 'strip' && sf.points) {
+                    ctx.beginPath();
+                    const p0 = toScreen(sf.points[0].x, sf.points[0].y);
+                    ctx.moveTo(p0.x, p0.y);
+                    for (let k = 1; k < sf.points.length; k++) {
+                        const pk = toScreen(sf.points[k].x, sf.points[k].y);
+                        ctx.lineTo(pk.x, pk.y);
+                    }
+                    ctx.stroke();
+                } else if (sf.x != null) {
+                    const sp = toScreen(sf.x, sf.y);
+                    ctx.beginPath();
+                    ctx.arc(sp.x, sp.y, 16, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.setLineDash([]);
+                ctx.restore();
             }
 
             // Подсказка отступов при перетаскивании
