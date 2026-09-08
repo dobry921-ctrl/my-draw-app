@@ -309,10 +309,21 @@
             <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
         </div>
 
-        <div class="color-row" id="cornice-offset-row" style="display:none;">
-            <label>Вынос:</label>
-            <input type="number" id="cornice-offset-input" value="20" min="1" max="50" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;">
-            <span>см</span>
+        <div id="cornice-tools" style="display:none;">
+            <div class="color-row" style="margin-bottom:4px;">
+                <label>Тип:</label>
+                <select id="cornice-type-select" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                    <option value="Карниз стандарт">Карниз стандарт</option>
+                    <option value="Карниз скрытый">Карниз скрытый</option>
+                    <option value="Карниз декоративный">Карниз декоративный</option>
+                </select>
+            </div>
+            <div class="color-row" id="cornice-offset-row">
+                <label>Вынос:</label>
+                <input type="number" id="cornice-offset-input" value="20" min="1" max="50" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;">
+                <span>см</span>
+            </div>
+            <div class="hint">Выберите тип, затем тапните стороны. Считается по пог. метрам.</div>
         </div>
         <div id="fixture-list" class="fixture-list"></div>
         <!-- Кнопка завершения полосы в основной панели -->
@@ -1211,19 +1222,24 @@
             }
             if (installMode === 'cornice') {
                 const ei = nearestEdgeIndex(worldPos);
-                // Используем значение из поля, по умолчанию 20
                 const off = parseFloat(document.getElementById('cornice-offset-input').value) || 20;
+                const sel = document.getElementById('cornice-type-select');
+                const cname = (sel && sel.value) ? sel.value : 'Карниз стандарт';
+                let lenCm = 0;
+                if (edges[ei] && edges[ei].lengthCm != null) lenCm = parseFloat(edges[ei].lengthCm) || 0;
                 fixtures = fixtures.filter(f => !(f.type === 'cornice' && f.edge_index === ei));
                 fixtures.push({
                     type: 'cornice',
                     edge_index: ei,
                     offset_cm: off,
+                    name: cname,
+                    length_cm: lenCm,
                     x: (points[ei].x + points[(ei + 1) % points.length].x) / 2,
                     y: (points[ei].y + points[(ei + 1) % points.length].y) / 2,
-                    label: `Карниз ${edges[ei] ? edges[ei].label : ei}`
+                    label: `${cname} ${edges[ei] ? edges[ei].label : ei}`
                 });
                 updateFixtureList();
-                showToast(`Карниз на ${edges[ei] ? edges[ei].label : ei}, вынос ${off} см`, 2000);
+                showToast(`${cname} на ${edges[ei] ? edges[ei].label : ei}, ${lenCm || '?'} см, вынос ${off}`, 2200);
                 draw();
                 return;
             }
@@ -1305,10 +1321,10 @@
             const hint = document.getElementById('install-hint');
             const pt = document.getElementById('profile-tools');
             const lt = document.getElementById('lighting-tools');
-            const cr = document.getElementById('cornice-offset-row');
+            const cr = document.getElementById('cornice-tools') || document.getElementById('cornice-offset-row');
             if (pt) pt.style.display = mode === 'profile' ? 'block' : 'none';
             if (lt) lt.style.display = mode === 'lighting' ? 'block' : 'none';
-            if (cr) cr.style.display = mode === 'cornice' ? 'flex' : 'none';
+            if (cr) cr.style.display = mode === 'cornice' ? 'block' : 'none';
             // Скрыть мини-панель, если не полоса
             document.getElementById('strip-mini-panel').style.display = 'none';
             document.getElementById('finish-strip-btn').style.display = 'none';
@@ -1317,7 +1333,7 @@
             } else if (mode === 'lighting') {
                 setLightingSub(lightingSub || 'spot');
             } else if (mode === 'cornice') {
-                hint.innerText = 'Тапните по стороне — карниз вдоль неё';
+                hint.innerText = 'Выберите тип в списке, затем тапните сторону — карниз по пог.м.';
             }
             updateFixtureList();
             draw();
@@ -1416,7 +1432,7 @@
             fixtures.forEach((f, idx) => {
                 let t = f.label || f.type;
                 if (f.type === 'spot') t = `💡 ${f.label} (${f.offset_wall_a_cm}/${f.offset_wall_b_cm} см)`;
-                if (f.type === 'cornice') t = `🪟 ${f.label} ${f.offset_cm} см`;
+                if (f.type === 'cornice') t = `🪟 ${f.name || f.label} ${f.length_cm ? (f.length_cm + 'см') : ''} вынос ${f.offset_cm || 0}`;
                 if (f.type === 'chandelier') t = `💡 Люстра ${f.label}`;
                 if (f.type === 'strip') t = `💡 Полоса ${f.label}: ${f.length_cm} см`;
                 lines.push(`<div class="fixture-row"><span>${t}</span><button type="button" onclick="removeFixture(${idx})">✕</button></div>`);
@@ -2083,6 +2099,8 @@
                 if (f.type === 'cornice') {
                     o.edge_index = f.edge_index;
                     o.offset_cm = f.offset_cm;
+                    o.name = f.name || '';
+                    o.length_cm = f.length_cm || 0;
                 }
                 if (f.type === 'strip') {
                     o.points = (f.points || []).map(p => ({ x: p.x / 100, y: p.y / 100 }));
@@ -2234,7 +2252,7 @@
 
             const pt = document.getElementById('profile-tools');
             const lt = document.getElementById('lighting-tools');
-            const cr = document.getElementById('cornice-offset-row');
+            const cr = document.getElementById('cornice-tools') || document.getElementById('cornice-offset-row');
             const cb = document.getElementById('chandelier-center-btn');
             if (pt) pt.style.display = 'block';
             if (lt) lt.style.display = 'none';
@@ -2405,7 +2423,10 @@
                                     return o;
                                 }
                                 if (f.type === 'cornice') {
-                                    return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
+                                    var ko = { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
+                                    if (f.name) ko.n = f.name;
+                                    if (f.length_cm) ko.len = r(f.length_cm, 1);
+                                    return ko;
                                 }
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
@@ -2782,6 +2803,26 @@
 
             drawSummaryCardOnCanvas();
         }
+
+        // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
+        function loadCorniceCatalogFromUrl() {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                let raw = params.get('cornices') || '';
+                if (!raw) return;
+                const names = decodeURIComponent(raw).split('|').map(s => s.trim()).filter(Boolean);
+                if (!names.length) return;
+                const sel = document.getElementById('cornice-type-select');
+                if (!sel) return;
+                sel.innerHTML = '';
+                names.forEach(function (n) {
+                    const opt = document.createElement('option');
+                    opt.value = n; opt.textContent = n;
+                    sel.appendChild(opt);
+                });
+            } catch (e) { console.warn('cornices url', e); }
+        }
+        loadCorniceCatalogFromUrl();
 
         // ---- Инициализация ----
         const webApp = getTelegramWebApp();
