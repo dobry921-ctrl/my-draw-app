@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908h</title>
+    <title>ПРО Замер потолков v20260908i</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -333,54 +333,115 @@
             </div>
             <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
 
-            <!-- ИИ: полный план освещения -->
-            <div id="ai-light-tools" style="margin-top:6px; padding:6px; background:#f0f7ff; border-radius:8px; border:1px solid #c5d9f0;">
-                <div class="panel-title" style="font-size:0.8rem; margin-bottom:4px;">🤖 ИИ-план освещения</div>
-                <div class="hint" style="margin-bottom:4px;">Укажите всё планируемое освещение, затем «Предложить». ИИ даст несколько вариантов расстановки внутри контура.</div>
+            <!-- Точная расстановка по размерам клиента -->
+            <div id="exact-light-tools" style="margin-top:6px; padding:6px; background:#eef9f0; border-radius:8px; border:1px solid #a8d5b5;">
+                <div class="panel-title" style="font-size:0.8rem; margin-bottom:4px;">📏 По размерам клиента</div>
+                <div class="hint" style="margin-bottom:4px;">Клиент назвал отступы и шаг — вводите сюда. Тап по стороне на чертеже = выбрать стену-ориентир.</div>
+
                 <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Светильники:</label>
-                    <input type="number" id="ai-spot-count" value="4" min="0" max="60" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    <label style="min-width:78px;">Стена:</label>
+                    <select id="exact-edge-select" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;"></select>
                 </div>
+                <div class="hint" id="exact-edge-hint" style="margin-bottom:4px;">Или тапните сторону на чертеже</div>
+
                 <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Люстры:</label>
-                    <input type="number" id="ai-ch-count" value="0" min="0" max="10" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                </div>
-                <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Полосы:</label>
-                    <input type="number" id="ai-strip-count" value="0" min="0" max="8" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                </div>
-                <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Дл. полосы:</label>
-                    <input type="number" id="ai-strip-len" value="150" min="30" max="800" step="10" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    <span style="font-size:0.75rem;">см</span>
-                </div>
-                <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Отступ:</label>
-                    <input type="number" id="ai-spot-margin" value="30" min="5" max="80" step="5" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    <span style="font-size:0.75rem;">см</span>
-                </div>
-                <div class="color-row" style="margin-bottom:4px;">
-                    <label style="min-width:78px;">Стиль:</label>
-                    <select id="ai-spot-pattern" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
-                        <option value="all">Все стили (15–20 вар.)</option>
-                        <option value="symmetry">Симметрия</option>
-                        <option value="grid">Сетка</option>
-                        <option value="rows">Ряды вдоль длинной</option>
-                        <option value="cols">Ряды вдоль короткой</option>
-                        <option value="perimeter">По периметру</option>
-                        <option value="center">К центру</option>
-                        <option value="mixed">Смешанный</option>
-                        <option value="random">Случайный</option>
+                    <label style="min-width:78px;">Что ставим:</label>
+                    <select id="exact-what" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;" onchange="updateExactForm()">
+                        <option value="row">Ряд светильников</option>
+                        <option value="one">Один светильник</option>
+                        <option value="strip">Световая полоса</option>
+                        <option value="grid">Сетка светильников</option>
                     </select>
                 </div>
-                <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">
-                    <button type="button" class="btn btn-accent" style="flex:1;min-width:90px;padding:6px;font-size:0.75rem;" onclick="aiProposeLighting()">Предложить</button>
-                    <button type="button" class="btn btn-outline" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiNextVariant()">Другой вар.</button>
-                    <button type="button" class="btn btn-success" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiAcceptLighting()">Принять</button>
-                    <button type="button" class="btn btn-danger" style="flex:1;min-width:60px;padding:6px;font-size:0.75rem;" onclick="aiClearPreview()">Сброс</button>
+
+                <div id="exact-fields-row">
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">От стены:</label>
+                        <input type="number" id="exact-offset" value="60" min="1" max="500" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см</span>
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">От начала:</label>
+                        <input type="number" id="exact-start" value="50" min="0" max="1000" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см</span>
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;" id="exact-count-row">
+                        <label style="min-width:78px;">Кол-во:</label>
+                        <input type="number" id="exact-count" value="4" min="1" max="40" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;" id="exact-step-row">
+                        <label style="min-width:78px;">Шаг:</label>
+                        <input type="number" id="exact-step" value="80" min="10" max="500" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см между</span>
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px; display:none;" id="exact-len-row">
+                        <label style="min-width:78px;">Длина:</label>
+                        <input type="number" id="exact-len" value="200" min="20" max="1000" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см</span>
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px; display:none;" id="exact-rows-row">
+                        <label style="min-width:78px;">Рядов:</label>
+                        <input type="number" id="exact-rows" value="2" min="1" max="10" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px; display:none;" id="exact-rowstep-row">
+                        <label style="min-width:78px;">Шаг рядов:</label>
+                        <input type="number" id="exact-rowstep" value="100" min="10" max="500" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см</span>
+                    </div>
                 </div>
-                <div class="hint" id="ai-spot-hint" style="margin-top:4px;">Заполните план → «Предложить». Синие = споты, красные = люстры, жёлтые линии = полосы.</div>
+
+                <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-success" style="flex:2;min-width:120px;padding:8px;font-size:0.8rem;" onclick="exactPlaceByMeasures()">📍 Поставить по размерам</button>
+                    <button type="button" class="btn btn-outline" style="flex:1;min-width:70px;padding:8px;font-size:0.75rem;" onclick="exactPreviewMeasures()">👁 Превью</button>
+                </div>
+                <div class="hint" id="exact-hint" style="margin-top:4px;">Пример: стена A-B, от стены 60 см, от начала 50 см, 4 шт, шаг 80 см.</div>
             </div>
+
+            <!-- ИИ свёрнут — вторичный -->
+            <details style="margin-top:6px;">
+                <summary style="font-size:0.75rem;color:#666;cursor:pointer;padding:4px;">🤖 ИИ-подсказки (необязательно)</summary>
+                <div id="ai-light-tools" style="margin-top:4px; padding:6px; background:#f0f7ff; border-radius:8px; border:1px solid #c5d9f0;">
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">Светильники:</label>
+                        <input type="number" id="ai-spot-count" value="4" min="0" max="60" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">Люстры:</label>
+                        <input type="number" id="ai-ch-count" value="0" min="0" max="10" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">Полосы:</label>
+                        <input type="number" id="ai-strip-count" value="0" min="0" max="8" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">Дл. полосы:</label>
+                        <input type="number" id="ai-strip-len" value="150" min="30" max="800" step="10" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см</span>
+                    </div>
+                    <div class="color-row" style="margin-bottom:3px;">
+                        <label style="min-width:78px;">Отступ:</label>
+                        <input type="number" id="ai-spot-margin" value="30" min="5" max="80" step="5" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                        <span style="font-size:0.75rem;">см</span>
+                    </div>
+                    <div class="color-row" style="margin-bottom:4px;">
+                        <label style="min-width:78px;">Стиль:</label>
+                        <select id="ai-spot-pattern" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                            <option value="all">Все стили</option>
+                            <option value="symmetry">Симметрия</option>
+                            <option value="grid">Сетка</option>
+                            <option value="rows">Ряды</option>
+                            <option value="perimeter">Периметр</option>
+                            <option value="random">Случайный</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <button type="button" class="btn btn-accent" style="flex:1;padding:6px;font-size:0.75rem;" onclick="aiProposeLighting()">Предложить</button>
+                        <button type="button" class="btn btn-outline" style="flex:1;padding:6px;font-size:0.75rem;" onclick="aiNextVariant()">Другой</button>
+                        <button type="button" class="btn btn-success" style="flex:1;padding:6px;font-size:0.75rem;" onclick="aiAcceptLighting()">Принять</button>
+                    </div>
+                    <div class="hint" id="ai-spot-hint" style="margin-top:4px;">ИИ — только черновик. Для клиента используйте «По размерам».</div>
+                </div>
+            </details>
         </div>
 
         <div id="cornice-tools" style="display:none;">
@@ -1318,6 +1379,17 @@
                 return;
             }
             if (installMode === 'lighting') {
+                // Тап близко к стене — выбор ориентира для «По размерам»
+                const nearEi = nearestEdgeIndex(worldPos);
+                if (nearEi >= 0 && points.length >= 2) {
+                    const a = points[nearEi], b = points[(nearEi + 1) % points.length];
+                    const dEdge = distPointToSegment(worldPos, a, b);
+                    if (dEdge < 25 / Math.max(camera.zoom, 0.01)) {
+                        selectExactEdge(nearEi);
+                        // не ставим точку, только выбираем стену
+                        if (lightingSub !== 'strip') return;
+                    }
+                }
                 if (lightingSub === 'strip') {
                     stripDraft.push({ x: worldPos.x, y: worldPos.y });
                     stripPreviewLen = polylineLength(stripDraft);
@@ -1405,6 +1477,8 @@
             if (mode === 'profile') {
                 hint.innerText = 'Выберите профиль, тапните стороны. Без тапов — на все стороны.';
             } else if (mode === 'lighting') {
+                refreshExactEdgeSelect();
+                updateExactForm();
                 setLightingSub(lightingSub || 'spot');
             } else if (mode === 'cornice') {
                 hint.innerText = 'Выберите тип в списке, затем тапните сторону — карниз по пог.м.';
@@ -1425,21 +1499,205 @@
             const centerBtn = document.getElementById('chandelier-center-btn');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
-            const aiTools = document.getElementById('ai-light-tools');
             if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
-            if (aiTools) aiTools.style.display = 'block';
-            // Управление мини-панелью и кнопкой
+            refreshExactEdgeSelect();
             if (sub === 'strip') {
                 miniPanel.style.display = 'flex';
                 updateStripMiniPanel();
                 updateFinishStripBtn();
-                hint.innerText = 'Полоса вручную: рисуйте точками. Или задайте план в ИИ-блоке ниже.';
+                hint.innerText = 'Полоса: точки вручную ИЛИ блок «По размерам» (стена + отступ + длина).';
             } else {
                 miniPanel.style.display = 'none';
                 finishBtn.style.display = 'none';
-                if (sub === 'spot') hint.innerText = 'Светильник: тап вручную или полный план в ИИ-блоке ниже.';
-                else if (sub === 'chandelier') hint.innerText = 'Люстра: тап / «по центру» или полный план в ИИ-блоке.';
+                if (sub === 'spot') hint.innerText = 'Светильник: тап вручную ИЛИ «По размерам клиента» (отступ, шаг, кол-во).';
+                else if (sub === 'chandelier') hint.innerText = 'Люстра: тап или «по центру».';
             }
+            draw();
+        }
+
+        // =====================================================================
+        //  Точная расстановка по размерам клиента
+        // =====================================================================
+        let exactEdgeIndex = 0;
+        let exactPreview = null; // { spots, strips }
+
+        function refreshExactEdgeSelect() {
+            const sel = document.getElementById('exact-edge-select');
+            if (!sel || !points.length) return;
+            const prev = sel.value;
+            sel.innerHTML = points.map((p, i) => {
+                const lab = edges[i] ? edges[i].label : (p.letter + '-' + points[(i + 1) % points.length].letter);
+                const len = edges[i] && edges[i].lengthCm != null ? ` (${edges[i].lengthCm} см)` : '';
+                return `<option value="${i}">${lab}${len}</option>`;
+            }).join('');
+            if (prev !== '' && Number(prev) < points.length) sel.value = prev;
+            else if (exactEdgeIndex < points.length) sel.value = String(exactEdgeIndex);
+            sel.onchange = function () {
+                exactEdgeIndex = parseInt(sel.value, 10) || 0;
+                const h = document.getElementById('exact-edge-hint');
+                if (h) h.innerText = 'Стена: ' + (edges[exactEdgeIndex] ? edges[exactEdgeIndex].label : exactEdgeIndex);
+                draw();
+            };
+        }
+
+        function selectExactEdge(ei) {
+            exactEdgeIndex = ei;
+            const sel = document.getElementById('exact-edge-select');
+            if (sel) sel.value = String(ei);
+            const lab = edges[ei] ? edges[ei].label : ei;
+            const h = document.getElementById('exact-edge-hint');
+            if (h) h.innerText = 'Выбрана стена: ' + lab + ' (тапните другую при необходимости)';
+            showToast('Стена-ориентир: ' + lab, 2000);
+            draw();
+        }
+
+        function updateExactForm() {
+            const what = (document.getElementById('exact-what') || {}).value || 'row';
+            const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
+            show('exact-count-row', what === 'row' || what === 'grid');
+            show('exact-step-row', what === 'row' || what === 'grid');
+            show('exact-len-row', what === 'strip');
+            show('exact-rows-row', what === 'grid');
+            show('exact-rowstep-row', what === 'grid');
+            const hint = document.getElementById('exact-hint');
+            if (!hint) return;
+            if (what === 'row') hint.innerText = 'Ряд вдоль стены: отступ от стены, отступ первого от начала стены, кол-во, шаг между.';
+            else if (what === 'one') hint.innerText = 'Один светильник: отступ от выбранной стены + отступ от начала этой стены.';
+            else if (what === 'strip') hint.innerText = 'Полоса параллельно стене: отступ от стены, от начала, длина полосы.';
+            else if (what === 'grid') hint.innerText = 'Сетка: отступ от стены, от начала, в ряду, шаг в ряду, число рядов, шаг между рядами.';
+        }
+
+        function edgeFrame(ei) {
+            // локальная система: origin = points[ei], axis along edge, inward normal
+            const a = points[ei], b = points[(ei + 1) % points.length];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len, uy = dy / len;
+            let nx = -uy, ny = ux;
+            const cen = polygonCentroid(points);
+            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+            if ((cen.x - mx) * nx + (cen.y - my) * ny < 0) { nx = -nx; ny = -ny; }
+            return { a, b, len, ux, uy, nx, ny };
+        }
+
+        function pointFromEdgeMeasures(ei, alongCm, offsetCm) {
+            const f = edgeFrame(ei);
+            return {
+                x: f.a.x + f.ux * alongCm + f.nx * offsetCm,
+                y: f.a.y + f.uy * alongCm + f.ny * offsetCm
+            };
+        }
+
+        function readExactParams() {
+            const what = (document.getElementById('exact-what') || {}).value || 'row';
+            const sel = document.getElementById('exact-edge-select');
+            const ei = sel ? (parseInt(sel.value, 10) || 0) : exactEdgeIndex;
+            exactEdgeIndex = ei;
+            return {
+                what,
+                ei,
+                offset: parseFloat((document.getElementById('exact-offset') || {}).value) || 0,
+                start: parseFloat((document.getElementById('exact-start') || {}).value) || 0,
+                count: Math.max(1, parseInt((document.getElementById('exact-count') || {}).value, 10) || 1),
+                step: parseFloat((document.getElementById('exact-step') || {}).value) || 80,
+                len: parseFloat((document.getElementById('exact-len') || {}).value) || 200,
+                rows: Math.max(1, parseInt((document.getElementById('exact-rows') || {}).value, 10) || 2),
+                rowStep: parseFloat((document.getElementById('exact-rowstep') || {}).value) || 100
+            };
+        }
+
+        function computeExactLayout(p) {
+            const spots = [];
+            const strips = [];
+            const f = edgeFrame(p.ei);
+
+            if (p.what === 'one') {
+                const pt = pointFromEdgeMeasures(p.ei, p.start, p.offset);
+                if (pointInPolygon(pt, points)) spots.push(pt);
+            } else if (p.what === 'row') {
+                for (let i = 0; i < p.count; i++) {
+                    const along = p.start + i * p.step;
+                    if (along < -1 || along > f.len + 1) continue;
+                    const pt = pointFromEdgeMeasures(p.ei, along, p.offset);
+                    if (pointInPolygon(pt, points)) spots.push(pt);
+                }
+            } else if (p.what === 'grid') {
+                for (let r = 0; r < p.rows; r++) {
+                    for (let i = 0; i < p.count; i++) {
+                        const along = p.start + i * p.step;
+                        const off = p.offset + r * p.rowStep;
+                        const pt = pointFromEdgeMeasures(p.ei, along, off);
+                        if (pointInPolygon(pt, points)) spots.push(pt);
+                    }
+                }
+            } else if (p.what === 'strip') {
+                const p0 = pointFromEdgeMeasures(p.ei, p.start, p.offset);
+                const p1 = pointFromEdgeMeasures(p.ei, p.start + p.len, p.offset);
+                // подрезать если вылезли за длину стены — всё равно ставим по числам клиента
+                if (pointInPolygon(p0, points) || pointInPolygon(p1, points)) {
+                    strips.push({
+                        points: [p0, p1],
+                        length_cm: Math.round(Math.hypot(p1.x - p0.x, p1.y - p0.y) * 10) / 10
+                    });
+                }
+            }
+            return { spots, strips };
+        }
+
+        function exactPreviewMeasures() {
+            if (points.length < 3) {
+                showToast('Нет контура', 2000);
+                return;
+            }
+            refreshExactEdgeSelect();
+            const p = readExactParams();
+            exactPreview = computeExactLayout(p);
+            const ns = exactPreview.spots.length, np = exactPreview.strips.length;
+            if (!ns && !np) {
+                showToast('Точки вне контура — проверьте стену, отступы и шаг', 3500);
+                exactPreview = null;
+                draw();
+                return;
+            }
+            showToast(`Превью: ${ns} точ., ${np} полос. «Поставить» — зафиксировать`, 3000);
+            draw();
+        }
+
+        function exactPlaceByMeasures() {
+            if (points.length < 3) {
+                showToast('Нет контура', 2000);
+                return;
+            }
+            refreshExactEdgeSelect();
+            const p = readExactParams();
+            const layout = computeExactLayout(p);
+            if (!layout.spots.length && !layout.strips.length) {
+                showToast('Нечего ставить — точки вне контура. Проверьте размеры.', 3500);
+                return;
+            }
+            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
+            let pn = fixtures.filter(f => f.type === 'strip').length + 1;
+            layout.spots.forEach(pt => {
+                const off = twoNearestEdgeOffsetsCm(pt);
+                fixtures.push({
+                    type: 'spot', x: pt.x, y: pt.y, label: 'S' + (sn++),
+                    offset_wall_a_cm: off.offset_wall_a_cm,
+                    offset_wall_b_cm: off.offset_wall_b_cm
+                });
+            });
+            layout.strips.forEach(st => {
+                fixtures.push({
+                    type: 'strip',
+                    points: st.points.map(q => ({ x: q.x, y: q.y })),
+                    length_cm: st.length_cm,
+                    label: 'P' + (pn++),
+                    wall_offsets: stripWallOffsets(st.points),
+                    x: st.points[0].x, y: st.points[0].y
+                });
+            });
+            exactPreview = null;
+            updateFixtureList();
+            showToast(`Добавлено: ${layout.spots.length} светильников, ${layout.strips.length} полос`, 3000);
             draw();
         }
 
@@ -3725,6 +3983,47 @@
                     ctx.fillStyle = '#e67e22'; ctx.font = 'bold 12px Arial';
                     ctx.textAlign = 'left'; ctx.fillText(stripPreviewLen.toFixed(1) + ' см', sl.x + 8, sl.y - 8);
                 }
+            }
+
+            // Подсветка выбранной стены для «По размерам»
+            if (state === 'INSTALL' && installMode === 'lighting' && points.length >= 2) {
+                const ei = exactEdgeIndex | 0;
+                if (ei >= 0 && ei < points.length) {
+                    const s1 = toScreen(points[ei].x, points[ei].y);
+                    const s2 = toScreen(points[(ei + 1) % points.length].x, points[(ei + 1) % points.length].y);
+                    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 5; ctx.stroke();
+                }
+            }
+
+            // Превью точной расстановки по размерам
+            if (state === 'INSTALL' && exactPreview) {
+                (exactPreview.strips || []).forEach(st => {
+                    if (!st.points || st.points.length < 2) return;
+                    ctx.beginPath();
+                    const s0 = toScreen(st.points[0].x, st.points[0].y);
+                    ctx.moveTo(s0.x, s0.y);
+                    for (let k = 1; k < st.points.length; k++) {
+                        const sk = toScreen(st.points[k].x, st.points[k].y);
+                        ctx.lineTo(sk.x, sk.y);
+                    }
+                    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 4; ctx.setLineDash([6, 4]);
+                    ctx.stroke(); ctx.setLineDash([]);
+                });
+                (exactPreview.spots || []).forEach((p, idx) => {
+                    const sp = toScreen(p.x, p.y);
+                    ctx.beginPath();
+                    ctx.fillStyle = 'rgba(39,174,96,0.3)';
+                    ctx.strokeStyle = '#27ae60';
+                    ctx.lineWidth = 2;
+                    ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
+                    ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#1e8449';
+                    ctx.font = 'bold 10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText('S' + (idx + 1), sp.x, sp.y - 12);
+                });
             }
 
             // Превью ИИ-плана освещения
