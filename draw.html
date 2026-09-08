@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260909</title>
+    <title>ПРО Замер потолков v20260908d</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -234,6 +234,7 @@
         <canvas id="appCanvas"></canvas>
         <div id="saved-chip"></div>
         <button id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
+        <!-- Мини-панель для световой полосы -->
         <div id="strip-mini-panel">
             <span style="font-size:0.75rem;white-space:nowrap;">Длина: <span id="strip-live-len-mini">0</span> см</span>
             <input type="number" id="strip-length-input-mini" placeholder="см" step="0.1" min="0">
@@ -243,6 +244,7 @@
     </div>
 
     <div id="bottom-input-bar" class="bottom-panel">
+        <!-- Убрана кнопка collapse-btn (крестик) -->
         <div id="input-row" onclick="focusSideInput()">
             <button class="btn btn-outline" id="prev-side-btn" onclick="prevSide()" style="display: none;">Назад</button>
             <div id="side-label">A-B =</div>
@@ -304,23 +306,58 @@
                 <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстра</button>
                 <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полоса</button>
             </div>
-            <div id="spot-extra-tools" style="display:none; margin-top:6px;">
-                <div style="display:flex; gap:4px; flex-wrap:wrap;">
-                    <button type="button" class="btn btn-outline" id="btn-spot-snap" onclick="toggleSpotSnap()" style="flex:1;min-width:70px;padding:6px;font-size:0.7rem;">🧲 Примагн. ВКЛ</button>
-                    <button type="button" class="btn btn-outline" id="btn-spot-even" onclick="evenlyPlaceSpots()" style="flex:1;min-width:70px;padding:6px;font-size:0.7rem;">📏 Равномерно</button>
-                    <button type="button" class="btn btn-outline" onclick="clearLastSpotRow()" style="flex:1;min-width:70px;padding:6px;font-size:0.7rem;">↩ Очистить ряд</button>
-                </div>
-                <div class="hint" style="margin-top:4px;" id="spot-row-hint">1) Поставьте первый светильник и подвиньте куда нужно. 2) От него идут 2 штриховые линии (горизонт + вертикаль). 3) Второй и дальше магнитятся к этим линиям. 4) «Равномерно» — разнести все на линии равными шагами.</div>
-            </div>
             <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
+
+            <!-- ИИ-расстановка светильников -->
+            <div id="ai-spot-tools" style="display:none; margin-top:6px; padding:6px; background:#f0f7ff; border-radius:8px; border:1px solid #c5d9f0;">
+                <div class="panel-title" style="font-size:0.8rem; margin-bottom:4px;">🤖 ИИ-расстановка</div>
+                <div class="color-row" style="margin-bottom:4px;">
+                    <label style="min-width:70px;">Кол-во:</label>
+                    <input type="number" id="ai-spot-count" value="4" min="1" max="60" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                </div>
+                <div class="color-row" style="margin-bottom:4px;">
+                    <label style="min-width:70px;">Отступ:</label>
+                    <input type="number" id="ai-spot-margin" value="30" min="5" max="80" step="5" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    <span style="font-size:0.75rem;">см от стен</span>
+                </div>
+                <div class="color-row" style="margin-bottom:4px;">
+                    <label style="min-width:70px;">Схема:</label>
+                    <select id="ai-spot-pattern" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                        <option value="grid">Сетка (равномерно)</option>
+                        <option value="rows">Ряды вдоль длинной стороны</option>
+                        <option value="perimeter">По периметру</option>
+                        <option value="center">К центру (кластер)</option>
+                        <option value="random">Случайно (с мин. расст.)</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-accent" style="flex:1;min-width:90px;padding:6px;font-size:0.75rem;" onclick="aiProposeSpots()">Предложить</button>
+                    <button type="button" class="btn btn-outline" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiNextVariant()">Другой вар.</button>
+                    <button type="button" class="btn btn-success" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiAcceptSpots()">Принять</button>
+                    <button type="button" class="btn btn-danger" style="flex:1;min-width:60px;padding:6px;font-size:0.75rem;" onclick="aiClearPreview()">Сброс</button>
+                </div>
+                <div class="hint" id="ai-spot-hint" style="margin-top:4px;">Введите кол-во и отступ, нажмите «Предложить». Можно переключать варианты.</div>
+            </div>
         </div>
 
-        <div class="color-row" id="cornice-offset-row" style="display:none;">
-            <label>Вынос:</label>
-            <input type="number" id="cornice-offset-input" value="20" min="1" max="50" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;">
-            <span>см</span>
+        <div id="cornice-tools" style="display:none;">
+            <div class="color-row" style="margin-bottom:4px;">
+                <label>Тип:</label>
+                <select id="cornice-type-select" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                    <option value="Карниз стандарт">Карниз стандарт</option>
+                    <option value="Карниз скрытый">Карниз скрытый</option>
+                    <option value="Карниз декоративный">Карниз декоративный</option>
+                </select>
+            </div>
+            <div class="color-row" id="cornice-offset-row">
+                <label>Вынос:</label>
+                <input type="number" id="cornice-offset-input" value="20" min="1" max="50" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;">
+                <span>см</span>
+            </div>
+            <div class="hint">Выберите тип, затем тапните стороны. Считается по пог. метрам.</div>
         </div>
         <div id="fixture-list" class="fixture-list"></div>
+        <!-- Кнопка завершения полосы в основной панели -->
         <button class="btn btn-success" id="finish-strip-btn" onclick="finishStrip()" style="display:none; width:100%; margin-top:4px; padding:6px;">✅ Завершить полосу</button>
         <div style="display:flex;gap:4px;margin-top:4px;">
             <button class="btn btn-outline" style="flex:1;padding:6px;" onclick="skipInstall()">Пропустить</button>
@@ -357,11 +394,12 @@
         <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
     </div>
 
+    <!-- Плавающая кнопка меню -->
     <div id="float-menu-btn" onclick="restoreLastPanel()">☰</div>
 
     <script>
         // =====================================================================
-        //  Глобальные переменные
+        //  Глобальные переменные и инициализация
         // =====================================================================
         const canvas = document.getElementById('appCanvas');
         const ctx = canvas.getContext('2d');
@@ -392,23 +430,8 @@
         let stripPreviewLen = 0;
         const PROFILE_COLORS = { 'Стандартный': '#2c3e50', 'Теневой': '#8e44ad', 'Парящий': '#e67e22' };
 
-        // Освещение — ряд и примагничивание
-        let spotSnapEnabled = true;
-        let spotRowGuide = null; // { ax, ay, bx, by, ux, uy } единичный вектор направления ряда
-        let lastSpotRowIndices = []; // индексы светильников текущего ряда в fixtures
-        let longPressTimer = null;
-        let longPressStart = null;
-        const SNAP_THRESHOLD_CM = 12; // радиус примагничивания к линии ряда
-        const MIN_SPOT_WALL_CM = 12;  // предупреждение если ближе к стене
-        const MIN_SPOT_DIST_CM = 15;  // предупреждение если слишком близко к другому споту
-
+        // Для сворачивания панелей
         let lastActivePanelId = null;
-        let dragState = null;
-        let stripDrawing = null;          // { startX, startY, endX, endY, active }
-
-        // Pointer
-        let activePointers = [];
-        let isDragging = false, lastPanPos = null, initialPinchDist = null, initialZoom = 1;
 
         // =====================================================================
         //  Вспомогательные функции
@@ -443,14 +466,76 @@
         function toWorld(sx, sy) { return { x: (sx - camera.x) / camera.zoom, y: (sy - camera.y) / camera.zoom }; }
         function toScreen(wx, wy) { return { x: wx * camera.zoom + camera.x, y: wy * camera.zoom + camera.y }; }
 
-        function distPointToSegment(p, a, b) {
-            const dx = b.x - a.x, dy = b.y - a.y;
-            const len2 = dx*dx + dy*dy;
-            if (len2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
-            let t = ((p.x - a.x)*dx + (p.y - a.y)*dy) / len2;
-            t = Math.max(0, Math.min(1, t));
-            return Math.hypot(p.x - (a.x + t*dx), p.y - (a.y + t*dy));
-        }
+        // --- Pointer / zoom ---
+        let activePointers = [];
+        let isDragging = false, lastPanPos = null, initialPinchDist = null, initialZoom = 1;
+
+        canvas.addEventListener('pointerdown', e => {
+            activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
+            if (activePointers.length === 1) {
+                lastPanPos = { x: e.clientX, y: e.clientY };
+                isDragging = false;
+            } else if (activePointers.length === 2) {
+                initialPinchDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
+                initialZoom = camera.zoom;
+            }
+        });
+        canvas.addEventListener('pointermove', e => {
+            let idx = activePointers.findIndex(p => p.id === e.pointerId);
+            if (idx !== -1) { activePointers[idx].x = e.clientX; activePointers[idx].y = e.clientY; }
+            if (activePointers.length === 1) {
+                let dx = e.clientX - lastPanPos.x, dy = e.clientY - lastPanPos.y;
+                if (Math.hypot(dx, dy) > 5) isDragging = true;
+                if (isDragging) {
+                    camera.x += dx; camera.y += dy;
+                    lastPanPos = { x: e.clientX, y: e.clientY };
+                    draw();
+                }
+            } else if (activePointers.length === 2) {
+                isDragging = true;
+                let p1 = activePointers[0], p2 = activePointers[1];
+                let currentDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                let rect = canvas.getBoundingClientRect();
+                let midX = (p1.x + p2.x) / 2 - rect.left;
+                let midY = (p1.y + p2.y) / 2 - rect.top;
+                if (initialPinchDist && currentDist > 5) {
+                    let newZoom = Math.max(0.2, Math.min(initialZoom * (currentDist / initialPinchDist), 10));
+                    let focalWorldX = (midX - camera.x) / camera.zoom;
+                    let focalWorldY = (midY - camera.y) / camera.zoom;
+                    camera.zoom = newZoom;
+                    camera.x = midX - focalWorldX * camera.zoom;
+                    camera.y = midY - focalWorldY * camera.zoom;
+                    draw();
+                }
+            }
+        });
+        const handlePointerEnd = (e) => {
+            let idx = activePointers.findIndex(p => p.id === e.pointerId);
+            if (idx !== -1) {
+                if (activePointers.length === 1 && !isDragging) {
+                    let rect = canvas.getBoundingClientRect();
+                    let worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                    handleCanvasTap(worldPos);
+                }
+                activePointers.splice(idx, 1);
+            }
+            if (activePointers.length < 2) initialPinchDist = null;
+            if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
+        };
+        canvas.addEventListener('pointerup', handlePointerEnd);
+        canvas.addEventListener('pointercancel', handlePointerEnd);
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            let rect = canvas.getBoundingClientRect();
+            let mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
+            let worldX = (mouseX - camera.x) / camera.zoom;
+            let worldY = (mouseY - camera.y) / camera.zoom;
+            let zoomFactor = e.deltaY > 0 ? 0.88 : 1.14;
+            camera.zoom = Math.max(0.2, Math.min(camera.zoom * zoomFactor, 10));
+            camera.x = mouseX - worldX * camera.zoom;
+            camera.y = mouseY - worldY * camera.zoom;
+            draw();
+        }, { passive: false });
 
         function isTypingSides() {
             return state === 'INPUT_SIDES' || state === 'INPUT_DIAGONALS';
@@ -514,8 +599,9 @@
                 focusSideInput();
             }
         }, true);
-                // =====================================================================
-        //  ГЕОМЕТРИЧЕСКИЕ ФУНКЦИИ (полный набор)
+
+        // =====================================================================
+        //  Геометрия (без изменений)
         // =====================================================================
         function doIntersect(p1, p2, p3, p4) {
             if ((Math.hypot(p1.x-p3.x, p1.y-p3.y) < 1e-4) || (Math.hypot(p1.x-p4.x, p1.y-p4.y) < 1e-4) ||
@@ -523,7 +609,6 @@
             const ccw = (A,B,C) => (C.y-A.y)*(B.x-A.x) > (B.y-A.y)*(C.x-A.x);
             return (ccw(p1,p3,p4) !== ccw(p2,p3,p4)) && (ccw(p1,p2,p3) !== ccw(p1,p2,p4));
         }
-
         function checkIntersectionValid(newPoint, isClosing = false) {
             if (points.length < 2) return true;
             let lastP = points[points.length - 1];
@@ -534,7 +619,6 @@
             }
             return true;
         }
-
         function hasSelfIntersection(pts) {
             let n = pts.length;
             if (n < 4) return false;
@@ -548,18 +632,13 @@
             }
             return false;
         }
-
         function getLetter(i) {
             const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
             return i < 26 ? A[i] : A[Math.floor(i/26)-1] + A[i%26];
         }
-
         function clonePoints(pts) { return pts.map(p => ({ x: p.x, y: p.y, letter: p.letter })); }
-
         function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
         function cross(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
-
         function polygonSignedArea(pts) {
             let a = 0;
             for (let i = 0; i < pts.length; i++) {
@@ -568,7 +647,6 @@
             }
             return a / 2;
         }
-
         function getTurnSigns(pts) {
             const area = polygonSignedArea(pts), orient = area >= 0 ? 1 : -1;
             return pts.map((_, i) => {
@@ -577,11 +655,8 @@
                 return Math.abs(cr) < 1e-8 ? 0 : (cr * orient > 0 ? 1 : -1);
             });
         }
-
         function edgeKey(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
-
         function allSideLengthsKnown() { return edges.length && edges.every(e => Number.isFinite(e.lengthCm) && e.lengthCm > 0); }
-
         function isBoundaryEdge(a, b, n = points.length) { return Math.abs(a - b) === 1 || Math.abs(a - b) === n - 1; }
 
         function normalizedSketch() {
@@ -599,7 +674,6 @@
             const hasPos = c1 > 1e-8 || c2 > 1e-8 || c3 > 1e-8;
             return !(hasNeg && hasPos);
         }
-
         function triangulateBySketch() {
             const n = sketchPoints.length;
             if (n < 3) return [];
@@ -631,7 +705,6 @@
             if (ids.length === 3) tris.push([ids[0], ids[1], ids[2]]);
             return tris;
         }
-
         function recommendedDiagonalPairs() {
             return triangulateBySketch().map(t => edgeKey(t[0], t[2])).filter(k => {
                 const [a, b] = k.split(':').map(Number);
@@ -1077,11 +1150,10 @@
         }
 
         // =====================================================================
-        //  UI функции (работа с точками, панелями, монтажом)
+        //  UI flow
         // =====================================================================
         function handleCanvasTap(worldPos) {
             if (state === 'INSTALL') {
-                if (dragState && dragState.isDragging) return;
                 handleInstallTap(worldPos);
                 return;
             }
@@ -1118,6 +1190,15 @@
                 if (d < bestD) { bestD = d; best = i; }
             }
             return best;
+        }
+
+        function distPointToSegment(p, a, b) {
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len2 = dx * dx + dy * dy;
+            if (len2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
+            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
         }
 
         function twoNearestEdgeOffsetsCm(worldPos) {
@@ -1158,362 +1239,7 @@
             return offs;
         }
 
-        function getFixtureAtPoint(worldX, worldY) {
-            // Крупнее зона захвата для удобства на телефоне
-            const threshold = Math.max(28 / camera.zoom, 18);
-            for (let i = 0; i < fixtures.length; i++) {
-                const f = fixtures[i];
-                if (f.type === 'strip' && f.points && f.points.length >= 2) {
-                    for (let k = 0; k < f.points.length - 1; k++) {
-                        const a = f.points[k];
-                        const b = f.points[k+1];
-                        const d = distPointToSegment({x:worldX, y:worldY}, a, b);
-                        if (d < threshold) return { index: i, fixture: f, dist: d };
-                    }
-                } else if (f.type === 'spot' || f.type === 'chandelier' || f.type === 'cornice') {
-                    const d = Math.hypot(worldX - f.x, worldY - f.y);
-                    if (d < threshold) return { index: i, fixture: f, dist: d };
-                }
-            }
-            return null;
-        }
-
-        function updateFixtureOffsets(fixture) {
-            if (fixture.type === 'spot') {
-                const off = twoNearestEdgeOffsetsCm({x:fixture.x, y:fixture.y});
-                fixture.offset_wall_a_cm = off.offset_wall_a_cm;
-                fixture.offset_wall_b_cm = off.offset_wall_b_cm;
-            }
-        }
-
-        function drawDragHelpers() {
-            if (!dragState || !dragState.isDragging) return;
-            const f = fixtures[dragState.fixtureIndex];
-            if (!f) return;
-
-            let cx = f.x, cy = f.y;
-            if (f.type === 'strip' && f.points && f.points.length) {
-                let sx = 0, sy = 0;
-                for (const p of f.points) { sx += p.x; sy += p.y; }
-                cx = sx / f.points.length;
-                cy = sy / f.points.length;
-            }
-
-            const off = twoNearestEdgeOffsetsCm({x:cx, y:cy});
-            const a = points[off.edge_a];
-            const b = points[(off.edge_a + 1) % points.length];
-            const c = points[off.edge_b];
-            const d = points[(off.edge_b + 1) % points.length];
-
-            function drawDistLine(fromX, fromY, wallP1, wallP2, label, color) {
-                const dx = wallP2.x - wallP1.x, dy = wallP2.y - wallP1.y;
-                const len2 = dx*dx + dy*dy;
-                if (len2 < 1e-10) return;
-                let t = ((cx - wallP1.x)*dx + (cy - wallP1.y)*dy) / len2;
-                t = Math.max(0, Math.min(1, t));
-                const projX = wallP1.x + t*dx;
-                const projY = wallP1.y + t*dy;
-
-                const s1 = toScreen(fromX, fromY);
-                const s2 = toScreen(projX, projY);
-                ctx.save();
-                ctx.setLineDash([4, 4]);
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.moveTo(s1.x, s1.y);
-                ctx.lineTo(s2.x, s2.y);
-                ctx.stroke();
-                ctx.restore();
-
-                const midX = (s1.x + s2.x) / 2;
-                const midY = (s1.y + s2.y) / 2;
-                const dist = Math.hypot(fromX - projX, fromY - projY); // world units = cm
-                ctx.save();
-                ctx.font = 'bold 12px Arial';
-                const txt = dist.toFixed(1) + ' см';
-                const w = ctx.measureText(txt).width;
-                ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillRect(midX - w/2 - 4, midY - 10, w + 8, 20);
-                ctx.fillStyle = color;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(txt, midX, midY);
-                ctx.restore();
-            }
-
-            drawDistLine(cx, cy, a, b, 'Стена A', '#e67e22');
-            drawDistLine(cx, cy, c, d, 'Стена B', '#2980b9');
-        }
-
-        // ===== Освещение: крестовые направляющие + примагничивание + равномерно =====
-        function getSpots() {
-            return fixtures.filter(f => f.type === 'spot');
-        }
-
-        function getSpotAnchor() {
-            // Якорь = первый поставленный светильник (или последний, если хотите менять)
-            const spots = getSpots();
-            return spots.length ? spots[0] : null;
-        }
-
-        function projectPointToLine(px, py, ax, ay, ux, uy) {
-            const t = (px - ax) * ux + (py - ay) * uy;
-            return { x: ax + t * ux, y: ay + t * uy, t };
-        }
-
-        // Примагничивание ко горизонтали и вертикали от якоря (первый светильник)
-        function snapToCrosshair(worldPos, excludeIndex) {
-            if (!spotSnapEnabled) return { x: worldPos.x, y: worldPos.y, snapped: false, axis: null };
-            const anchor = getSpotAnchor();
-            if (!anchor) return { x: worldPos.x, y: worldPos.y, snapped: false, axis: null };
-
-            const dx = Math.abs(worldPos.x - anchor.x);
-            const dy = Math.abs(worldPos.y - anchor.y);
-
-            // Если близко и к H, и к V — приоритет той оси, к которой ближе
-            let best = null;
-            if (dy <= SNAP_THRESHOLD_CM) {
-                best = { x: worldPos.x, y: anchor.y, snapped: true, axis: 'h', dist: dy };
-            }
-            if (dx <= SNAP_THRESHOLD_CM) {
-                if (!best || dx < best.dist) {
-                    best = { x: anchor.x, y: worldPos.y, snapped: true, axis: 'v', dist: dx };
-                }
-            }
-            // Если уже есть 2+ спота примерно на одной произвольной линии — тоже можно примагнитить к ней
-            if (!best && getSpots().length >= 2) {
-                const spots = getSpots();
-                // берём линию от якоря до самого дальнего спота
-                let far = spots[1], farD = 0;
-                for (let i = 1; i < spots.length; i++) {
-                    const d = Math.hypot(spots[i].x - anchor.x, spots[i].y - anchor.y);
-                    if (d > farD) { farD = d; far = spots[i]; }
-                }
-                const dx2 = far.x - anchor.x, dy2 = far.y - anchor.y;
-                const len = Math.hypot(dx2, dy2) || 1;
-                const ux = dx2 / len, uy = dy2 / len;
-                const p = projectPointToLine(worldPos.x, worldPos.y, anchor.x, anchor.y, ux, uy);
-                const distToLine = Math.hypot(worldPos.x - p.x, worldPos.y - p.y);
-                if (distToLine <= SNAP_THRESHOLD_CM) {
-                    best = { x: p.x, y: p.y, snapped: true, axis: 'line', dist: distToLine };
-                }
-            }
-            return best || { x: worldPos.x, y: worldPos.y, snapped: false, axis: null };
-        }
-
-        function toggleSpotSnap() {
-            spotSnapEnabled = !spotSnapEnabled;
-            const btn = document.getElementById('btn-spot-snap');
-            if (btn) {
-                btn.textContent = spotSnapEnabled ? '🧲 Примагн. ВКЛ' : '🧲 Примагн. ВЫКЛ';
-                btn.style.borderColor = spotSnapEnabled ? '#1a73e8' : '#ccc';
-                btn.style.background = spotSnapEnabled ? '#e8f0fe' : '#f8f9fa';
-            }
-            showToast(spotSnapEnabled ? 'Примагничивание к осям ВКЛ' : 'Примагничивание ВЫКЛ', 1800);
-            draw();
-        }
-
-        function clearLastSpotRow() {
-            const before = fixtures.length;
-            fixtures = fixtures.filter(f => f.type !== 'spot');
-            lastSpotRowIndices = [];
-            spotRowGuide = null;
-            renumberFixtures();
-            updateFixtureList();
-            draw();
-            showToast(before > fixtures.length ? 'Все светильники удалены' : 'Нет светильников', 2000);
-        }
-
-        function renumberFixtures() {
-            let sn = 1, ln = 1, pn = 1;
-            fixtures.forEach(f => {
-                if (f.type === 'spot') f.label = 'S' + (sn++);
-                if (f.type === 'chandelier') f.label = 'L' + (ln++);
-                if (f.type === 'strip') f.label = 'P' + (pn++);
-            });
-        }
-
-        // Находит все споты, лежащие примерно на одной линии (H, V или произвольной),
-        // и равномерно расставляет их между двумя крайними.
-        function evenlyPlaceSpots() {
-            const spots = getSpots();
-            if (spots.length < 2) {
-                showToast('Нужно минимум 2 светильника на одной линии', 2800);
-                return;
-            }
-
-            const anchor = spots[0];
-            // Определяем доминирующее направление: горизонталь / вертикаль / линия
-            let axis = null;
-            let onLine = [];
-
-            // Сначала пробуем горизонталь (Y ≈ anchor.y)
-            const horiz = spots.filter(s => Math.abs(s.y - anchor.y) <= SNAP_THRESHOLD_CM * 1.5);
-            // Вертикаль
-            const vert = spots.filter(s => Math.abs(s.x - anchor.x) <= SNAP_THRESHOLD_CM * 1.5);
-
-            if (horiz.length >= 2 && horiz.length >= vert.length) {
-                axis = 'h';
-                onLine = horiz.slice().sort((a, b) => a.x - b.x);
-            } else if (vert.length >= 2) {
-                axis = 'v';
-                onLine = vert.slice().sort((a, b) => a.y - b.y);
-            } else {
-                // Произвольная линия: от первого до самого дальнего
-                let far = spots[1], farD = 0;
-                for (let i = 1; i < spots.length; i++) {
-                    const d = Math.hypot(spots[i].x - anchor.x, spots[i].y - anchor.y);
-                    if (d > farD) { farD = d; far = spots[i]; }
-                }
-                const dx = far.x - anchor.x, dy = far.y - anchor.y;
-                const len = Math.hypot(dx, dy) || 1;
-                const ux = dx / len, uy = dy / len;
-                onLine = spots.filter(s => {
-                    const p = projectPointToLine(s.x, s.y, anchor.x, anchor.y, ux, uy);
-                    return Math.hypot(s.x - p.x, s.y - p.y) <= SNAP_THRESHOLD_CM * 1.5;
-                });
-                // Сортируем по параметру t вдоль линии
-                onLine.sort((a, b) => {
-                    const ta = (a.x - anchor.x) * ux + (a.y - anchor.y) * uy;
-                    const tb = (b.x - anchor.x) * ux + (b.y - anchor.y) * uy;
-                    return ta - tb;
-                });
-                axis = 'line';
-            }
-
-            if (onLine.length < 2) {
-                showToast('Недостаточно светильников на одной линии. Подтяните их к штриховым линиям.', 3500);
-                return;
-            }
-
-            const first = onLine[0], last = onLine[onLine.length - 1];
-            const totalDist = Math.hypot(last.x - first.x, last.y - first.y);
-            if (totalDist < 8) {
-                showToast('Слишком короткий ряд', 2000);
-                return;
-            }
-
-            // Равномерно расставляем существующие точки между first и last
-            const n = onLine.length;
-            for (let i = 0; i < n; i++) {
-                const t = i / (n - 1);
-                onLine[i].x = first.x + (last.x - first.x) * t;
-                onLine[i].y = first.y + (last.y - first.y) * t;
-                const off = twoNearestEdgeOffsetsCm({ x: onLine[i].x, y: onLine[i].y });
-                onLine[i].offset_wall_a_cm = off.offset_wall_a_cm;
-                onLine[i].offset_wall_b_cm = off.offset_wall_b_cm;
-            }
-
-            renumberFixtures();
-            updateFixtureList();
-            draw();
-            const step = totalDist / (n - 1);
-            showToast(`Равномерно: ${n} шт., шаг ${step.toFixed(1)} см`, 3000);
-        }
-
-        function checkSpotWarnings(x, y, excludeIndex) {
-            const warnings = [];
-            const off = twoNearestEdgeOffsetsCm({ x, y });
-            if (off.offset_wall_a_cm < MIN_SPOT_WALL_CM || off.offset_wall_b_cm < MIN_SPOT_WALL_CM) {
-                warnings.push('близко к стене');
-            }
-            fixtures.forEach((f, i) => {
-                if (i === excludeIndex || f.type !== 'spot') return;
-                const d = Math.hypot(f.x - x, f.y - y);
-                if (d < MIN_SPOT_DIST_CM) warnings.push('близко к другому');
-            });
-            return warnings;
-        }
-
-        function drawSpotLines() {
-            const spots = getSpots();
-            const anchor = getSpotAnchor();
-
-            // 1. Крестовые направляющие от первого светильника (горизонталь + вертикаль)
-            if (anchor && spotSnapEnabled) {
-                const len = 8000;
-                // Горизонталь
-                const h1 = toScreen(anchor.x - len, anchor.y);
-                const h2 = toScreen(anchor.x + len, anchor.y);
-                ctx.save();
-                ctx.setLineDash([6, 5]);
-                ctx.strokeStyle = 'rgba(26,115,232,0.45)';
-                ctx.lineWidth = 1.4;
-                ctx.beginPath();
-                ctx.moveTo(h1.x, h1.y);
-                ctx.lineTo(h2.x, h2.y);
-                ctx.stroke();
-                // Вертикаль
-                const v1 = toScreen(anchor.x, anchor.y - len);
-                const v2 = toScreen(anchor.x, anchor.y + len);
-                ctx.beginPath();
-                ctx.moveTo(v1.x, v1.y);
-                ctx.lineTo(v2.x, v2.y);
-                ctx.stroke();
-                ctx.restore();
-            }
-
-            if (spots.length < 2) return;
-
-            // 2. Линии между соседними + расстояния
-            for (let i = 0; i < spots.length - 1; i++) {
-                const a = spots[i];
-                const b = spots[i + 1];
-                const dist = Math.hypot(a.x - b.x, a.y - b.y);
-                const s1 = toScreen(a.x, a.y);
-                const s2 = toScreen(b.x, b.y);
-                ctx.save();
-                ctx.setLineDash([5, 4]);
-                ctx.strokeStyle = '#1a73e8';
-                ctx.lineWidth = 1.8;
-                ctx.beginPath();
-                ctx.moveTo(s1.x, s1.y);
-                ctx.lineTo(s2.x, s2.y);
-                ctx.stroke();
-                ctx.restore();
-
-                const midX = (s1.x + s2.x) / 2;
-                const midY = (s1.y + s2.y) / 2;
-                ctx.save();
-                ctx.font = 'bold 12px Arial';
-                const txt = dist.toFixed(1) + ' см';
-                const w = ctx.measureText(txt).width;
-                ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                ctx.fillRect(midX - w / 2 - 4, midY - 10, w + 8, 20);
-                ctx.strokeStyle = '#1a73e8';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(midX - w / 2 - 4, midY - 10, w + 8, 20);
-                ctx.fillStyle = '#1a73e8';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(txt, midX, midY);
-                ctx.restore();
-            }
-
-            // 3. Общая длина / средний шаг
-            if (spots.length >= 3) {
-                let total = 0;
-                for (let i = 0; i < spots.length - 1; i++) {
-                    total += Math.hypot(spots[i + 1].x - spots[i].x, spots[i + 1].y - spots[i].y);
-                }
-                const avg = total / (spots.length - 1);
-                const last = spots[spots.length - 1];
-                const sp = toScreen(last.x, last.y);
-                ctx.save();
-                ctx.font = 'bold 11px Arial';
-                const info = `Ряд: ${total.toFixed(1)} см • шаг ~${avg.toFixed(1)}`;
-                const iw = ctx.measureText(info).width;
-                ctx.fillStyle = 'rgba(26,115,232,0.92)';
-                ctx.fillRect(sp.x + 14, sp.y - 28, iw + 10, 20);
-                ctx.fillStyle = '#fff';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(info, sp.x + 19, sp.y - 18);
-                ctx.restore();
-            }
-        }
-
+        // --- Монтаж (с изменениями для strip-mini-panel и кнопки в основной панели) ---
         function handleInstallTap(worldPos) {
             if (installMode === 'profile') {
                 const ei = nearestEdgeIndex(worldPos);
@@ -1528,23 +1254,33 @@
             if (installMode === 'cornice') {
                 const ei = nearestEdgeIndex(worldPos);
                 const off = parseFloat(document.getElementById('cornice-offset-input').value) || 20;
+                const sel = document.getElementById('cornice-type-select');
+                const cname = (sel && sel.value) ? sel.value : 'Карниз стандарт';
+                let lenCm = 0;
+                if (edges[ei] && edges[ei].lengthCm != null) lenCm = parseFloat(edges[ei].lengthCm) || 0;
                 fixtures = fixtures.filter(f => !(f.type === 'cornice' && f.edge_index === ei));
                 fixtures.push({
                     type: 'cornice',
                     edge_index: ei,
                     offset_cm: off,
+                    name: cname,
+                    length_cm: lenCm,
                     x: (points[ei].x + points[(ei + 1) % points.length].x) / 2,
                     y: (points[ei].y + points[(ei + 1) % points.length].y) / 2,
-                    label: `Карниз ${edges[ei] ? edges[ei].label : ei}`
+                    label: `${cname} ${edges[ei] ? edges[ei].label : ei}`
                 });
                 updateFixtureList();
-                showToast(`Карниз на ${edges[ei] ? edges[ei].label : ei}, вынос ${off} см`, 2000);
+                showToast(`${cname} на ${edges[ei] ? edges[ei].label : ei}, ${lenCm || '?'} см, вынос ${off}`, 2200);
                 draw();
                 return;
             }
             if (installMode === 'lighting') {
                 if (lightingSub === 'strip') {
-                    // Обрабатывается через pointer события
+                    stripDraft.push({ x: worldPos.x, y: worldPos.y });
+                    stripPreviewLen = polylineLength(stripDraft);
+                    updateStripMiniPanel();
+                    updateFinishStripBtn();
+                    draw();
                     return;
                 }
                 if (!pointInPolygon(worldPos, points)) {
@@ -1555,636 +1291,20 @@
                     const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
                     fixtures.push({ type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n });
                     showToast(`Люстра L${n}`, 2000);
-                    updateFixtureList();
-                    draw();
-                    return;
-                } else { // spot
-                    // Примагничивание к крестовым направляющим от первого светильника
-                    let pos = { x: worldPos.x, y: worldPos.y };
-                    const snapped = snapToCrosshair(pos, -1);
-                    if (snapped.snapped) {
-                        pos.x = snapped.x;
-                        pos.y = snapped.y;
-                    }
-
-                    const off = twoNearestEdgeOffsetsCm(pos);
+                } else {
+                    const off = twoNearestEdgeOffsetsCm(worldPos);
                     const n = fixtures.filter(f => f.type === 'spot').length + 1;
-                    const warnings = checkSpotWarnings(pos.x, pos.y, -1);
                     fixtures.push({
-                        type: 'spot', x: pos.x, y: pos.y, label: 'S' + n,
+                        type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
                         offset_wall_a_cm: off.offset_wall_a_cm, offset_wall_b_cm: off.offset_wall_b_cm
                     });
-
-                    let msg = `S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`;
-                    if (snapped.snapped) {
-                        if (snapped.axis === 'h') msg += ' (гориз.)';
-                        else if (snapped.axis === 'v') msg += ' (верт.)';
-                        else msg += ' (линия)';
-                    }
-                    if (warnings.length) msg += ' ⚠ ' + warnings.join(', ');
-                    const spots = getSpots();
-                    if (spots.length >= 2) {
-                        const prev = spots[spots.length - 2];
-                        const step = Math.hypot(pos.x - prev.x, pos.y - prev.y);
-                        msg += ` • шаг ${step.toFixed(1)} см`;
-                    }
-                    showToast(msg, 3200);
-                    updateFixtureList();
-                    draw();
+                    showToast(`Светильник S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`, 2500);
                 }
-            }
-        }
-
-        // =====================================================================
-        //  ОБРАБОТЧИКИ СОБЫТИЙ POINTER (с поддержкой drag и рисования полосы)
-        // =====================================================================
-
-        canvas.addEventListener('pointerdown', function(e) {
-            activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
-
-            if (state === 'INSTALL') {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-
-                if (lightingSub === 'strip') {
-                    // Проверяем, не попали ли в существующий объект для перетаскивания
-                    const hit = getFixtureAtPoint(worldPos.x, worldPos.y);
-                    if (hit) {
-                        const f = hit.fixture;
-                        let cx = f.x, cy = f.y;
-                        if (f.type === 'strip' && f.points && f.points.length) {
-                            let sx = 0, sy = 0;
-                            for (const p of f.points) { sx += p.x; sy += p.y; }
-                            cx = sx / f.points.length;
-                            cy = sy / f.points.length;
-                        }
-                        dragState = {
-                            fixtureIndex: hit.index,
-                            offsetX: cx - worldPos.x,
-                            offsetY: cy - worldPos.y,
-                            isDragging: true
-                        };
-                        canvas.style.cursor = 'grabbing';
-                        e.preventDefault();
-                        return;
-                    }
-                    // Начинаем рисование полосы
-                    if (!stripDrawing) {
-                        stripDrawing = {
-                            startX: worldPos.x,
-                            startY: worldPos.y,
-                            endX: worldPos.x,
-                            endY: worldPos.y,
-                            active: true
-                        };
-                        e.preventDefault();
-                        return;
-                    }
-                    return;
-                }
-
-                const hit = getFixtureAtPoint(worldPos.x, worldPos.y);
-                if (hit) {
-                    const f = hit.fixture;
-                    let cx = f.x, cy = f.y;
-                    if (f.type === 'strip' && f.points && f.points.length) {
-                        let sx = 0, sy = 0;
-                        for (const p of f.points) { sx += p.x; sy += p.y; }
-                        cx = sx / f.points.length;
-                        cy = sy / f.points.length;
-                    }
-                    dragState = {
-                        fixtureIndex: hit.index,
-                        offsetX: cx - worldPos.x,
-                        offsetY: cy - worldPos.y,
-                        isDragging: true
-                    };
-                    canvas.style.cursor = 'grabbing';
-                    e.preventDefault();
-                    return;
-                }
-
-                handleInstallTap(worldPos);
-                e.preventDefault();
-                return;
-            }
-
-            if (activePointers.length === 1) {
-                lastPanPos = { x: e.clientX, y: e.clientY };
-                isDragging = false;
-            } else if (activePointers.length === 2) {
-                initialPinchDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
-                initialZoom = camera.zoom;
-            }
-        });
-
-        canvas.addEventListener('pointermove', function(e) {
-            let idx = activePointers.findIndex(p => p.id === e.pointerId);
-            if (idx !== -1) {
-                activePointers[idx].x = e.clientX;
-                activePointers[idx].y = e.clientY;
-            }
-
-            if (stripDrawing && stripDrawing.active && state === 'INSTALL' && lightingSub === 'strip') {
-                const rect = canvas.getBoundingClientRect();
-                let worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-                // Лёгкое примагничивание конца полосы к ближайшей стороне (если близко)
-                if (points.length >= 3) {
-                    let bestD = 8, bestProj = null;
-                    for (let i = 0; i < points.length; i++) {
-                        const a = points[i], b = points[(i + 1) % points.length];
-                        const d = distPointToSegment(worldPos, a, b);
-                        if (d < bestD) {
-                            bestD = d;
-                            // проекция
-                            const dx = b.x - a.x, dy = b.y - a.y;
-                            const len2 = dx*dx + dy*dy || 1;
-                            let t = ((worldPos.x - a.x)*dx + (worldPos.y - a.y)*dy) / len2;
-                            t = Math.max(0, Math.min(1, t));
-                            bestProj = { x: a.x + t*dx, y: a.y + t*dy };
-                        }
-                    }
-                    if (bestProj) worldPos = bestProj;
-                }
-                stripDrawing.endX = worldPos.x;
-                stripDrawing.endY = worldPos.y;
-                draw();
-                e.preventDefault();
-                return;
-            }
-
-            if (dragState && dragState.isDragging) {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-                const f = fixtures[dragState.fixtureIndex];
-                if (f) {
-                    if (f.type === 'strip' && f.points) {
-                        const dx = (worldPos.x + dragState.offsetX) - (f.points[0].x || f.x);
-                        const dy = (worldPos.y + dragState.offsetY) - (f.points[0].y || f.y);
-                        for (const p of f.points) {
-                            p.x += dx;
-                            p.y += dy;
-                        }
-                        f.x = f.points.reduce((s,p) => s + p.x, 0) / f.points.length;
-                        f.y = f.points.reduce((s,p) => s + p.y, 0) / f.points.length;
-                    } else {
-                        let nx = worldPos.x + dragState.offsetX;
-                        let ny = worldPos.y + dragState.offsetY;
-                        // Примагничивание к кресту (H/V) от первого светильника
-                        if (f.type === 'spot' && spotSnapEnabled) {
-                            const snapped = snapToCrosshair({x: nx, y: ny}, dragState.fixtureIndex);
-                            if (snapped.snapped) { nx = snapped.x; ny = snapped.y; }
-                        }
-                        f.x = nx;
-                        f.y = ny;
-                    }
-                    updateFixtureOffsets(f);
-                    draw();
-                    e.preventDefault();
-                }
-                return;
-            }
-
-            if (activePointers.length === 1) {
-                let dx = e.clientX - lastPanPos.x;
-                let dy = e.clientY - lastPanPos.y;
-                if (Math.hypot(dx, dy) > 5) isDragging = true;
-                if (isDragging) {
-                    camera.x += dx;
-                    camera.y += dy;
-                    lastPanPos = { x: e.clientX, y: e.clientY };
-                    draw();
-                }
-            } else if (activePointers.length === 2) {
-                const p1 = activePointers[0], p2 = activePointers[1];
-                const currentDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-                const rect = canvas.getBoundingClientRect();
-                const midX = (p1.x + p2.x) / 2 - rect.left;
-                const midY = (p1.y + p2.y) / 2 - rect.top;
-                if (initialPinchDist && currentDist > 5) {
-                    let newZoom = Math.max(0.2, Math.min(initialZoom * (currentDist / initialPinchDist), 10));
-                    const focalWorldX = (midX - camera.x) / camera.zoom;
-                    const focalWorldY = (midY - camera.y) / camera.zoom;
-                    camera.zoom = newZoom;
-                    camera.x = midX - focalWorldX * camera.zoom;
-                    camera.y = midY - focalWorldY * camera.zoom;
-                    draw();
-                }
-            }
-        });
-
-        canvas.addEventListener('pointerup', function(e) {
-            if (stripDrawing && stripDrawing.active && state === 'INSTALL' && lightingSub === 'strip') {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-                stripDrawing.endX = worldPos.x;
-                stripDrawing.endY = worldPos.y;
-                const dist = Math.hypot(stripDrawing.endX - stripDrawing.startX, stripDrawing.endY - stripDrawing.startY); // world = cm
-                if (dist < 5) {
-                    showToast('Слишком короткая полоса (мин. 5 см)', 1500);
-                    stripDrawing = null;
-                    draw();
-                    let idx = activePointers.findIndex(p => p.id === e.pointerId);
-                    if (idx !== -1) activePointers.splice(idx, 1);
-                    if (activePointers.length < 2) initialPinchDist = null;
-                    if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-                    return;
-                }
-                const len = Math.round(dist * 10) / 10;
-                const n = fixtures.filter(f => f.type === 'strip').length + 1;
-                const offsets = [
-                    twoNearestEdgeOffsetsCm({x: stripDrawing.startX, y: stripDrawing.startY}),
-                    twoNearestEdgeOffsetsCm({x: stripDrawing.endX, y: stripDrawing.endY})
-                ];
-                fixtures.push({
-                    type: 'strip',
-                    points: [{x: stripDrawing.startX, y: stripDrawing.startY}, {x: stripDrawing.endX, y: stripDrawing.endY}],
-                    length_cm: len,
-                    label: 'P' + n,
-                    wall_offsets: offsets,
-                    x: (stripDrawing.startX + stripDrawing.endX) / 2,
-                    y: (stripDrawing.startY + stripDrawing.endY) / 2
-                });
-                stripDrawing = null;
                 updateFixtureList();
                 draw();
-                showToast(`Полоса P${n}: ${len} см`, 2500);
-                let idx = activePointers.findIndex(p => p.id === e.pointerId);
-                if (idx !== -1) activePointers.splice(idx, 1);
-                if (activePointers.length < 2) initialPinchDist = null;
-                if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-                return;
             }
-
-            if (dragState && dragState.isDragging) {
-                dragState.isDragging = false;
-                dragState = null;
-                canvas.style.cursor = 'crosshair';
-                updateFixtureList();
-                draw();
-                let idx = activePointers.findIndex(p => p.id === e.pointerId);
-                if (idx !== -1) activePointers.splice(idx, 1);
-                if (activePointers.length < 2) initialPinchDist = null;
-                if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-                return;
-            }
-
-            let idx = activePointers.findIndex(p => p.id === e.pointerId);
-            if (idx !== -1) activePointers.splice(idx, 1);
-            if (activePointers.length < 2) initialPinchDist = null;
-            if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-
-            if (!isDragging && activePointers.length === 0) {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-                if (state !== 'INSTALL') {
-                    handleCanvasTap(worldPos);
-                }
-            }
-            isDragging = false;
-        });
-
-        canvas.addEventListener('pointercancel', function(e) {
-            if (stripDrawing) {
-                stripDrawing = null;
-                draw();
-            }
-            if (dragState && dragState.isDragging) {
-                dragState.isDragging = false;
-                dragState = null;
-                canvas.style.cursor = 'crosshair';
-                draw();
-            }
-            let idx = activePointers.findIndex(p => p.id === e.pointerId);
-            if (idx !== -1) activePointers.splice(idx, 1);
-            if (activePointers.length < 2) initialPinchDist = null;
-            if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-        });
-                // =====================================================================
-        //  ФУНКЦИЯ ОТРИСОВКИ (draw)
-        // =====================================================================
-        function drawSummaryCardOnCanvas() {
-            if (state !== 'DONE' && state !== 'SELECT_MATERIAL' && state !== 'INSTALL') return;
-            let maxY = Math.max(...points.map(p => p.y));
-            let minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
-            let cx = (minX + maxX) / 2;
-
-            let matStr = `Материал: ${selectedMaterial}   |   Цвет: ${selectedColor}`;
-            let sidesStrArr = edges.map(e => `${e.label} = ${e.lengthCm != null ? e.lengthCm : '?'} см`);
-            let diagStrArr = selectedDiagonals.filter(d => d.lengthCm != null).map(d => `${d.label} = ${d.lengthCm} см`);
-
-            let perimeter = edges.reduce((s, e) => s + (e.lengthCm || 0), 0);
-            let areaPx = 0;
-            for (let i = 0; i < points.length; i++) {
-                let p1 = points[i], p2 = points[(i + 1) % points.length];
-                areaPx += (p1.x * p2.y - p2.x * p1.y);
-            }
-            let areaM2 = (Math.abs(areaPx / 2) / 10000).toFixed(2);
-            let totalStr = `Периметр: ${(perimeter / 100).toFixed(2)} м   |   Площадь: ${areaM2} м²`;
-            if (!usedExactGeometry) totalStr += '   |   (по сторонам + эскиз)';
-
-            let screenPos = toScreen(cx, maxY + 40 / camera.zoom);
-            let boxX = screenPos.x, boxY = screenPos.y;
-
-            ctx.save();
-            ctx.font = '13px Arial';
-            let sideLines = [];
-            for (let i = 0; i < sidesStrArr.length; i += 5) {
-                const chunk = sidesStrArr.slice(i, i + 5);
-                sideLines.push((i === 0 ? "Стороны: " : "") + chunk.join(", "));
-            }
-            let diagLines = [];
-            if (diagStrArr.length) {
-                let curD = "Диагонали: ";
-                diagStrArr.forEach((s, idx) => {
-                    let item = s + (idx < diagStrArr.length - 1 ? ", " : "");
-                    if (ctx.measureText(curD + item).width > 340) {
-                        diagLines.push(curD); curD = item;
-                    } else curD += item;
-                });
-                if (curD) diagLines.push(curD);
-            }
-            let allTextLines = [matStr, ...sideLines, ...diagLines, totalStr];
-            let lineHeight = 20, boxPadding = 12, boxWidth = 390;
-            let boxHeight = allTextLines.length * lineHeight + boxPadding * 2;
-            let rectX = boxX - boxWidth / 2, rectY = boxY;
-
-            ctx.shadowColor = 'rgba(0,0,0,0.12)';
-            ctx.shadowBlur = 8;
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#0066cc';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(rectX, rectY, boxWidth, boxHeight, 8);
-            else ctx.rect(rectX, rectY, boxWidth, boxHeight);
-            ctx.fill();
-            ctx.shadowColor = 'transparent';
-            ctx.stroke();
-
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            allTextLines.forEach((line, idx) => {
-                let lineY = rectY + boxPadding + idx * lineHeight + lineHeight / 2;
-                if (idx === 0) { ctx.fillStyle = '#0066cc'; ctx.font = 'bold 14px Arial'; }
-                else if (idx === allTextLines.length - 1) { ctx.fillStyle = '#28a745'; ctx.font = 'bold 13px Arial'; }
-                else { ctx.fillStyle = '#222222'; ctx.font = '12px Arial'; }
-                ctx.fillText(line, rectX + boxPadding, lineY);
-            });
-            ctx.restore();
         }
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
-            let gridSize = 30 * camera.zoom;
-            if (gridSize > 8) {
-                let oX = camera.x % gridSize, oY = camera.y % gridSize;
-                for (let x = oX; x < canvas.width; x += gridSize) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-                }
-                for (let y = oY; y < canvas.height; y += gridSize) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-                }
-            }
-            if (points.length === 0) return;
-
-            ctx.beginPath();
-            let start = toScreen(points[0].x, points[0].y);
-            ctx.moveTo(start.x, start.y);
-            for (let i = 1; i < points.length; i++) {
-                let pt = toScreen(points[i].x, points[i].y);
-                ctx.lineTo(pt.x, pt.y);
-            }
-            if (isClosed) {
-                ctx.lineTo(start.x, start.y);
-                ctx.fillStyle = 'rgba(0,102,204,0.07)';
-                ctx.fill();
-            }
-
-            if (selectedDiagonals.length > 0 && isClosed) {
-                ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#d32f2f';
-                selectedDiagonals.forEach(d => {
-                    if (d.p1 >= points.length || d.p2 >= points.length) return;
-                    let s1 = toScreen(points[d.p1].x, points[d.p1].y);
-                    let s2 = toScreen(points[d.p2].x, points[d.p2].y);
-                    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
-                    if (d.lengthCm != null) {
-                        let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
-                        ctx.font = 'bold 12px Arial';
-                        let w = ctx.measureText(String(d.lengthCm)).width;
-                        ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 2, mY - 8, w + 4, 16);
-                        ctx.fillStyle = '#d32f2f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                        ctx.fillText(String(d.lengthCm), mX, mY);
-                    }
-                });
-                ctx.setLineDash([]);
-            }
-
-            const showInstall = (state === 'INSTALL' || state === 'DONE');
-
-            for (let i = 0; i < points.length; i++) {
-                let nxt = (i + 1) % points.length;
-                if (!isClosed && nxt === 0) continue;
-                let s1 = toScreen(points[i].x, points[i].y);
-                let s2 = toScreen(points[nxt].x, points[nxt].y);
-                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-                if (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) {
-                    ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
-                } else if (showInstall && sideProfiles[i]) {
-                    ctx.strokeStyle = PROFILE_COLORS[sideProfiles[i]] || '#2c3e50';
-                    ctx.lineWidth = 3.2;
-                } else {
-                    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
-                }
-                ctx.stroke();
-
-                if (isClosed && edges[i] && edges[i].lengthCm != null) {
-                    let text = edges[i].lengthCm;
-                    let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
-                    ctx.font = 'bold 13px Arial';
-                    let w = ctx.measureText(String(text)).width;
-                    ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
-                    ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
-                    ctx.fillStyle = '#d32f2f';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    ctx.fillText(String(text), mX, mY);
-                }
-                if (showInstall && sideProfiles[i] && sideProfiles[i] !== 'Стандартный') {
-                    const short = { 'Теневой': 'Тен.', 'Парящий': 'Пар.' }[sideProfiles[i]] || sideProfiles[i];
-                    let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
-                    ctx.font = 'bold 11px Arial';
-                    ctx.fillStyle = PROFILE_COLORS[sideProfiles[i]] || '#333';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-                    ctx.fillText(short, mX, mY + 12);
-                }
-            }
-
-            if (showInstall) {
-                drawSpotLines();
-            }
-
-            if (showInstall && fixtures.length) {
-                fixtures.forEach(f => {
-                    if (f.type === 'cornice' && typeof f.edge_index === 'number' && points[f.edge_index]) {
-                        const i = f.edge_index;
-                        const a = points[i], b = points[(i + 1) % points.length];
-                        const dx = b.x - a.x, dy = b.y - a.y;
-                        const len = Math.hypot(dx, dy) || 1;
-                        let nx = -dy / len, ny = dx / len;
-                        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-                        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
-                        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-                        if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
-                        const off = (f.offset_cm || 5);
-                        const s1 = toScreen(a.x + nx * off, a.y + ny * off);
-                        const s2 = toScreen(b.x + nx * off, b.y + ny * off);
-                        ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-                        ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2.5; ctx.stroke();
-                        return;
-                    }
-                    const sp = toScreen(f.x, f.y);
-                    if (f.type === 'spot') {
-                        ctx.beginPath();
-                        ctx.fillStyle = '#f39c12'; ctx.strokeStyle = '#b9770e'; ctx.lineWidth = 2;
-                        ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-                        ctx.beginPath(); ctx.moveTo(sp.x - 4, sp.y); ctx.lineTo(sp.x + 4, sp.y); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 4); ctx.lineTo(sp.x, sp.y + 4); ctx.stroke();
-                        ctx.fillStyle = '#b9770e'; ctx.font = 'bold 11px Arial';
-                        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-                        ctx.fillText(f.label || 'S', sp.x + 10, sp.y - 4);
-                    } else if (f.type === 'chandelier') {
-                        ctx.beginPath();
-                        ctx.fillStyle = '#c0392b'; ctx.strokeStyle = '#7b241c'; ctx.lineWidth = 2;
-                        ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
-                        ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y - 5); ctx.lineTo(sp.x + 5, sp.y + 5); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(sp.x + 5, sp.y - 5); ctx.lineTo(sp.x - 5, sp.y + 5); ctx.stroke();
-                        ctx.fillStyle = '#c0392b'; ctx.font = 'bold 12px Arial';
-                        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-                        ctx.fillText(f.label || 'L', sp.x + 12, sp.y - 4);
-                    } else if (f.type === 'strip' && f.points && f.points.length >= 2) {
-                        ctx.beginPath();
-                        const p0 = toScreen(f.points[0].x, f.points[0].y);
-                        ctx.moveTo(p0.x, p0.y);
-                        for (let k = 1; k < f.points.length; k++) {
-                            const pk = toScreen(f.points[k].x, f.points[k].y);
-                            ctx.lineTo(pk.x, pk.y);
-                        }
-                        ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-                        ctx.stroke();
-                        const mid = f.points[Math.floor(f.points.length / 2)];
-                        const sm = toScreen(mid.x, mid.y);
-                        ctx.fillStyle = '#b7950b'; ctx.font = 'bold 11px Arial';
-                        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-                        ctx.fillText(`${f.label || 'P'} ${f.length_cm}см`, sm.x, sm.y - 6);
-                    }
-                });
-            }
-
-            if (stripDrawing && stripDrawing.active && state === 'INSTALL' && lightingSub === 'strip') {
-                const s1 = toScreen(stripDrawing.startX, stripDrawing.startY);
-                const s2 = toScreen(stripDrawing.endX, stripDrawing.endY);
-                ctx.beginPath();
-                ctx.moveTo(s1.x, s1.y);
-                ctx.lineTo(s2.x, s2.y);
-                ctx.strokeStyle = '#f39c12';
-                ctx.lineWidth = 3.5;
-                ctx.setLineDash([6, 4]);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                // start / end markers
-                ctx.beginPath(); ctx.fillStyle = '#e67e22';
-                ctx.arc(s1.x, s1.y, 7, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.fillStyle = '#f39c12';
-                ctx.arc(s2.x, s2.y, 7, 0, Math.PI*2); ctx.fill();
-                // live length (world units = cm)
-                const dist = Math.hypot(stripDrawing.endX - stripDrawing.startX, stripDrawing.endY - stripDrawing.startY);
-                const midX = (s1.x + s2.x) / 2;
-                const midY = (s1.y + s2.y) / 2;
-                ctx.save();
-                ctx.font = 'bold 15px Arial';
-                const txt = dist.toFixed(1) + ' см';
-                const w = ctx.measureText(txt).width;
-                ctx.fillStyle = 'rgba(255,255,255,0.95)';
-                ctx.fillRect(midX - w/2 - 6, midY - 14, w + 12, 28);
-                ctx.strokeStyle = '#e67e22';
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(midX - w/2 - 6, midY - 14, w + 12, 28);
-                ctx.fillStyle = '#e67e22';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(txt, midX, midY);
-                ctx.restore();
-
-                // live wall offsets for start and end (same style as drag helpers)
-                function drawLiveOffset(wx, wy, color, labelPrefix) {
-                    const off = twoNearestEdgeOffsetsCm({x: wx, y: wy});
-                    const a = points[off.edge_a];
-                    const b = points[(off.edge_a + 1) % points.length];
-                    const c = points[off.edge_b];
-                    const d = points[(off.edge_b + 1) % points.length];
-                    function oneLine(fromX, fromY, wallP1, wallP2, col) {
-                        const dx = wallP2.x - wallP1.x, dy = wallP2.y - wallP1.y;
-                        const len2 = dx*dx + dy*dy;
-                        if (len2 < 1e-10) return;
-                        let t = ((fromX - wallP1.x)*dx + (fromY - wallP1.y)*dy) / len2;
-                        t = Math.max(0, Math.min(1, t));
-                        const projX = wallP1.x + t*dx;
-                        const projY = wallP1.y + t*dy;
-                        const ss1 = toScreen(fromX, fromY);
-                        const ss2 = toScreen(projX, projY);
-                        ctx.save();
-                        ctx.setLineDash([3, 3]);
-                        ctx.strokeStyle = col;
-                        ctx.lineWidth = 1.2;
-                        ctx.beginPath();
-                        ctx.moveTo(ss1.x, ss1.y);
-                        ctx.lineTo(ss2.x, ss2.y);
-                        ctx.stroke();
-                        ctx.restore();
-                        const mx = (ss1.x + ss2.x) / 2;
-                        const my = (ss1.y + ss2.y) / 2;
-                        const dd = Math.hypot(fromX - projX, fromY - projY);
-                        ctx.save();
-                        ctx.font = 'bold 11px Arial';
-                        const ttxt = dd.toFixed(1) + ' см';
-                        const tw = ctx.measureText(ttxt).width;
-                        ctx.fillStyle = 'rgba(255,255,255,0.9)';
-                        ctx.fillRect(mx - tw/2 - 3, my - 9, tw + 6, 18);
-                        ctx.fillStyle = col;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(ttxt, mx, my);
-                        ctx.restore();
-                    }
-                    oneLine(wx, wy, a, b, color);
-                    oneLine(wx, wy, c, d, color);
-                }
-                drawLiveOffset(stripDrawing.startX, stripDrawing.startY, '#e67e22', 'start');
-                drawLiveOffset(stripDrawing.endX, stripDrawing.endY, '#2980b9', 'end');
-            }
-
-            points.forEach((p, idx) => {
-                let sp = toScreen(p.x, p.y);
-                ctx.beginPath();
-                ctx.fillStyle = (idx === 0 && !isClosed) ? '#28a745' : '#ffffff';
-                ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
-                ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI * 2);
-                ctx.fill(); ctx.stroke();
-                ctx.fillStyle = '#000000';
-                ctx.font = 'bold 18px Arial';
-                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-                ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
-            });
-
-            drawSummaryCardOnCanvas();
-            drawDragHelpers();
-        }
-
-        // =====================================================================
-        //  ОСТАЛЬНЫЕ UI-ФУНКЦИИ (панели, монтаж, редактирование)
-        // =====================================================================
         function updateStripMiniPanel() {
             const live = document.getElementById('strip-live-len-mini');
             const inp = document.getElementById('strip-length-input-mini');
@@ -2202,6 +1322,7 @@
             }
         }
 
+        // Остальные функции монтажа без изменений, но с учётом мини-панели
         function selectProfileBrush(name, el) {
             selectedProfileName = name;
             profileEdgesPainted = false;
@@ -2231,10 +1352,11 @@
             const hint = document.getElementById('install-hint');
             const pt = document.getElementById('profile-tools');
             const lt = document.getElementById('lighting-tools');
-            const cr = document.getElementById('cornice-offset-row');
+            const cr = document.getElementById('cornice-tools') || document.getElementById('cornice-offset-row');
             if (pt) pt.style.display = mode === 'profile' ? 'block' : 'none';
             if (lt) lt.style.display = mode === 'lighting' ? 'block' : 'none';
-            if (cr) cr.style.display = mode === 'cornice' ? 'flex' : 'none';
+            if (cr) cr.style.display = mode === 'cornice' ? 'block' : 'none';
+            // Скрыть мини-панель, если не полоса
             document.getElementById('strip-mini-panel').style.display = 'none';
             document.getElementById('finish-strip-btn').style.display = 'none';
             if (mode === 'profile') {
@@ -2242,7 +1364,7 @@
             } else if (mode === 'lighting') {
                 setLightingSub(lightingSub || 'spot');
             } else if (mode === 'cornice') {
-                hint.innerText = 'Тапните по стороне — карниз вдоль неё';
+                hint.innerText = 'Выберите тип в списке, затем тапните сторону — карниз по пог.м.';
             }
             updateFixtureList();
             draw();
@@ -2260,27 +1382,20 @@
             const centerBtn = document.getElementById('chandelier-center-btn');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
-            const spotExtra = document.getElementById('spot-extra-tools');
+            const aiTools = document.getElementById('ai-spot-tools');
             if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
-            if (spotExtra) spotExtra.style.display = sub === 'spot' ? 'block' : 'none';
+            if (aiTools) aiTools.style.display = sub === 'spot' ? 'block' : 'none';
+            // Управление мини-панелью и кнопкой
             if (sub === 'strip') {
-                if (miniPanel) miniPanel.style.display = 'none';
-                if (finishBtn) finishBtn.style.display = 'none';
-                hint.innerText = 'Полоса: зажмите в начале, тяните палец — длина и отступы от стен видны в реальном времени. Отпустите — точка зафиксируется.';
+                miniPanel.style.display = 'flex';
+                updateStripMiniPanel();
+                updateFinishStripBtn();
+                hint.innerText = 'Освещение → полоса: рисуйте точками, длина считается автоматически. Введите вручную при необходимости. Завершить можно кнопкой ниже или в мини-панели.';
             } else {
-                if (miniPanel) miniPanel.style.display = 'none';
-                if (finishBtn) finishBtn.style.display = 'none';
-                if (sub === 'spot') {
-                    hint.innerText = 'Первый светильник — якорь (от него крест H/V). Остальные магнитятся к линиям. «Равномерно» — равные шаги по линии.';
-                    const btn = document.getElementById('btn-spot-snap');
-                    if (btn) {
-                        btn.textContent = spotSnapEnabled ? '🧲 Примагн. ВКЛ' : '🧲 Примагн. ВЫКЛ';
-                        btn.style.borderColor = spotSnapEnabled ? '#1a73e8' : '#ccc';
-                        btn.style.background = spotSnapEnabled ? '#e8f0fe' : '#f8f9fa';
-                    }
-                } else if (sub === 'chandelier') {
-                    hint.innerText = 'Люстра: тап или «по центру» (можно несколько)';
-                }
+                miniPanel.style.display = 'none';
+                finishBtn.style.display = 'none';
+                if (sub === 'spot') hint.innerText = 'Освещение → светильник: тап вручную или используйте ИИ-расстановку ниже';
+                else if (sub === 'chandelier') hint.innerText = 'Освещение → люстра: тап или «по центру» (можно несколько)';
             }
             draw();
         }
@@ -2297,6 +1412,341 @@
             showToast(`Люстра L${n} по центру`, 2000);
         }
 
+        // =====================================================================
+        //  ИИ-расстановка светильников (алгоритмические варианты)
+        // =====================================================================
+        let aiSpotPreview = [];      // временные точки превью
+        let aiSpotVariants = [];     // массив вариантов
+        let aiSpotVariantIdx = 0;
+        let aiSpotSeed = 1;
+
+        function polygonCentroid(pts) {
+            let cx = 0, cy = 0, a = 0;
+            for (let i = 0; i < pts.length; i++) {
+                const p = pts[i], q = pts[(i + 1) % pts.length];
+                const cross = p.x * q.y - q.x * p.y;
+                a += cross;
+                cx += (p.x + q.x) * cross;
+                cy += (p.y + q.y) * cross;
+            }
+            a *= 0.5;
+            if (Math.abs(a) < 1e-9) {
+                pts.forEach(p => { cx += p.x; cy += p.y; });
+                return { x: cx / pts.length, y: cy / pts.length };
+            }
+            return { x: cx / (6 * a), y: cy / (6 * a) };
+        }
+
+        function pointInPolygonStrict(pt, poly, marginCm) {
+            // сначала обычный inside
+            if (!pointInPolygon(pt, poly)) return false;
+            if (!marginCm || marginCm <= 0) return true;
+            // проверка расстояния до всех рёбер
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i], b = poly[(i + 1) % poly.length];
+                if (distPointToSegment(pt, a, b) < marginCm) return false;
+            }
+            return true;
+        }
+
+        function bboxOf(pts) {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            pts.forEach(p => {
+                if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+            });
+            return { minX, maxX, minY, maxY, w: maxX - minX, h: maxY - minY };
+        }
+
+        function generateGridSpots(n, margin, seed) {
+            const bb = bboxOf(points);
+            const usableW = Math.max(1, bb.w - 2 * margin);
+            const usableH = Math.max(1, bb.h - 2 * margin);
+            // подбираем cols/rows близко к пропорциям
+            const aspect = usableW / usableH;
+            let cols = Math.max(1, Math.round(Math.sqrt(n * aspect)));
+            let rows = Math.max(1, Math.ceil(n / cols));
+            while (cols * rows < n) { if (usableW >= usableH) cols++; else rows++; }
+            const stepX = cols > 1 ? usableW / (cols - 1) : 0;
+            const stepY = rows > 1 ? usableH / (rows - 1) : 0;
+            const startX = bb.minX + margin;
+            const startY = bb.minY + margin;
+            const cand = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const x = startX + c * stepX;
+                    const y = startY + r * stepY;
+                    if (pointInPolygonStrict({ x, y }, points, margin * 0.6)) {
+                        cand.push({ x, y });
+                    }
+                }
+            }
+            // если мало — уплотняем сетку
+            if (cand.length < n) {
+                const denser = [];
+                const densCols = cols + 2, densRows = rows + 2;
+                const dStepX = densCols > 1 ? usableW / (densCols - 1) : 0;
+                const dStepY = densRows > 1 ? usableH / (densRows - 1) : 0;
+                for (let r = 0; r < densRows; r++) {
+                    for (let c = 0; c < densCols; c++) {
+                        const x = startX + c * dStepX;
+                        const y = startY + r * dStepY;
+                        if (pointInPolygonStrict({ x, y }, points, margin * 0.5)) denser.push({ x, y });
+                    }
+                }
+                // перемешиваем по seed и берём n
+                const rng = mulberry32(seed);
+                denser.sort(() => rng() - 0.5);
+                return denser.slice(0, n);
+            }
+            // берём равномерно из cand
+            if (cand.length <= n) return cand;
+            const step = cand.length / n;
+            const out = [];
+            for (let i = 0; i < n; i++) out.push(cand[Math.min(cand.length - 1, Math.floor(i * step))]);
+            return out;
+        }
+
+        function generateRowsSpots(n, margin, seed) {
+            const bb = bboxOf(points);
+            const alongX = bb.w >= bb.h;
+            const long = alongX ? bb.w : bb.h;
+            const short = alongX ? bb.h : bb.w;
+            // число рядов ≈ sqrt(n * short/long)
+            let numRows = Math.max(1, Math.round(Math.sqrt(n * (short / Math.max(long, 1)))));
+            numRows = Math.min(numRows, n);
+            let perRow = Math.ceil(n / numRows);
+            const usableLong = Math.max(1, long - 2 * margin);
+            const usableShort = Math.max(1, short - 2 * margin);
+            const rowStep = numRows > 1 ? usableShort / (numRows - 1) : 0;
+            const colStep = perRow > 1 ? usableLong / (perRow - 1) : 0;
+            const out = [];
+            for (let r = 0; r < numRows && out.length < n; r++) {
+                for (let c = 0; c < perRow && out.length < n; c++) {
+                    let x, y;
+                    if (alongX) {
+                        x = bb.minX + margin + c * colStep;
+                        y = bb.minY + margin + r * rowStep;
+                    } else {
+                        x = bb.minX + margin + r * rowStep;
+                        y = bb.minY + margin + c * colStep;
+                    }
+                    if (pointInPolygonStrict({ x, y }, points, margin * 0.5)) out.push({ x, y });
+                }
+            }
+            // добор если не хватило
+            if (out.length < n) {
+                const extra = generateGridSpots(n - out.length + 4, margin, seed + 7);
+                extra.forEach(p => {
+                    if (out.length >= n) return;
+                    if (!out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 8)) out.push(p);
+                });
+            }
+            return out.slice(0, n);
+        }
+
+        function generatePerimeterSpots(n, margin, seed) {
+            // точки вдоль shrink-полигона
+            const shrink = margin;
+            const out = [];
+            const nPts = points.length;
+            // длина периметра
+            let peri = 0;
+            const segs = [];
+            for (let i = 0; i < nPts; i++) {
+                const a = points[i], b = points[(i + 1) % nPts];
+                const len = dist(a, b);
+                segs.push({ a, b, len });
+                peri += len;
+            }
+            if (peri < 1) return out;
+            const step = peri / n;
+            let acc = step * 0.5; // начинаем с середины первого шага
+            for (let k = 0; k < n; k++) {
+                let t = acc % peri;
+                for (let s = 0; s < segs.length; s++) {
+                    if (t <= segs[s].len) {
+                        const ratio = segs[s].len > 0 ? t / segs[s].len : 0;
+                        const mx = segs[s].a.x + (segs[s].b.x - segs[s].a.x) * ratio;
+                        const my = segs[s].a.y + (segs[s].b.y - segs[s].a.y) * ratio;
+                        // сдвигаем внутрь по нормали
+                        const dx = segs[s].b.x - segs[s].a.x, dy = segs[s].b.y - segs[s].a.y;
+                        const llen = Math.hypot(dx, dy) || 1;
+                        let nx = -dy / llen, ny = dx / llen;
+                        // направление внутрь
+                        const cen = polygonCentroid(points);
+                        const midX = (segs[s].a.x + segs[s].b.x) / 2, midY = (segs[s].a.y + segs[s].b.y) / 2;
+                        if ((cen.x - midX) * nx + (cen.y - midY) * ny < 0) { nx = -nx; ny = -ny; }
+                        const px = mx + nx * shrink, py = my + ny * shrink;
+                        if (pointInPolygon({ x: px, y: py }, points)) out.push({ x: px, y: py });
+                        break;
+                    }
+                    t -= segs[s].len;
+                }
+                acc += step;
+            }
+            return out;
+        }
+
+        function generateCenterSpots(n, margin, seed) {
+            const cen = polygonCentroid(points);
+            const bb = bboxOf(points);
+            const rMax = Math.min(bb.w, bb.h) / 2 - margin;
+            const out = [{ x: cen.x, y: cen.y }];
+            if (n === 1) return out;
+            const rings = Math.ceil(Math.sqrt(n));
+            let placed = 1;
+            for (let ring = 1; ring <= rings && placed < n; ring++) {
+                const countOnRing = Math.min(n - placed, Math.max(6, ring * 6));
+                const rad = (rMax * ring) / rings;
+                for (let i = 0; i < countOnRing && placed < n; i++) {
+                    const ang = (2 * Math.PI * i) / countOnRing + (seed % 7) * 0.1;
+                    const x = cen.x + rad * Math.cos(ang);
+                    const y = cen.y + rad * Math.sin(ang);
+                    if (pointInPolygonStrict({ x, y }, points, margin * 0.4)) {
+                        out.push({ x, y });
+                        placed++;
+                    }
+                }
+            }
+            // добор
+            if (out.length < n) {
+                const extra = generateGridSpots(n, margin, seed + 3);
+                extra.forEach(p => {
+                    if (out.length >= n) return;
+                    if (!out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 10)) out.push(p);
+                });
+            }
+            return out.slice(0, n);
+        }
+
+        function mulberry32(a) {
+            return function () {
+                let t = a += 0x6D2B79F5;
+                t = Math.imul(t ^ t >>> 15, t | 1);
+                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            };
+        }
+
+        function generateRandomSpots(n, margin, seed) {
+            const bb = bboxOf(points);
+            const rng = mulberry32(seed);
+            const minDist = Math.max(15, Math.sqrt((bb.w * bb.h) / (n * 2.5)));
+            const out = [];
+            let attempts = 0;
+            const maxAttempts = n * 80;
+            while (out.length < n && attempts < maxAttempts) {
+                attempts++;
+                const x = bb.minX + margin + rng() * Math.max(1, bb.w - 2 * margin);
+                const y = bb.minY + margin + rng() * Math.max(1, bb.h - 2 * margin);
+                if (!pointInPolygonStrict({ x, y }, points, margin * 0.5)) continue;
+                if (out.some(o => Math.hypot(o.x - x, o.y - y) < minDist)) continue;
+                out.push({ x, y });
+            }
+            // если не набрали — ослабляем
+            if (out.length < n) {
+                const extra = generateGridSpots(n - out.length + 2, margin * 0.7, seed + 11);
+                extra.forEach(p => {
+                    if (out.length >= n) return;
+                    if (!out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < minDist * 0.6)) out.push(p);
+                });
+            }
+            return out.slice(0, n);
+        }
+
+        function generateSpotVariant(pattern, n, margin, seed) {
+            switch (pattern) {
+                case 'rows': return generateRowsSpots(n, margin, seed);
+                case 'perimeter': return generatePerimeterSpots(n, margin, seed);
+                case 'center': return generateCenterSpots(n, margin, seed);
+                case 'random': return generateRandomSpots(n, margin, seed);
+                case 'grid':
+                default: return generateGridSpots(n, margin, seed);
+            }
+        }
+
+        function aiProposeSpots() {
+            if (points.length < 3 || !isClosed) {
+                showToast('Сначала замкните контур и введите размеры', 2500);
+                return;
+            }
+            const countEl = document.getElementById('ai-spot-count');
+            const marginEl = document.getElementById('ai-spot-margin');
+            const patternEl = document.getElementById('ai-spot-pattern');
+            const n = Math.max(1, Math.min(60, parseInt(countEl && countEl.value, 10) || 4));
+            const margin = Math.max(5, Math.min(80, parseFloat(marginEl && marginEl.value) || 30));
+            const pattern = (patternEl && patternEl.value) || 'grid';
+
+            aiSpotVariants = [];
+            // генерируем 4–5 вариантов с разными seed
+            for (let v = 0; v < 5; v++) {
+                const pts = generateSpotVariant(pattern, n, margin, aiSpotSeed + v * 17 + n);
+                if (pts.length) aiSpotVariants.push(pts);
+            }
+            if (!aiSpotVariants.length) {
+                showToast('Не удалось разместить точки внутри контура. Уменьшите отступ или кол-во.', 3500);
+                return;
+            }
+            aiSpotVariantIdx = 0;
+            aiSpotPreview = aiSpotVariants[0].map(p => ({ x: p.x, y: p.y }));
+            const hint = document.getElementById('ai-spot-hint');
+            if (hint) hint.innerText = `Вариант 1/${aiSpotVariants.length}: ${aiSpotPreview.length} точек. «Другой вар.» — следующий, «Принять» — добавить.`;
+            showToast(`Предложено ${aiSpotPreview.length} точек (вариант 1/${aiSpotVariants.length})`, 2500);
+            draw();
+        }
+
+        function aiNextVariant() {
+            if (!aiSpotVariants.length) {
+                aiProposeSpots();
+                return;
+            }
+            aiSpotVariantIdx = (aiSpotVariantIdx + 1) % aiSpotVariants.length;
+            aiSpotPreview = aiSpotVariants[aiSpotVariantIdx].map(p => ({ x: p.x, y: p.y }));
+            const hint = document.getElementById('ai-spot-hint');
+            if (hint) hint.innerText = `Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${aiSpotPreview.length} точек. «Принять» — добавить в замер.`;
+            showToast(`Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}`, 1800);
+            draw();
+        }
+
+        function aiAcceptSpots() {
+            if (!aiSpotPreview.length) {
+                showToast('Сначала нажмите «Предложить»', 2000);
+                return;
+            }
+            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
+            aiSpotPreview.forEach(p => {
+                const off = twoNearestEdgeOffsetsCm(p);
+                fixtures.push({
+                    type: 'spot',
+                    x: p.x, y: p.y,
+                    label: 'S' + (sn++),
+                    offset_wall_a_cm: off.offset_wall_a_cm,
+                    offset_wall_b_cm: off.offset_wall_b_cm
+                });
+            });
+            const added = aiSpotPreview.length;
+            aiSpotPreview = [];
+            aiSpotVariants = [];
+            aiSpotVariantIdx = 0;
+            aiSpotSeed = (aiSpotSeed + 31) % 10000;
+            updateFixtureList();
+            const hint = document.getElementById('ai-spot-hint');
+            if (hint) hint.innerText = 'Точки добавлены. Можно предложить ещё или править вручную.';
+            showToast(`Добавлено ${added} светильников`, 2500);
+            draw();
+        }
+
+        function aiClearPreview() {
+            aiSpotPreview = [];
+            aiSpotVariants = [];
+            aiSpotVariantIdx = 0;
+            const hint = document.getElementById('ai-spot-hint');
+            if (hint) hint.innerText = 'Превью сброшено. Введите параметры и нажмите «Предложить».';
+            draw();
+            showToast('Превью сброшено', 1500);
+        }
+
         function undoStripPoint() {
             if (stripDraft.length) stripDraft.pop();
             stripPreviewLen = polylineLength(stripDraft);
@@ -2306,8 +1756,35 @@
         }
 
         function finishStrip() {
-            // Старый метод больше не используется, но оставлен для совместимости
-            showToast('Используйте метод «нажми и тяни» для создания полосы', 2500);
+            if (stripDraft.length < 2) {
+                showToast('Нужно минимум 2 точки полосы', 2000);
+                return;
+            }
+            let len = polylineLength(stripDraft);
+            const inp = document.getElementById('strip-length-input-mini');
+            if (inp && inp.value) {
+                const manual = parseFloat(String(inp.value).replace(',', '.'));
+                if (Number.isFinite(manual) && manual > 0) len = manual;
+            }
+            const n = fixtures.filter(f => f.type === 'strip').length + 1;
+            const offsets = stripWallOffsets(stripDraft);
+            fixtures.push({
+                type: 'strip',
+                points: stripDraft.map(p => ({ x: p.x, y: p.y })),
+                length_cm: Math.round(len * 10) / 10,
+                label: 'P' + n,
+                wall_offsets: offsets,
+                x: stripDraft[0].x,
+                y: stripDraft[0].y
+            });
+            stripDraft = [];
+            stripPreviewLen = 0;
+            if (inp) { inp.value = ''; delete inp.dataset.manual; }
+            updateStripMiniPanel();
+            updateFinishStripBtn();
+            updateFixtureList();
+            draw();
+            showToast(`Полоса P${n}: ${len.toFixed(1)} см`, 2500);
         }
 
         function updateFixtureList() {
@@ -2323,7 +1800,7 @@
             fixtures.forEach((f, idx) => {
                 let t = f.label || f.type;
                 if (f.type === 'spot') t = `💡 ${f.label} (${f.offset_wall_a_cm}/${f.offset_wall_b_cm} см)`;
-                if (f.type === 'cornice') t = `🪟 ${f.label} ${f.offset_cm} см`;
+                if (f.type === 'cornice') t = `🪟 ${f.name || f.label} ${f.length_cm ? (f.length_cm + 'см') : ''} вынос ${f.offset_cm || 0}`;
                 if (f.type === 'chandelier') t = `💡 Люстра ${f.label}`;
                 if (f.type === 'strip') t = `💡 Полоса ${f.label}: ${f.length_cm} см`;
                 lines.push(`<div class="fixture-row"><span>${t}</span><button type="button" onclick="removeFixture(${idx})">✕</button></div>`);
@@ -2333,9 +1810,12 @@
 
         function removeFixture(idx) {
             fixtures.splice(idx, 1);
-            lastSpotRowIndices = [];
-            spotRowGuide = null;
-            renumberFixtures();
+            let sn = 1, ln = 1, pn = 1;
+            fixtures.forEach(f => {
+                if (f.type === 'spot') f.label = 'S' + (sn++);
+                if (f.type === 'chandelier') f.label = 'L' + (ln++);
+                if (f.type === 'strip') f.label = 'P' + (pn++);
+            });
             updateFixtureList();
             draw();
         }
@@ -2396,20 +1876,25 @@
             el.style.removeProperty('display');
             el.classList.add('active');
             lastActivePanelId = id;
+            // Скрыть плавающую кнопку, если панель открыта
             const floatBtn = document.getElementById('float-menu-btn');
             if (floatBtn) floatBtn.style.display = 'none';
         }
 
+        // ---- Сворачивание панелей ----
         function togglePanel(id) {
             const el = document.getElementById(id);
             if (!el) return;
             const isActive = el.classList.contains('active');
             if (isActive) {
                 el.classList.remove('active');
+                // Запомнить последнюю активную
                 lastActivePanelId = id;
+                // Показать плавающую кнопку
                 const floatBtn = document.getElementById('float-menu-btn');
                 floatBtn.style.display = 'flex';
             } else {
+                // Открываем панель
                 showOnlyPanel(id);
             }
         }
@@ -2418,10 +1903,12 @@
             if (lastActivePanelId) {
                 showOnlyPanel(lastActivePanelId);
             } else {
+                // По умолчанию покажем results-panel
                 showOnlyPanel('results-panel');
             }
         }
 
+        // ---- Остальные функции ----
         function updateSavedChip() {
             const chip = document.getElementById('saved-chip');
             if (!chip) return;
@@ -2439,6 +1926,8 @@
                 sideProfiles = points.map(() => selectedProfileName);
             }
             stripDraft = [];
+            aiSpotPreview = [];
+            aiSpotVariants = [];
             document.getElementById('strip-mini-panel').style.display = 'none';
             document.getElementById('finish-strip-btn').style.display = 'none';
             hidePanel('install-panel');
@@ -2457,6 +1946,7 @@
             draw();
         }
 
+        // ---- Геометрические функции (без изменений) ----
         function toggleDiagonalByIndex(idx) {
             const d = availableDiagonals[idx];
             if (!d) return;
@@ -2651,7 +2141,7 @@
             openInstallPanel();
         }
 
-        // ---- Multi-ceiling / Edit mode ----
+        // ---- Multi-ceiling / Edit mode (без изменений) ----
         function b64urlToBytes(s) {
             s = s.replace(/-/g, '+').replace(/_/g, '/');
             while (s.length % 4) s += '=';
@@ -2979,6 +2469,9 @@
                 if (f.type === 'cornice') {
                     o.edge_index = f.edge_index;
                     o.offset_cm = f.offset_cm;
+                    o.name = (f.name || f.label || 'Карниз').toString();
+                    o.length_cm = f.length_cm || 0;
+                    o.label = f.label || o.name;
                 }
                 if (f.type === 'strip') {
                     o.points = (f.points || []).map(p => ({ x: p.x / 100, y: p.y / 100 }));
@@ -3094,14 +2587,10 @@
             profileEdgesPainted = false;
             stripDraft = [];
             stripPreviewLen = 0;
+            aiSpotPreview = [];
+            aiSpotVariants = [];
+            aiSpotVariantIdx = 0;
             editCeilingIndex = -1;
-            dragState = null;
-            stripDrawing = null;
-            spotSnapEnabled = true;
-            spotRowGuide = null;
-            lastSpotRowIndices = [];
-            longPressTimer = null;
-            longPressStart = null;
 
             state = 'DRAWING';
             statusText.innerText = full
@@ -3137,7 +2626,7 @@
 
             const pt = document.getElementById('profile-tools');
             const lt = document.getElementById('lighting-tools');
-            const cr = document.getElementById('cornice-offset-row');
+            const cr = document.getElementById('cornice-tools') || document.getElementById('cornice-offset-row');
             const cb = document.getElementById('chandelier-center-btn');
             if (pt) pt.style.display = 'block';
             if (lt) lt.style.display = 'none';
@@ -3185,9 +2674,7 @@
             return Math.round(Number(v) * p) / p;
         }
 
-        // =====================================================================
-        //  ОТПРАВКА В БОТ
-        // =====================================================================
+        // ---- Отправка (без изменений) ----
         async function sendToBot() {
             function note(m) {
                 console.log('[sendToBot]', m);
@@ -3310,7 +2797,14 @@
                                     return o;
                                 }
                                 if (f.type === 'cornice') {
-                                    return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
+                                    var ko = {
+                                        t: 'k',
+                                        e: f.edge_index|0,
+                                        o: r(f.offset_cm || 5, 0),
+                                        n: (f.name || f.label || 'Карниз').toString()
+                                    };
+                                    if (f.length_cm) ko.len = r(f.length_cm, 1);
+                                    return ko;
                                 }
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
@@ -3430,8 +2924,311 @@
         }
 
         // =====================================================================
-        //  ИНИЦИАЛИЗАЦИЯ
+        //  Drawing (без изменений, кроме учёта мини-панели)
         // =====================================================================
+        function drawSummaryCardOnCanvas() {
+            if (state !== 'DONE' && state !== 'SELECT_MATERIAL' && state !== 'INSTALL') return;
+            let maxY = Math.max(...points.map(p => p.y));
+            let minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+            let cx = (minX + maxX) / 2;
+
+            let matStr = `Материал: ${selectedMaterial}   |   Цвет: ${selectedColor}`;
+            let sidesStrArr = edges.map(e => `${e.label} = ${e.lengthCm != null ? e.lengthCm : '?'} см`);
+            let diagStrArr = selectedDiagonals.filter(d => d.lengthCm != null).map(d => `${d.label} = ${d.lengthCm} см`);
+
+            let perimeter = edges.reduce((s, e) => s + (e.lengthCm || 0), 0);
+            let areaPx = 0;
+            for (let i = 0; i < points.length; i++) {
+                let p1 = points[i], p2 = points[(i + 1) % points.length];
+                areaPx += (p1.x * p2.y - p2.x * p1.y);
+            }
+            let areaM2 = (Math.abs(areaPx / 2) / 10000).toFixed(2);
+            let totalStr = `Периметр: ${(perimeter / 100).toFixed(2)} м   |   Площадь: ${areaM2} м²`;
+            if (!usedExactGeometry) totalStr += '   |   (по сторонам + эскиз)';
+
+            let screenPos = toScreen(cx, maxY + 40 / camera.zoom);
+            let boxX = screenPos.x, boxY = screenPos.y;
+
+            ctx.save();
+            ctx.font = '13px Arial';
+            let sideLines = [];
+            for (let i = 0; i < sidesStrArr.length; i += 5) {
+                const chunk = sidesStrArr.slice(i, i + 5);
+                sideLines.push((i === 0 ? "Стороны: " : "") + chunk.join(", "));
+            }
+            let diagLines = [];
+            if (diagStrArr.length) {
+                let curD = "Диагонали: ";
+                diagStrArr.forEach((s, idx) => {
+                    let item = s + (idx < diagStrArr.length - 1 ? ", " : "");
+                    if (ctx.measureText(curD + item).width > 340) {
+                        diagLines.push(curD); curD = item;
+                    } else curD += item;
+                });
+                if (curD) diagLines.push(curD);
+            }
+            let allTextLines = [matStr, ...sideLines, ...diagLines, totalStr];
+            let lineHeight = 20, boxPadding = 12, boxWidth = 390;
+            let boxHeight = allTextLines.length * lineHeight + boxPadding * 2;
+            let rectX = boxX - boxWidth / 2, rectY = boxY;
+
+            ctx.shadowColor = 'rgba(0,0,0,0.12)';
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#0066cc';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(rectX, rectY, boxWidth, boxHeight, 8);
+            else ctx.rect(rectX, rectY, boxWidth, boxHeight);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.stroke();
+
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            allTextLines.forEach((line, idx) => {
+                let lineY = rectY + boxPadding + idx * lineHeight + lineHeight / 2;
+                if (idx === 0) { ctx.fillStyle = '#0066cc'; ctx.font = 'bold 14px Arial'; }
+                else if (idx === allTextLines.length - 1) { ctx.fillStyle = '#28a745'; ctx.font = 'bold 13px Arial'; }
+                else { ctx.fillStyle = '#222222'; ctx.font = '12px Arial'; }
+                ctx.fillText(line, rectX + boxPadding, lineY);
+            });
+            ctx.restore();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+            let gridSize = 30 * camera.zoom;
+            if (gridSize > 8) {
+                let oX = camera.x % gridSize, oY = camera.y % gridSize;
+                for (let x = oX; x < canvas.width; x += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+                }
+                for (let y = oY; y < canvas.height; y += gridSize) {
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+                }
+            }
+            if (points.length === 0) return;
+
+            ctx.beginPath();
+            let start = toScreen(points[0].x, points[0].y);
+            ctx.moveTo(start.x, start.y);
+            for (let i = 1; i < points.length; i++) {
+                let pt = toScreen(points[i].x, points[i].y);
+                ctx.lineTo(pt.x, pt.y);
+            }
+            if (isClosed) {
+                ctx.lineTo(start.x, start.y);
+                ctx.fillStyle = 'rgba(0,102,204,0.07)';
+                ctx.fill();
+            }
+
+            if (selectedDiagonals.length > 0 && isClosed) {
+                ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#d32f2f';
+                selectedDiagonals.forEach(d => {
+                    if (d.p1 >= points.length || d.p2 >= points.length) return;
+                    let s1 = toScreen(points[d.p1].x, points[d.p1].y);
+                    let s2 = toScreen(points[d.p2].x, points[d.p2].y);
+                    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+                    if (d.lengthCm != null) {
+                        let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+                        ctx.font = 'bold 12px Arial';
+                        let w = ctx.measureText(String(d.lengthCm)).width;
+                        ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 2, mY - 8, w + 4, 16);
+                        ctx.fillStyle = '#d32f2f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(String(d.lengthCm), mX, mY);
+                    }
+                });
+                ctx.setLineDash([]);
+            }
+
+            const showInstall = (state === 'INSTALL' || state === 'DONE');
+
+            for (let i = 0; i < points.length; i++) {
+                let nxt = (i + 1) % points.length;
+                if (!isClosed && nxt === 0) continue;
+                let s1 = toScreen(points[i].x, points[i].y);
+                let s2 = toScreen(points[nxt].x, points[nxt].y);
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                if (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) {
+                    ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
+                } else if (showInstall && sideProfiles[i]) {
+                    ctx.strokeStyle = PROFILE_COLORS[sideProfiles[i]] || '#2c3e50';
+                    ctx.lineWidth = 3.2;
+                } else {
+                    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
+                }
+                ctx.stroke();
+
+                if (isClosed && edges[i] && edges[i].lengthCm != null) {
+                    let text = edges[i].lengthCm;
+                    let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+                    ctx.font = 'bold 13px Arial';
+                    let w = ctx.measureText(String(text)).width;
+                    ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
+                    ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
+                    ctx.fillStyle = '#d32f2f';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(String(text), mX, mY);
+                }
+                if (showInstall && sideProfiles[i] && sideProfiles[i] !== 'Стандартный') {
+                    const short = { 'Теневой': 'Тен.', 'Парящий': 'Пар.' }[sideProfiles[i]] || sideProfiles[i];
+                    let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+                    ctx.font = 'bold 11px Arial';
+                    ctx.fillStyle = PROFILE_COLORS[sideProfiles[i]] || '#333';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                    ctx.fillText(short, mX, mY + 12);
+                }
+            }
+
+            // Монтажные элементы на canvas
+            if (showInstall && fixtures.length) {
+                fixtures.forEach(f => {
+                    if (f.type === 'cornice' && typeof f.edge_index === 'number' && points[f.edge_index]) {
+                        const i = f.edge_index;
+                        const a = points[i], b = points[(i + 1) % points.length];
+                        const dx = b.x - a.x, dy = b.y - a.y;
+                        const len = Math.hypot(dx, dy) || 1;
+                        let nx = -dy / len, ny = dx / len;
+                        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+                        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+                        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                        if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+                        const off = (f.offset_cm || 5);
+                        const s1 = toScreen(a.x + nx * off, a.y + ny * off);
+                        const s2 = toScreen(b.x + nx * off, b.y + ny * off);
+                        ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                        ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2.5; ctx.stroke();
+                        return;
+                    }
+                    const sp = toScreen(f.x, f.y);
+                    if (f.type === 'spot') {
+                        ctx.beginPath();
+                        ctx.fillStyle = '#f39c12'; ctx.strokeStyle = '#b9770e'; ctx.lineWidth = 2;
+                        ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(sp.x - 4, sp.y); ctx.lineTo(sp.x + 4, sp.y); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 4); ctx.lineTo(sp.x, sp.y + 4); ctx.stroke();
+                        ctx.fillStyle = '#b9770e'; ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                        ctx.fillText(f.label || 'S', sp.x + 10, sp.y - 4);
+                    } else if (f.type === 'chandelier') {
+                        ctx.beginPath();
+                        ctx.fillStyle = '#c0392b'; ctx.strokeStyle = '#7b241c'; ctx.lineWidth = 2;
+                        ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+                        ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y - 5); ctx.lineTo(sp.x + 5, sp.y + 5); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(sp.x + 5, sp.y - 5); ctx.lineTo(sp.x - 5, sp.y + 5); ctx.stroke();
+                        ctx.fillStyle = '#c0392b'; ctx.font = 'bold 12px Arial';
+                        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                        ctx.fillText(f.label || 'L', sp.x + 12, sp.y - 4);
+                    } else if (f.type === 'strip' && f.points && f.points.length >= 2) {
+                        ctx.beginPath();
+                        const p0 = toScreen(f.points[0].x, f.points[0].y);
+                        ctx.moveTo(p0.x, p0.y);
+                        for (let k = 1; k < f.points.length; k++) {
+                            const pk = toScreen(f.points[k].x, f.points[k].y);
+                            ctx.lineTo(pk.x, pk.y);
+                        }
+                        ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                        ctx.stroke();
+                        const mid = f.points[Math.floor(f.points.length / 2)];
+                        const sm = toScreen(mid.x, mid.y);
+                        ctx.fillStyle = '#b7950b'; ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                        ctx.fillText(`${f.label || 'P'} ${f.length_cm}см`, sm.x, sm.y - 6);
+                    }
+                });
+            }
+
+            // Черновик световой полосы
+            if (state === 'INSTALL' && stripDraft && stripDraft.length) {
+                ctx.beginPath();
+                const s0 = toScreen(stripDraft[0].x, stripDraft[0].y);
+                ctx.moveTo(s0.x, s0.y);
+                for (let k = 1; k < stripDraft.length; k++) {
+                    const sk = toScreen(stripDraft[k].x, stripDraft[k].y);
+                    ctx.lineTo(sk.x, sk.y);
+                }
+                ctx.strokeStyle = '#f39c12'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]);
+                ctx.stroke(); ctx.setLineDash([]);
+                stripDraft.forEach(p => {
+                    const sp = toScreen(p.x, p.y);
+                    ctx.beginPath(); ctx.fillStyle = '#f39c12';
+                    ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2); ctx.fill();
+                });
+                if (stripPreviewLen > 0) {
+                    const last = stripDraft[stripDraft.length - 1];
+                    const sl = toScreen(last.x, last.y);
+                    ctx.fillStyle = '#e67e22'; ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'left'; ctx.fillText(stripPreviewLen.toFixed(1) + ' см', sl.x + 8, sl.y - 8);
+                }
+            }
+
+            // Превью ИИ-расстановки светильников
+            if (state === 'INSTALL' && aiSpotPreview && aiSpotPreview.length) {
+                aiSpotPreview.forEach((p, idx) => {
+                    const sp = toScreen(p.x, p.y);
+                    ctx.beginPath();
+                    ctx.fillStyle = 'rgba(26, 115, 232, 0.25)';
+                    ctx.strokeStyle = '#1a73e8';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 3]);
+                    ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    // крестик
+                    ctx.strokeStyle = '#1a73e8';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y); ctx.lineTo(sp.x + 5, sp.y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 5); ctx.lineTo(sp.x, sp.y + 5); ctx.stroke();
+                    ctx.fillStyle = '#1a73e8';
+                    ctx.font = 'bold 10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText('S' + (idx + 1), sp.x, sp.y - 12);
+                });
+            }
+
+            points.forEach((p, idx) => {
+                let sp = toScreen(p.x, p.y);
+                ctx.beginPath();
+                ctx.fillStyle = (idx === 0 && !isClosed) ? '#28a745' : '#ffffff';
+                ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
+                ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI * 2);
+                ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
+            });
+
+            drawSummaryCardOnCanvas();
+        }
+
+        // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
+        function loadCorniceCatalogFromUrl() {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                let raw = params.get('cornices') || '';
+                if (!raw) return;
+                const names = decodeURIComponent(raw).split('|').map(s => s.trim()).filter(Boolean);
+                if (!names.length) return;
+                const sel = document.getElementById('cornice-type-select');
+                if (!sel) return;
+                sel.innerHTML = '';
+                names.forEach(function (n) {
+                    const opt = document.createElement('option');
+                    opt.value = n; opt.textContent = n;
+                    sel.appendChild(opt);
+                });
+            } catch (e) { console.warn('cornices url', e); }
+        }
+        loadCorniceCatalogFromUrl();
+
+        // ---- Инициализация ----
         const webApp = getTelegramWebApp();
         if (webApp) {
             webApp.ready();
@@ -3441,7 +3238,7 @@
                     typeof webApp.enableClosingConfirmation === 'function') {
                     webApp.enableClosingConfirmation();
                 }
-            } catch (e) {}
+            } catch (e) { /* старый клиент Telegram */ }
             tryLoadEditFromUrl().then(loaded => {
                 if (loaded) console.log('Edit mode loaded');
             });
@@ -3450,9 +3247,8 @@
             tryLoadEditFromUrl();
         }
 
+        // Инициализация floating button (скрыта по умолчанию)
         document.getElementById('float-menu-btn').style.display = 'none';
-
-        // закрывающие теги
     </script>
 </body>
 </html>
