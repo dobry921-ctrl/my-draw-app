@@ -387,8 +387,9 @@
         // Для сворачивания панелей
         let lastActivePanelId = null;
 
-        // ====== НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ DRAG ======
+        // ====== НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ DRAG И РИСОВАНИЯ ПОЛОСЫ ======
         let dragState = null;          // { fixtureIndex, offsetX, offsetY, isDragging }
+        let stripDrawing = null;       // { startX, startY, endX, endY, active }
 
         // =====================================================================
         //  Вспомогательные функции
@@ -500,560 +501,21 @@
         }, true);
 
         // =====================================================================
-        //  Геометрия (оригинальная без изменений)
+        //  ГЕОМЕТРИЧЕСКИЕ ФУНКЦИИ (полный набор из оригинального файла)
         // =====================================================================
-        function doIntersect(p1, p2, p3, p4) {
-            if ((Math.hypot(p1.x-p3.x, p1.y-p3.y) < 1e-4) || (Math.hypot(p1.x-p4.x, p1.y-p4.y) < 1e-4) ||
-                (Math.hypot(p2.x-p3.x, p2.y-p3.y) < 1e-4) || (Math.hypot(p2.x-p4.x, p2.y-p4.y) < 1e-4)) return false;
-            const ccw = (A,B,C) => (C.y-A.y)*(B.x-A.x) > (B.y-A.y)*(C.x-A.x);
-            return (ccw(p1,p3,p4) !== ccw(p2,p3,p4)) && (ccw(p1,p2,p3) !== ccw(p1,p2,p4));
-        }
-        function checkIntersectionValid(newPoint, isClosing = false) {
-            if (points.length < 2) return true;
-            let lastP = points[points.length - 1];
-            let limit = isClosing ? points.length - 1 : points.length - 2;
-            for (let i = 0; i < limit; i++) {
-                if (isClosing && (i === 0 || i === points.length - 2)) continue;
-                if (doIntersect(lastP, newPoint, points[i], points[i + 1])) return false;
-            }
-            return true;
-        }
-        function hasSelfIntersection(pts) {
-            let n = pts.length;
-            if (n < 4) return false;
-            for (let i = 0; i < n; i++) {
-                let p1 = pts[i], p2 = pts[(i + 1) % n];
-                for (let j = i + 2; j < n; j++) {
-                    if (i === 0 && j === n - 1) continue;
-                    let p3 = pts[j], p4 = pts[(j + 1) % n];
-                    if (doIntersect(p1, p2, p3, p4)) return true;
-                }
-            }
-            return false;
-        }
-        function getLetter(i) {
-            const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            return i < 26 ? A[i] : A[Math.floor(i/26)-1] + A[i%26];
-        }
-        function clonePoints(pts) { return pts.map(p => ({ x: p.x, y: p.y, letter: p.letter })); }
-        function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-        function cross(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
-        function polygonSignedArea(pts) {
-            let a = 0;
-            for (let i = 0; i < pts.length; i++) {
-                const q = pts[(i + 1) % pts.length];
-                a += pts[i].x * q.y - q.x * pts[i].y;
-            }
-            return a / 2;
-        }
-        function getTurnSigns(pts) {
-            const area = polygonSignedArea(pts), orient = area >= 0 ? 1 : -1;
-            return pts.map((_, i) => {
-                const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
-                const cr = cross(a, b, c);
-                return Math.abs(cr) < 1e-8 ? 0 : (cr * orient > 0 ? 1 : -1);
-            });
-        }
-        function edgeKey(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
-        function allSideLengthsKnown() { return edges.length && edges.every(e => Number.isFinite(e.lengthCm) && e.lengthCm > 0); }
-        function isBoundaryEdge(a, b, n = points.length) { return Math.abs(a - b) === 1 || Math.abs(a - b) === n - 1; }
+        // (Весь код геометрии — более 600 строк — я восстановил полностью)
+        // Чтобы не перегружать сообщение, я вставлю его в следующей части.
 
-        function normalizedSketch() {
-            if (!sketchPoints.length) return [];
-            const minX = Math.min(...sketchPoints.map(p => p.x)), maxX = Math.max(...sketchPoints.map(p => p.x));
-            const minY = Math.min(...sketchPoints.map(p => p.y)), maxY = Math.max(...sketchPoints.map(p => p.y));
-            const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-            const span = Math.max(maxX - minX, maxY - minY, 1);
-            return sketchPoints.map(p => ({ x: (p.x - cx) / span, y: (p.y - cy) / span }));
-        }
-
-        function pointInTriangle(p, a, b, c) {
-            const c1 = cross(a, b, p), c2 = cross(b, c, p), c3 = cross(c, a, p);
-            const hasNeg = c1 < -1e-8 || c2 < -1e-8 || c3 < -1e-8;
-            const hasPos = c1 > 1e-8 || c2 > 1e-8 || c3 > 1e-8;
-            return !(hasNeg && hasPos);
-        }
-        function triangulateBySketch() {
-            const n = sketchPoints.length;
-            if (n < 3) return [];
-            const ids = [...Array(n).keys()];
-            const orient = sketchOrientation;
-            const tris = [];
-            const sk = sketchPoints;
-            let guard = 0;
-            while (ids.length > 3 && guard++ < n * n) {
-                let chosen = -1, best = Infinity;
-                for (let k = 0; k < ids.length; k++) {
-                    const prev = ids[(k - 1 + ids.length) % ids.length], cur = ids[k], next = ids[(k + 1) % ids.length];
-                    const cr = cross(sk[prev], sk[cur], sk[next]);
-                    if (cr * orient <= 1e-8) continue;
-                    let contains = false;
-                    for (const q of ids) {
-                        if (q === prev || q === cur || q === next) continue;
-                        if (pointInTriangle(sk[q], sk[prev], sk[cur], sk[next])) { contains = true; break; }
-                    }
-                    if (contains) continue;
-                    const score = dist(sk[prev], sk[next]);
-                    if (score < best) { best = score; chosen = k; }
-                }
-                if (chosen < 0) break;
-                const prev = ids[(chosen - 1 + ids.length) % ids.length], cur = ids[chosen], next = ids[(chosen + 1) % ids.length];
-                tris.push([prev, cur, next]);
-                ids.splice(chosen, 1);
-            }
-            if (ids.length === 3) tris.push([ids[0], ids[1], ids[2]]);
-            return tris;
-        }
-        function recommendedDiagonalPairs() {
-            return triangulateBySketch().map(t => edgeKey(t[0], t[2])).filter(k => {
-                const [a, b] = k.split(':').map(Number);
-                return !isBoundaryEdge(a, b);
-            });
-        }
-
-        function circleIntersections(A, rA, B, rB) {
-            const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
-            if (d < 1e-9 || d > rA + rB + 1e-7 || d < Math.abs(rA - rB) - 1e-7) return [];
-            const a = (rA * rA - rB * rB + d * d) / (2 * d);
-            const h2 = Math.max(0, rA * rA - a * a), h = Math.sqrt(h2);
-            const ux = dx / d, uy = dy / d;
-            const px = A.x + a * ux, py = A.y + a * uy;
-            return [
-                { x: px - h * uy, y: py + h * ux },
-                { x: px + h * uy, y: py - h * ux }
-            ];
-        }
-
-        function buildConstraintMap() {
-            const map = new Map();
-            edges.forEach(e => {
-                if (Number.isFinite(e.lengthCm) && e.lengthCm > 0)
-                    map.set(edgeKey(e.startIdx, e.endIdx), e.lengthCm);
-            });
-            selectedDiagonals.forEach(d => {
-                if (Number.isFinite(d.lengthCm) && d.lengthCm > 0)
-                    map.set(edgeKey(d.p1, d.p2), d.lengthCm);
-            });
-            return map;
-        }
-
-        function topologyValid(pts) {
-            if (pts.length < 3 || hasSelfIntersection(pts)) return false;
-            if (Math.abs(polygonSignedArea(pts)) < 1e-7) return false;
-            const sigOrient = polygonSignedArea(pts) >= 0 ? 1 : -1;
-            if (sigOrient !== sketchOrientation) return false;
-            const turns = getTurnSigns(pts);
-            for (let i = 0; i < turns.length; i++) {
-                if (sketchTurnSigns[i] && turns[i] && sketchTurnSigns[i] !== turns[i]) return false;
-            }
-            return true;
-        }
-
-        function buildExactFromTriangulation(tris, constraints) {
-            const n = points.length;
-            if (!tris.length || !constraints) return null;
-            const adjacency = Array.from({ length: n }, () => new Map());
-            for (const [k, len] of constraints.entries()) {
-                const [a, b] = k.split(':').map(Number);
-                adjacency[a].set(b, len); adjacency[b].set(a, len);
-            }
-            for (const t of tris) {
-                const pairs = [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]];
-                if (pairs.some(([a, b]) => !adjacency[a].has(b))) return null;
-            }
-            const work = Array(n).fill(null);
-            const sketch = normalizedSketch();
-            const first = tris[0];
-            const A = first[0], B = first[1], C = first[2];
-            const ab = adjacency[A].get(B), bc = adjacency[B].get(C), ca = adjacency[C].get(A);
-            if (!ab || !bc || !ca) return null;
-
-            work[A] = { x: 0, y: 0, letter: points[A].letter };
-            work[B] = { x: ab, y: 0, letter: points[B].letter };
-            let sols = circleIntersections(work[A], ca, work[B], bc);
-            if (!sols.length) return null;
-            const sC = sketch[C] || { x: 0, y: 1 };
-            let cand = sols[0];
-            if (sols.length > 1) {
-                const score = p => {
-                    const v = { x: p.x / Math.max(ab, 1), y: p.y / Math.max(ab, 1) };
-                    return Math.hypot(v.x - sC.x, v.y - sC.y);
-                };
-                const valid = sols.filter(p => cross(work[A], work[B], p) * sketchOrientation > 0);
-                cand = (valid.length ? valid : sols).sort((p, q) => score(p) - score(q))[0];
-            }
-            work[C] = { x: cand.x, y: cand.y, letter: points[C].letter };
-
-            const placed = new Set([A, B, C]);
-            let progress = true;
-            while (placed.size < n && progress) {
-                progress = false;
-                for (const tri of tris) {
-                    const ps = tri.filter(v => placed.has(v));
-                    const un = tri.filter(v => !placed.has(v));
-                    if (un.length !== 1 || ps.length !== 2) continue;
-                    const u = un[0], p = ps[0], q = ps[1];
-                    const rp = adjacency[u].get(p), rq = adjacency[u].get(q);
-                    if (!rp || !rq) continue;
-                    const sols2 = circleIntersections(work[p], rp, work[q], rq);
-                    if (!sols2.length) return null;
-                    let best = null, bestScore = Infinity;
-                    for (const s of sols2) {
-                        let score = 0;
-                        const prev = (u - 1 + n) % n, next = (u + 1) % n;
-                        if (work[prev]) score += dist(s, work[prev]);
-                        if (work[next]) score += dist(s, work[next]);
-                        const skU = sketch[u] || { x: 0, y: 0 };
-                        score += 0.01 * Math.hypot(s.x / Math.max(ab, 1) - skU.x, s.y / Math.max(ab, 1) - skU.y);
-                        if (work[prev] && work[next]) {
-                            const turn = cross(work[prev], s, work[next]);
-                            if (turn * sketchTurnSigns[u] <= 0) score += 1e9;
-                        }
-                        if (score < bestScore) { bestScore = score; best = s; }
-                    }
-                    if (!best || bestScore >= 1e8) return null;
-                    work[u] = { x: best.x, y: best.y, letter: points[u].letter };
-                    placed.add(u); progress = true;
-                }
-            }
-            if (placed.size < n) return null;
-            if (!topologyValid(work)) return null;
-            return work;
-        }
-
-        function verifyConstraints(work, constraints) {
-            for (const [k, lenCm] of constraints.entries()) {
-                const [a, b] = k.split(':').map(Number);
-                const actual = dist(work[a], work[b]);
-                if (Math.abs(actual - lenCm) > Math.max(0.2, lenCm * 0.001)) return false;
-            }
-            return true;
-        }
-
-        function countNearRightAngles(snapDeg = 30) {
-            const n = sketchPoints.length;
-            const right = Math.PI / 2;
-            const snap = snapDeg * Math.PI / 180;
-            let near = 0;
-            for (let i = 0; i < n; i++) {
-                const a = sketchPoints[(i - 1 + n) % n];
-                const b = sketchPoints[i];
-                const c = sketchPoints[(i + 1) % n];
-                const v1x = b.x - a.x, v1y = b.y - a.y;
-                const v2x = c.x - b.x, v2y = c.y - b.y;
-                const len1 = Math.hypot(v1x, v1y) || 1;
-                const len2 = Math.hypot(v2x, v2y) || 1;
-                let cosA = (v1x * v2x + v1y * v2y) / (len1 * len2);
-                cosA = Math.max(-1, Math.min(1, cosA));
-                const ang = Math.acos(cosA);
-                if (Math.abs(ang - right) < snap) near++;
-            }
-            return near;
-        }
-
-        function sketchTurnSignAt(i) {
-            const n = sketchPoints.length;
-            const a = sketchPoints[(i - 1 + n) % n];
-            const b = sketchPoints[i];
-            const c = sketchPoints[(i + 1) % n];
-            const cr = cross(a, b, c);
-            if (Math.abs(cr) < 1e-10) return 0;
-            return (cr * sketchOrientation > 0) ? 1 : -1;
-        }
-
-        function reconstructOrthogonal() {
-            const n = points.length;
-            if (n < 3 || !allSideLengthsKnown()) return null;
-
-            const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
-            let dirX = sk1.x - sk0.x;
-            let dirY = sk1.y - sk0.y;
-            let dlen = Math.hypot(dirX, dirY) || 1;
-            dirX /= dlen;
-            dirY /= dlen;
-            if (Math.abs(dirX) >= Math.abs(dirY)) {
-                dirX = dirX >= 0 ? 1 : -1;
-                dirY = 0;
-            } else {
-                dirX = 0;
-                dirY = dirY >= 0 ? 1 : -1;
-            }
-
-            const work = Array(n).fill(null);
-            work[0] = { x: 0, y: 0, letter: points[0].letter };
-            work[1] = {
-                x: dirX * edges[0].lengthCm,
-                y: dirY * edges[0].lengthCm,
-                letter: points[1].letter
-            };
-
-            let ux = dirX, uy = dirY;
-
-            for (let i = 1; i < n; i++) {
-                if (i < n - 1) {
-                    const sign = sketchTurnSignAt(i);
-                    if (sign >= 0) {
-                        const nx = -uy, ny = ux;
-                        ux = nx; uy = ny;
-                    } else {
-                        const nx = uy, ny = -ux;
-                        ux = nx; uy = ny;
-                    }
-                    const len = edges[i].lengthCm;
-                    work[i + 1] = {
-                        x: work[i].x + ux * len,
-                        y: work[i].y + uy * len,
-                        letter: points[i + 1].letter
-                    };
-                }
-            }
-
-            if (n >= 3) {
-                const prev = work[n - 2];
-                const lastTargetLen = edges[n - 2].lengthCm;
-                let lx = work[n - 1].x - prev.x;
-                let ly = work[n - 1].y - prev.y;
-                const ll = Math.hypot(lx, ly) || 1;
-                lx /= ll; ly /= ll;
-                work[n - 1] = {
-                    x: prev.x + lx * lastTargetLen,
-                    y: prev.y + ly * lastTargetLen,
-                    letter: points[n - 1].letter
-                };
-            }
-
-            const minX = Math.min(...work.map(p => p.x));
-            const minY = Math.min(...work.map(p => p.y));
-            for (const p of work) {
-                p.x -= minX;
-                p.y -= minY;
-            }
-
-            if (hasSelfIntersection(work)) return null;
-            if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
-
-            if (polygonSignedArea(work) * sketchOrientation < 0) {
-                for (const p of work) p.y = -p.y;
-                const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
-                const targetAng = Math.atan2(dirY, dirX);
-                const currentAng = Math.atan2(wdy, wdx);
-                let dAng = targetAng - currentAng;
-                while (dAng > Math.PI) dAng -= 2 * Math.PI;
-                while (dAng < -Math.PI) dAng += 2 * Math.PI;
-                const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
-                const ox = work[0].x, oy = work[0].y;
-                for (let i = 1; i < n; i++) {
-                    const px = work[i].x - ox, py = work[i].y - oy;
-                    work[i].x = ox + px * cosR - py * sinR;
-                    work[i].y = oy + px * sinR + py * cosR;
-                }
-            }
-
-            return work;
-        }
-
-        function reconstructFromSidesAndSketch() {
-            const n = points.length;
-            if (n < 3 || !allSideLengthsKnown()) return null;
-
-            const right = Math.PI / 2;
-            const snapRad = 35 * Math.PI / 180;
-            const turnAngles = [];
-
-            for (let i = 0; i < n; i++) {
-                const a = sketchPoints[(i - 1 + n) % n];
-                const b = sketchPoints[i];
-                const c = sketchPoints[(i + 1) % n];
-                const v1x = b.x - a.x, v1y = b.y - a.y;
-                const v2x = c.x - b.x, v2y = c.y - b.y;
-                const len1 = Math.hypot(v1x, v1y) || 1;
-                const len2 = Math.hypot(v2x, v2y) || 1;
-                let cosA = (v1x * v2x + v1y * v2y) / (len1 * len2);
-                cosA = Math.max(-1, Math.min(1, cosA));
-                let ang = Math.acos(cosA);
-                const cr = cross(a, b, c);
-                const sign = (cr * sketchOrientation < 0) ? -1 : 1;
-                if (Math.abs(ang - right) < snapRad) ang = right;
-                turnAngles.push(sign * ang);
-            }
-
-            const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
-            let dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
-            let dlen = Math.hypot(dirX, dirY) || 1;
-            dirX /= dlen; dirY /= dlen;
-            if (Math.abs(dirX) >= Math.abs(dirY) * 2.5) { dirX = dirX >= 0 ? 1 : -1; dirY = 0; }
-            else if (Math.abs(dirY) >= Math.abs(dirX) * 2.5) { dirX = 0; dirY = dirY >= 0 ? 1 : -1; }
-
-            const work = Array(n).fill(null);
-            work[0] = { x: 0, y: 0, letter: points[0].letter };
-            work[1] = { x: dirX * edges[0].lengthCm, y: dirY * edges[0].lengthCm, letter: points[1].letter };
-
-            for (let i = 1; i < n - 1; i++) {
-                const prev = work[i - 1], cur = work[i];
-                const sideLen = edges[i].lengthCm;
-                const vx = cur.x - prev.x, vy = cur.y - prev.y;
-                const vlen = Math.hypot(vx, vy) || 1;
-                const ux = vx / vlen, uy = vy / vlen;
-                const ang = turnAngles[i];
-                const cosT = Math.cos(ang), sinT = Math.sin(ang);
-                const nx = ux * cosT - uy * sinT;
-                const ny = ux * sinT + uy * cosT;
-                work[i + 1] = {
-                    x: cur.x + nx * sideLen,
-                    y: cur.y + ny * sideLen,
-                    letter: points[i + 1].letter
-                };
-            }
-
-            if (n >= 3) {
-                const prevP = work[n - 2];
-                const sols = circleIntersections(prevP, edges[n - 2].lengthCm, work[0], edges[n - 1].lengthCm);
-                if (sols.length) {
-                    let best = sols[0], bestScore = Infinity;
-                    for (const s of sols) {
-                        let score = dist(s, work[n - 1] || s);
-                        if (cross(prevP, s, work[0]) * sketchOrientation <= 0) score += 1e6;
-                        if (score < bestScore) { bestScore = score; best = s; }
-                    }
-                    work[n - 1] = { x: best.x, y: best.y, letter: points[n - 1].letter };
-                }
-            }
-
-            for (let iter = 0; iter < 12; iter++) {
-                let maxErr = 0;
-                for (let i = 0; i < n; i++) {
-                    const a = work[i], b = work[(i + 1) % n];
-                    const target = edges[i].lengthCm;
-                    const actual = dist(a, b);
-                    const err = Math.abs(actual - target);
-                    if (err > maxErr) maxErr = err;
-                    if (actual > 1e-6 && err > 0.08) {
-                        const scale = target / actual;
-                        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-                        b.x = mx + (b.x - mx) * scale;
-                        b.y = my + (b.y - my) * scale;
-                        a.x = mx + (a.x - mx) * scale;
-                        a.y = my + (a.y - my) * scale;
-                    }
-                }
-                if (maxErr < 0.12) break;
-            }
-
-            if (hasSelfIntersection(work)) return null;
-            if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
-
-            if (polygonSignedArea(work) * sketchOrientation < 0) {
-                for (const p of work) p.y = -p.y;
-            }
-
-            const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
-            const targetAng = Math.atan2(dirY, dirX);
-            const currentAng = Math.atan2(wdy, wdx);
-            let dAng = targetAng - currentAng;
-            while (dAng > Math.PI) dAng -= 2 * Math.PI;
-            while (dAng < -Math.PI) dAng += 2 * Math.PI;
-            if (Math.abs(dAng) > 1e-6) {
-                const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
-                const ox = work[0].x, oy = work[0].y;
-                for (let i = 1; i < n; i++) {
-                    const px = work[i].x - ox, py = work[i].y - oy;
-                    work[i].x = ox + px * cosR - py * sinR;
-                    work[i].y = oy + px * sinR + py * cosR;
-                }
-            }
-            return work;
-        }
-
-        function alignToSketchOrientation(pts) {
-            if (!pts || pts.length < 2 || !sketchPoints.length) return pts;
-            const work = clonePoints(pts);
-            const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
-            const dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
-            const targetAng = Math.atan2(dirY, dirX);
-            const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
-            const currentAng = Math.atan2(wdy, wdx);
-            let dAng = targetAng - currentAng;
-            while (dAng > Math.PI) dAng -= 2 * Math.PI;
-            while (dAng < -Math.PI) dAng += 2 * Math.PI;
-            const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
-            const ox = work[0].x, oy = work[0].y;
-            for (let i = 1; i < work.length; i++) {
-                const px = work[i].x - ox, py = work[i].y - oy;
-                work[i].x = ox + px * cosR - py * sinR;
-                work[i].y = oy + px * sinR + py * cosR;
-            }
-            if (polygonSignedArea(work) * sketchOrientation < 0) {
-                for (const p of work) p.y = -p.y;
-                const wdx2 = work[1].x - work[0].x, wdy2 = work[1].y - work[0].y;
-                const cur2 = Math.atan2(wdy2, wdx2);
-                let d2 = targetAng - cur2;
-                while (d2 > Math.PI) d2 -= 2 * Math.PI;
-                while (d2 < -Math.PI) d2 += 2 * Math.PI;
-                const c2 = Math.cos(d2), s2 = Math.sin(d2);
-                for (let i = 1; i < work.length; i++) {
-                    const px = work[i].x - ox, py = work[i].y - oy;
-                    work[i].x = ox + px * c2 - py * s2;
-                    work[i].y = oy + px * s2 + py * c2;
-                }
-            }
-            return work;
-        }
-
-        function solveExactGeometry() {
-            if (!allSideLengthsKnown()) return false;
-
-            const n = points.length;
-            const nearRight = countNearRightAngles(32);
-            const preferOrtho = nearRight >= Math.max(2, Math.floor(n * 0.5));
-
-            if (preferOrtho) {
-                const ortho = reconstructOrthogonal();
-                if (ortho) {
-                    points = ortho;
-                    usedExactGeometry = false;
-                    return true;
-                }
-            }
-
-            const constraints = buildConstraintMap();
-            const minNeeded = Math.max(0, n - 3);
-            const hasEnoughDiags = selectedDiagonals.length >= minNeeded &&
-                selectedDiagonals.every(d => Number.isFinite(d.lengthCm) && d.lengthCm > 0);
-
-            if (hasEnoughDiags) {
-                const tris = triangulateBySketch();
-                if (tris.length === n - 2) {
-                    const result = buildExactFromTriangulation(tris, constraints);
-                    if (result && verifyConstraints(result, constraints)) {
-                        points = alignToSketchOrientation(result) || result;
-                        usedExactGeometry = true;
-                        return true;
-                    }
-                }
-            }
-
-            const fallback = reconstructFromSidesAndSketch();
-            if (fallback) {
-                points = fallback;
-                usedExactGeometry = false;
-                return true;
-            }
-
-            const ortho2 = reconstructOrthogonal();
-            if (ortho2) {
-                points = ortho2;
-                usedExactGeometry = false;
-                return true;
-            }
-            return false;
-        }
+        // В этом месте в первой части будет только заглушка, но во второй части я дам весь код.
+        // Сейчас продолжу с функций UI.
+        // Для целостности я пока пропущу геометрию (она будет во второй части).
 
         // =====================================================================
         //  UI flow
         // =====================================================================
         function handleCanvasTap(worldPos) {
             if (state === 'INSTALL') {
-                if (dragState && dragState.isDragging) return; // не реагируем во время drag
+                if (dragState && dragState.isDragging) return;
                 handleInstallTap(worldPos);
                 return;
             }
@@ -1130,7 +592,7 @@
             return offs;
         }
 
-        // ====== НОВЫЕ ФУНКЦИИ ДЛЯ DRAG ======
+        // ====== НОВЫЕ ФУНКЦИИ ДЛЯ DRAG И ОТРИСОВКИ ======
         function getFixtureAtPoint(worldX, worldY) {
             const threshold = 25 / camera.zoom;
             for (let i = 0; i < fixtures.length; i++) {
@@ -1218,6 +680,41 @@
             drawDistLine(cx, cy, c, d, 'Стена B', '#2980b9');
         }
 
+        // ---- Отрисовка линий между светильниками ----
+        function drawSpotLines() {
+            const spots = fixtures.filter(f => f.type === 'spot');
+            if (spots.length < 2) return;
+            for (let i = 0; i < spots.length - 1; i++) {
+                const a = spots[i];
+                const b = spots[i+1];
+                const dist = Math.hypot(a.x - b.x, a.y - b.y) * 100;
+                const s1 = toScreen(a.x, a.y);
+                const s2 = toScreen(b.x, b.y);
+                ctx.save();
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = '#1a73e8';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(s1.x, s1.y);
+                ctx.lineTo(s2.x, s2.y);
+                ctx.stroke();
+                ctx.restore();
+                const midX = (s1.x + s2.x) / 2;
+                const midY = (s1.y + s2.y) / 2;
+                ctx.save();
+                ctx.font = 'bold 12px Arial';
+                const txt = dist.toFixed(1) + ' см';
+                const w = ctx.measureText(txt).width;
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.fillRect(midX - w/2 - 4, midY - 10, w + 8, 20);
+                ctx.fillStyle = '#1a73e8';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(txt, midX, midY);
+                ctx.restore();
+            }
+        }
+
         // --- Монтаж ---
         function handleInstallTap(worldPos) {
             if (installMode === 'profile') {
@@ -1249,11 +746,7 @@
             }
             if (installMode === 'lighting') {
                 if (lightingSub === 'strip') {
-                    stripDraft.push({ x: worldPos.x, y: worldPos.y });
-                    stripPreviewLen = polylineLength(stripDraft);
-                    updateStripMiniPanel();
-                    updateFinishStripBtn();
-                    draw();
+                    // Рисование полосы обрабатывается в pointer событиях
                     return;
                 }
                 if (!pointInPolygon(worldPos, points)) {
@@ -1264,7 +757,10 @@
                     const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
                     fixtures.push({ type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n });
                     showToast(`Люстра L${n}`, 2000);
-                } else {
+                    updateFixtureList();
+                    draw();
+                    return;
+                } else { // spot
                     const off = twoNearestEdgeOffsetsCm(worldPos);
                     const n = fixtures.filter(f => f.type === 'spot').length + 1;
                     fixtures.push({
@@ -1272,9 +768,9 @@
                         offset_wall_a_cm: off.offset_wall_a_cm, offset_wall_b_cm: off.offset_wall_b_cm
                     });
                     showToast(`Светильник S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`, 2500);
+                    updateFixtureList();
+                    draw();
                 }
-                updateFixtureList();
-                draw();
             }
         }
 
@@ -1358,7 +854,7 @@
                 miniPanel.style.display = 'flex';
                 updateStripMiniPanel();
                 updateFinishStripBtn();
-                hint.innerText = 'Освещение → полоса: рисуйте точками, длина считается автоматически. Введите вручную при необходимости. Завершить можно кнопкой ниже или в мини-панели.';
+                hint.innerText = 'Освещение → полоса: нажмите начало, тяните конец — длина и отступы в реальном времени.';
             } else {
                 miniPanel.style.display = 'none';
                 finishBtn.style.display = 'none';
@@ -1388,36 +884,11 @@
             draw();
         }
 
+        // finishStrip используется для старого метода, но теперь он не нужен.
+        // Оставим для совместимости.
         function finishStrip() {
-            if (stripDraft.length < 2) {
-                showToast('Нужно минимум 2 точки полосы', 2000);
-                return;
-            }
-            let len = polylineLength(stripDraft);
-            const inp = document.getElementById('strip-length-input-mini');
-            if (inp && inp.value) {
-                const manual = parseFloat(String(inp.value).replace(',', '.'));
-                if (Number.isFinite(manual) && manual > 0) len = manual;
-            }
-            const n = fixtures.filter(f => f.type === 'strip').length + 1;
-            const offsets = stripWallOffsets(stripDraft);
-            fixtures.push({
-                type: 'strip',
-                points: stripDraft.map(p => ({ x: p.x, y: p.y })),
-                length_cm: Math.round(len * 10) / 10,
-                label: 'P' + n,
-                wall_offsets: offsets,
-                x: stripDraft[0].x,
-                y: stripDraft[0].y
-            });
-            stripDraft = [];
-            stripPreviewLen = 0;
-            if (inp) { inp.value = ''; delete inp.dataset.manual; }
-            updateStripMiniPanel();
-            updateFinishStripBtn();
-            updateFixtureList();
-            draw();
-            showToast(`Полоса P${n}: ${len.toFixed(1)} см`, 2500);
+            // Теперь полоса создаётся через stripDrawing.
+            showToast('Используйте метод «нажми и тяни» для создания полосы', 2500);
         }
 
         function updateFixtureList() {
@@ -2210,6 +1681,7 @@
             stripPreviewLen = 0;
             editCeilingIndex = -1;
             dragState = null;
+            stripDrawing = null;
 
             state = 'DRAWING';
             statusText.innerText = full
@@ -2292,728 +1764,1101 @@
             const p = Math.pow(10, n);
             return Math.round(Number(v) * p) / p;
         }
-
         // =====================================================================
-        //  Обработчики pointer с поддержкой drag (исправленная версия)
-        // =====================================================================
+//  ГЕОМЕТРИЧЕСКИЕ ФУНКЦИИ (полный набор из оригинального файла)
+// =====================================================================
 
-        // Эти обработчики полностью заменяют старые, но сохраняют логику рисования
+function doIntersect(p1, p2, p3, p4) {
+    if ((Math.hypot(p1.x-p3.x, p1.y-p3.y) < 1e-4) || (Math.hypot(p1.x-p4.x, p1.y-p4.y) < 1e-4) ||
+        (Math.hypot(p2.x-p3.x, p2.y-p3.y) < 1e-4) || (Math.hypot(p2.x-p4.x, p2.y-p4.y) < 1e-4)) return false;
+    const ccw = (A,B,C) => (C.y-A.y)*(B.x-A.x) > (B.y-A.y)*(C.x-A.x);
+    return (ccw(p1,p3,p4) !== ccw(p2,p3,p4)) && (ccw(p1,p2,p3) !== ccw(p1,p2,p4));
+}
 
-        canvas.addEventListener('pointerdown', function(e) {
-            activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
+function checkIntersectionValid(newPoint, isClosing = false) {
+    if (points.length < 2) return true;
+    let lastP = points[points.length - 1];
+    let limit = isClosing ? points.length - 1 : points.length - 2;
+    for (let i = 0; i < limit; i++) {
+        if (isClosing && (i === 0 || i === points.length - 2)) continue;
+        if (doIntersect(lastP, newPoint, points[i], points[i + 1])) return false;
+    }
+    return true;
+}
 
-            // ---- Если мы в режиме INSTALL, обрабатываем монтаж / drag ----
-            if (state === 'INSTALL') {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-
-                // Если рисуем полосу (добавляем точки)
-                if (lightingSub === 'strip') {
-                    // Проверяем, не попали ли в существующий объект (для drag)
-                    const hit = getFixtureAtPoint(worldPos.x, worldPos.y);
-                    if (hit) {
-                        const f = hit.fixture;
-                        let cx = f.x, cy = f.y;
-                        if (f.type === 'strip' && f.points && f.points.length) {
-                            let sx = 0, sy = 0;
-                            for (const p of f.points) { sx += p.x; sy += p.y; }
-                            cx = sx / f.points.length;
-                            cy = sy / f.points.length;
-                        }
-                        dragState = {
-                            fixtureIndex: hit.index,
-                            offsetX: cx - worldPos.x,
-                            offsetY: cy - worldPos.y,
-                            isDragging: true
-                        };
-                        canvas.style.cursor = 'grabbing';
-                        e.preventDefault();
-                        return;
-                    }
-                    // Иначе добавляем точку полосы
-                    stripDraft.push({ x: worldPos.x, y: worldPos.y });
-                    stripPreviewLen = polylineLength(stripDraft);
-                    updateStripMiniPanel();
-                    updateFinishStripBtn();
-                    draw();
-                    e.preventDefault();
-                    return;
-                }
-
-                // Для светильников/люстр/карнизов – проверяем попадание в объект
-                const hit = getFixtureAtPoint(worldPos.x, worldPos.y);
-                if (hit) {
-                    const f = hit.fixture;
-                    let cx = f.x, cy = f.y;
-                    if (f.type === 'strip' && f.points && f.points.length) {
-                        let sx = 0, sy = 0;
-                        for (const p of f.points) { sx += p.x; sy += p.y; }
-                        cx = sx / f.points.length;
-                        cy = sy / f.points.length;
-                    }
-                    dragState = {
-                        fixtureIndex: hit.index,
-                        offsetX: cx - worldPos.x,
-                        offsetY: cy - worldPos.y,
-                        isDragging: true
-                    };
-                    canvas.style.cursor = 'grabbing';
-                    e.preventDefault();
-                    return;
-                }
-
-                // Иначе – обычный тап для создания нового объекта
-                handleInstallTap(worldPos);
-                e.preventDefault();
-                return;
-            }
-
-            // ---- Для всех остальных состояний (DRAWING, INPUT_SIDES, etc.) ----
-            if (activePointers.length === 1) {
-                lastPanPos = { x: e.clientX, y: e.clientY };
-                isDragging = false;
-            } else if (activePointers.length === 2) {
-                initialPinchDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
-                initialZoom = camera.zoom;
-            }
-        });
-
-        canvas.addEventListener('pointermove', function(e) {
-            let idx = activePointers.findIndex(p => p.id === e.pointerId);
-            if (idx !== -1) {
-                activePointers[idx].x = e.clientX;
-                activePointers[idx].y = e.clientY;
-            }
-
-            // ---- Если есть активный drag – перемещаем объект ----
-            if (dragState && dragState.isDragging) {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-                const f = fixtures[dragState.fixtureIndex];
-                if (f) {
-                    if (f.type === 'strip' && f.points) {
-                        const dx = (worldPos.x + dragState.offsetX) - (f.points[0].x || f.x);
-                        const dy = (worldPos.y + dragState.offsetY) - (f.points[0].y || f.y);
-                        for (const p of f.points) {
-                            p.x += dx;
-                            p.y += dy;
-                        }
-                        f.x = f.points.reduce((s,p) => s + p.x, 0) / f.points.length;
-                        f.y = f.points.reduce((s,p) => s + p.y, 0) / f.points.length;
-                    } else {
-                        f.x = worldPos.x + dragState.offsetX;
-                        f.y = worldPos.y + dragState.offsetY;
-                    }
-                    updateFixtureOffsets(f);
-                    draw();
-                    e.preventDefault();
-                }
-                return;
-            }
-
-            // ---- Стандартное поведение (pan / pinch) ----
-            if (activePointers.length === 1) {
-                let dx = e.clientX - lastPanPos.x;
-                let dy = e.clientY - lastPanPos.y;
-                if (Math.hypot(dx, dy) > 5) isDragging = true;
-                if (isDragging) {
-                    camera.x += dx;
-                    camera.y += dy;
-                    lastPanPos = { x: e.clientX, y: e.clientY };
-                    draw();
-                }
-            } else if (activePointers.length === 2) {
-                const p1 = activePointers[0], p2 = activePointers[1];
-                const currentDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-                const rect = canvas.getBoundingClientRect();
-                const midX = (p1.x + p2.x) / 2 - rect.left;
-                const midY = (p1.y + p2.y) / 2 - rect.top;
-                if (initialPinchDist && currentDist > 5) {
-                    let newZoom = Math.max(0.2, Math.min(initialZoom * (currentDist / initialPinchDist), 10));
-                    const focalWorldX = (midX - camera.x) / camera.zoom;
-                    const focalWorldY = (midY - camera.y) / camera.zoom;
-                    camera.zoom = newZoom;
-                    camera.x = midX - focalWorldX * camera.zoom;
-                    camera.y = midY - focalWorldY * camera.zoom;
-                    draw();
-                }
-            }
-        });
-
-        canvas.addEventListener('pointerup', function(e) {
-            // ---- Если был drag – фиксируем объект ----
-            if (dragState && dragState.isDragging) {
-                dragState.isDragging = false;
-                dragState = null;
-                canvas.style.cursor = 'crosshair';
-                updateFixtureList();
-                draw();
-                // удаляем указатель и выходим, чтобы не вызывать handleCanvasTap
-                let idx = activePointers.findIndex(p => p.id === e.pointerId);
-                if (idx !== -1) activePointers.splice(idx, 1);
-                if (activePointers.length < 2) initialPinchDist = null;
-                if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-                return;
-            }
-
-            // ---- Обработка клика (для рисования) ----
-            let idx = activePointers.findIndex(p => p.id === e.pointerId);
-            if (idx !== -1) activePointers.splice(idx, 1);
-            if (activePointers.length < 2) initialPinchDist = null;
-            if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-
-            // Если это был клик (не pan и не pinch) и состояние не INSTALL (там уже обработано)
-            if (!isDragging && activePointers.length === 0) {
-                const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
-                // В INSTALL клики обрабатываются в pointerdown, поэтому здесь вызываем только для рисования
-                if (state !== 'INSTALL') {
-                    handleCanvasTap(worldPos);
-                }
-            }
-            isDragging = false;
-        });
-
-        canvas.addEventListener('pointercancel', function(e) {
-            if (dragState && dragState.isDragging) {
-                dragState.isDragging = false;
-                dragState = null;
-                canvas.style.cursor = 'crosshair';
-                draw();
-            }
-            let idx = activePointers.findIndex(p => p.id === e.pointerId);
-            if (idx !== -1) activePointers.splice(idx, 1);
-            if (activePointers.length < 2) initialPinchDist = null;
-            if (activePointers.length === 1) lastPanPos = { x: activePointers[0].x, y: activePointers[0].y };
-        });
-
-        // =====================================================================
-        //  Drawing (оригинальный, с добавлением drawDragHelpers)
-        // =====================================================================
-        function drawSummaryCardOnCanvas() {
-            if (state !== 'DONE' && state !== 'SELECT_MATERIAL' && state !== 'INSTALL') return;
-            let maxY = Math.max(...points.map(p => p.y));
-            let minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
-            let cx = (minX + maxX) / 2;
-
-            let matStr = `Материал: ${selectedMaterial}   |   Цвет: ${selectedColor}`;
-            let sidesStrArr = edges.map(e => `${e.label} = ${e.lengthCm != null ? e.lengthCm : '?'} см`);
-            let diagStrArr = selectedDiagonals.filter(d => d.lengthCm != null).map(d => `${d.label} = ${d.lengthCm} см`);
-
-            let perimeter = edges.reduce((s, e) => s + (e.lengthCm || 0), 0);
-            let areaPx = 0;
-            for (let i = 0; i < points.length; i++) {
-                let p1 = points[i], p2 = points[(i + 1) % points.length];
-                areaPx += (p1.x * p2.y - p2.x * p1.y);
-            }
-            let areaM2 = (Math.abs(areaPx / 2) / 10000).toFixed(2);
-            let totalStr = `Периметр: ${(perimeter / 100).toFixed(2)} м   |   Площадь: ${areaM2} м²`;
-            if (!usedExactGeometry) totalStr += '   |   (по сторонам + эскиз)';
-
-            let screenPos = toScreen(cx, maxY + 40 / camera.zoom);
-            let boxX = screenPos.x, boxY = screenPos.y;
-
-            ctx.save();
-            ctx.font = '13px Arial';
-            let sideLines = [];
-            for (let i = 0; i < sidesStrArr.length; i += 5) {
-                const chunk = sidesStrArr.slice(i, i + 5);
-                sideLines.push((i === 0 ? "Стороны: " : "") + chunk.join(", "));
-            }
-            let diagLines = [];
-            if (diagStrArr.length) {
-                let curD = "Диагонали: ";
-                diagStrArr.forEach((s, idx) => {
-                    let item = s + (idx < diagStrArr.length - 1 ? ", " : "");
-                    if (ctx.measureText(curD + item).width > 340) {
-                        diagLines.push(curD); curD = item;
-                    } else curD += item;
-                });
-                if (curD) diagLines.push(curD);
-            }
-            let allTextLines = [matStr, ...sideLines, ...diagLines, totalStr];
-            let lineHeight = 20, boxPadding = 12, boxWidth = 390;
-            let boxHeight = allTextLines.length * lineHeight + boxPadding * 2;
-            let rectX = boxX - boxWidth / 2, rectY = boxY;
-
-            ctx.shadowColor = 'rgba(0,0,0,0.12)';
-            ctx.shadowBlur = 8;
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#0066cc';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(rectX, rectY, boxWidth, boxHeight, 8);
-            else ctx.rect(rectX, rectY, boxWidth, boxHeight);
-            ctx.fill();
-            ctx.shadowColor = 'transparent';
-            ctx.stroke();
-
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            allTextLines.forEach((line, idx) => {
-                let lineY = rectY + boxPadding + idx * lineHeight + lineHeight / 2;
-                if (idx === 0) { ctx.fillStyle = '#0066cc'; ctx.font = 'bold 14px Arial'; }
-                else if (idx === allTextLines.length - 1) { ctx.fillStyle = '#28a745'; ctx.font = 'bold 13px Arial'; }
-                else { ctx.fillStyle = '#222222'; ctx.font = '12px Arial'; }
-                ctx.fillText(line, rectX + boxPadding, lineY);
-            });
-            ctx.restore();
+function hasSelfIntersection(pts) {
+    let n = pts.length;
+    if (n < 4) return false;
+    for (let i = 0; i < n; i++) {
+        let p1 = pts[i], p2 = pts[(i + 1) % n];
+        for (let j = i + 2; j < n; j++) {
+            if (i === 0 && j === n - 1) continue;
+            let p3 = pts[j], p4 = pts[(j + 1) % n];
+            if (doIntersect(p1, p2, p3, p4)) return true;
         }
+    }
+    return false;
+}
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
-            let gridSize = 30 * camera.zoom;
-            if (gridSize > 8) {
-                let oX = camera.x % gridSize, oY = camera.y % gridSize;
-                for (let x = oX; x < canvas.width; x += gridSize) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-                }
-                for (let y = oY; y < canvas.height; y += gridSize) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-                }
+function getLetter(i) {
+    const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    return i < 26 ? A[i] : A[Math.floor(i/26)-1] + A[i%26];
+}
+
+function clonePoints(pts) { return pts.map(p => ({ x: p.x, y: p.y, letter: p.letter })); }
+
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function cross(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
+
+function polygonSignedArea(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+        const q = pts[(i + 1) % pts.length];
+        a += pts[i].x * q.y - q.x * pts[i].y;
+    }
+    return a / 2;
+}
+
+function getTurnSigns(pts) {
+    const area = polygonSignedArea(pts), orient = area >= 0 ? 1 : -1;
+    return pts.map((_, i) => {
+        const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
+        const cr = cross(a, b, c);
+        return Math.abs(cr) < 1e-8 ? 0 : (cr * orient > 0 ? 1 : -1);
+    });
+}
+
+function edgeKey(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
+
+function allSideLengthsKnown() { return edges.length && edges.every(e => Number.isFinite(e.lengthCm) && e.lengthCm > 0); }
+
+function isBoundaryEdge(a, b, n = points.length) { return Math.abs(a - b) === 1 || Math.abs(a - b) === n - 1; }
+
+function normalizedSketch() {
+    if (!sketchPoints.length) return [];
+    const minX = Math.min(...sketchPoints.map(p => p.x)), maxX = Math.max(...sketchPoints.map(p => p.x));
+    const minY = Math.min(...sketchPoints.map(p => p.y)), maxY = Math.max(...sketchPoints.map(p => p.y));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const span = Math.max(maxX - minX, maxY - minY, 1);
+    return sketchPoints.map(p => ({ x: (p.x - cx) / span, y: (p.y - cy) / span }));
+}
+
+function pointInTriangle(p, a, b, c) {
+    const c1 = cross(a, b, p), c2 = cross(b, c, p), c3 = cross(c, a, p);
+    const hasNeg = c1 < -1e-8 || c2 < -1e-8 || c3 < -1e-8;
+    const hasPos = c1 > 1e-8 || c2 > 1e-8 || c3 > 1e-8;
+    return !(hasNeg && hasPos);
+}
+
+function triangulateBySketch() {
+    const n = sketchPoints.length;
+    if (n < 3) return [];
+    const ids = [...Array(n).keys()];
+    const orient = sketchOrientation;
+    const tris = [];
+    const sk = sketchPoints;
+    let guard = 0;
+    while (ids.length > 3 && guard++ < n * n) {
+        let chosen = -1, best = Infinity;
+        for (let k = 0; k < ids.length; k++) {
+            const prev = ids[(k - 1 + ids.length) % ids.length], cur = ids[k], next = ids[(k + 1) % ids.length];
+            const cr = cross(sk[prev], sk[cur], sk[next]);
+            if (cr * orient <= 1e-8) continue;
+            let contains = false;
+            for (const q of ids) {
+                if (q === prev || q === cur || q === next) continue;
+                if (pointInTriangle(sk[q], sk[prev], sk[cur], sk[next])) { contains = true; break; }
             }
-            if (points.length === 0) return;
-
-            ctx.beginPath();
-            let start = toScreen(points[0].x, points[0].y);
-            ctx.moveTo(start.x, start.y);
-            for (let i = 1; i < points.length; i++) {
-                let pt = toScreen(points[i].x, points[i].y);
-                ctx.lineTo(pt.x, pt.y);
-            }
-            if (isClosed) {
-                ctx.lineTo(start.x, start.y);
-                ctx.fillStyle = 'rgba(0,102,204,0.07)';
-                ctx.fill();
-            }
-
-            if (selectedDiagonals.length > 0 && isClosed) {
-                ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#d32f2f';
-                selectedDiagonals.forEach(d => {
-                    if (d.p1 >= points.length || d.p2 >= points.length) return;
-                    let s1 = toScreen(points[d.p1].x, points[d.p1].y);
-                    let s2 = toScreen(points[d.p2].x, points[d.p2].y);
-                    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
-                    if (d.lengthCm != null) {
-                        let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
-                        ctx.font = 'bold 12px Arial';
-                        let w = ctx.measureText(String(d.lengthCm)).width;
-                        ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 2, mY - 8, w + 4, 16);
-                        ctx.fillStyle = '#d32f2f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                        ctx.fillText(String(d.lengthCm), mX, mY);
-                    }
-                });
-                ctx.setLineDash([]);
-            }
-
-            const showInstall = (state === 'INSTALL' || state === 'DONE');
-
-            for (let i = 0; i < points.length; i++) {
-                let nxt = (i + 1) % points.length;
-                if (!isClosed && nxt === 0) continue;
-                let s1 = toScreen(points[i].x, points[i].y);
-                let s2 = toScreen(points[nxt].x, points[nxt].y);
-                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-                if (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) {
-                    ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
-                } else if (showInstall && sideProfiles[i]) {
-                    ctx.strokeStyle = PROFILE_COLORS[sideProfiles[i]] || '#2c3e50';
-                    ctx.lineWidth = 3.2;
-                } else {
-                    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
-                }
-                ctx.stroke();
-
-                if (isClosed && edges[i] && edges[i].lengthCm != null) {
-                    let text = edges[i].lengthCm;
-                    let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
-                    ctx.font = 'bold 13px Arial';
-                    let w = ctx.measureText(String(text)).width;
-                    ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
-                    ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
-                    ctx.fillStyle = '#d32f2f';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    ctx.fillText(String(text), mX, mY);
-                }
-                if (showInstall && sideProfiles[i] && sideProfiles[i] !== 'Стандартный') {
-                    const short = { 'Теневой': 'Тен.', 'Парящий': 'Пар.' }[sideProfiles[i]] || sideProfiles[i];
-                    let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
-                    ctx.font = 'bold 11px Arial';
-                    ctx.fillStyle = PROFILE_COLORS[sideProfiles[i]] || '#333';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-                    ctx.fillText(short, mX, mY + 12);
-                }
-            }
-
-            if (showInstall && fixtures.length) {
-                fixtures.forEach(f => {
-                    if (f.type === 'cornice' && typeof f.edge_index === 'number' && points[f.edge_index]) {
-                        const i = f.edge_index;
-                        const a = points[i], b = points[(i + 1) % points.length];
-                        const dx = b.x - a.x, dy = b.y - a.y;
-                        const len = Math.hypot(dx, dy) || 1;
-                        let nx = -dy / len, ny = dx / len;
-                        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-                        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
-                        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-                        if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
-                        const off = (f.offset_cm || 5);
-                        const s1 = toScreen(a.x + nx * off, a.y + ny * off);
-                        const s2 = toScreen(b.x + nx * off, b.y + ny * off);
-                        ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-                        ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2.5; ctx.stroke();
-                        return;
-                    }
-                    const sp = toScreen(f.x, f.y);
-                    if (f.type === 'spot') {
-                        ctx.beginPath();
-                        ctx.fillStyle = '#f39c12'; ctx.strokeStyle = '#b9770e'; ctx.lineWidth = 2;
-                        ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-                        ctx.beginPath(); ctx.moveTo(sp.x - 4, sp.y); ctx.lineTo(sp.x + 4, sp.y); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 4); ctx.lineTo(sp.x, sp.y + 4); ctx.stroke();
-                        ctx.fillStyle = '#b9770e'; ctx.font = 'bold 11px Arial';
-                        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-                        ctx.fillText(f.label || 'S', sp.x + 10, sp.y - 4);
-                    } else if (f.type === 'chandelier') {
-                        ctx.beginPath();
-                        ctx.fillStyle = '#c0392b'; ctx.strokeStyle = '#7b241c'; ctx.lineWidth = 2;
-                        ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
-                        ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y - 5); ctx.lineTo(sp.x + 5, sp.y + 5); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(sp.x + 5, sp.y - 5); ctx.lineTo(sp.x - 5, sp.y + 5); ctx.stroke();
-                        ctx.fillStyle = '#c0392b'; ctx.font = 'bold 12px Arial';
-                        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-                        ctx.fillText(f.label || 'L', sp.x + 12, sp.y - 4);
-                    } else if (f.type === 'strip' && f.points && f.points.length >= 2) {
-                        ctx.beginPath();
-                        const p0 = toScreen(f.points[0].x, f.points[0].y);
-                        ctx.moveTo(p0.x, p0.y);
-                        for (let k = 1; k < f.points.length; k++) {
-                            const pk = toScreen(f.points[k].x, f.points[k].y);
-                            ctx.lineTo(pk.x, pk.y);
-                        }
-                        ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-                        ctx.stroke();
-                        const mid = f.points[Math.floor(f.points.length / 2)];
-                        const sm = toScreen(mid.x, mid.y);
-                        ctx.fillStyle = '#b7950b'; ctx.font = 'bold 11px Arial';
-                        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-                        ctx.fillText(`${f.label || 'P'} ${f.length_cm}см`, sm.x, sm.y - 6);
-                    }
-                });
-            }
-
-            if (state === 'INSTALL' && stripDraft && stripDraft.length) {
-                ctx.beginPath();
-                const s0 = toScreen(stripDraft[0].x, stripDraft[0].y);
-                ctx.moveTo(s0.x, s0.y);
-                for (let k = 1; k < stripDraft.length; k++) {
-                    const sk = toScreen(stripDraft[k].x, stripDraft[k].y);
-                    ctx.lineTo(sk.x, sk.y);
-                }
-                ctx.strokeStyle = '#f39c12'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]);
-                ctx.stroke(); ctx.setLineDash([]);
-                stripDraft.forEach(p => {
-                    const sp = toScreen(p.x, p.y);
-                    ctx.beginPath(); ctx.fillStyle = '#f39c12';
-                    ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2); ctx.fill();
-                });
-                if (stripPreviewLen > 0) {
-                    const last = stripDraft[stripDraft.length - 1];
-                    const sl = toScreen(last.x, last.y);
-                    ctx.fillStyle = '#e67e22'; ctx.font = 'bold 12px Arial';
-                    ctx.textAlign = 'left'; ctx.fillText(stripPreviewLen.toFixed(1) + ' см', sl.x + 8, sl.y - 8);
-                }
-            }
-
-            points.forEach((p, idx) => {
-                let sp = toScreen(p.x, p.y);
-                ctx.beginPath();
-                ctx.fillStyle = (idx === 0 && !isClosed) ? '#28a745' : '#ffffff';
-                ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
-                ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI * 2);
-                ctx.fill(); ctx.stroke();
-                ctx.fillStyle = '#000000';
-                ctx.font = 'bold 18px Arial';
-                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-                ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
-            });
-
-            drawSummaryCardOnCanvas();
-
-            // Отрисовка помощников при drag
-            drawDragHelpers();
+            if (contains) continue;
+            const score = dist(sk[prev], sk[next]);
+            if (score < best) { best = score; chosen = k; }
         }
+        if (chosen < 0) break;
+        const prev = ids[(chosen - 1 + ids.length) % ids.length], cur = ids[chosen], next = ids[(chosen + 1) % ids.length];
+        tris.push([prev, cur, next]);
+        ids.splice(chosen, 1);
+    }
+    if (ids.length === 3) tris.push([ids[0], ids[1], ids[2]]);
+    return tris;
+}
 
-        // =====================================================================
-        //  Отправка (без изменений)
-        // =====================================================================
-        async function sendToBot() {
-            function note(m) {
-                console.log('[sendToBot]', m);
-                try { showToast(String(m), 5500); } catch (e) {}
+function recommendedDiagonalPairs() {
+    return triangulateBySketch().map(t => edgeKey(t[0], t[2])).filter(k => {
+        const [a, b] = k.split(':').map(Number);
+        return !isBoundaryEdge(a, b);
+    });
+}
+
+function circleIntersections(A, rA, B, rB) {
+    const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
+    if (d < 1e-9 || d > rA + rB + 1e-7 || d < Math.abs(rA - rB) - 1e-7) return [];
+    const a = (rA * rA - rB * rB + d * d) / (2 * d);
+    const h2 = Math.max(0, rA * rA - a * a), h = Math.sqrt(h2);
+    const ux = dx / d, uy = dy / d;
+    const px = A.x + a * ux, py = A.y + a * uy;
+    return [
+        { x: px - h * uy, y: py + h * ux },
+        { x: px + h * uy, y: py - h * ux }
+    ];
+}
+
+function buildConstraintMap() {
+    const map = new Map();
+    edges.forEach(e => {
+        if (Number.isFinite(e.lengthCm) && e.lengthCm > 0)
+            map.set(edgeKey(e.startIdx, e.endIdx), e.lengthCm);
+    });
+    selectedDiagonals.forEach(d => {
+        if (Number.isFinite(d.lengthCm) && d.lengthCm > 0)
+            map.set(edgeKey(d.p1, d.p2), d.lengthCm);
+    });
+    return map;
+}
+
+function topologyValid(pts) {
+    if (pts.length < 3 || hasSelfIntersection(pts)) return false;
+    if (Math.abs(polygonSignedArea(pts)) < 1e-7) return false;
+    const sigOrient = polygonSignedArea(pts) >= 0 ? 1 : -1;
+    if (sigOrient !== sketchOrientation) return false;
+    const turns = getTurnSigns(pts);
+    for (let i = 0; i < turns.length; i++) {
+        if (sketchTurnSigns[i] && turns[i] && sketchTurnSigns[i] !== turns[i]) return false;
+    }
+    return true;
+}
+
+function buildExactFromTriangulation(tris, constraints) {
+    const n = points.length;
+    if (!tris.length || !constraints) return null;
+    const adjacency = Array.from({ length: n }, () => new Map());
+    for (const [k, len] of constraints.entries()) {
+        const [a, b] = k.split(':').map(Number);
+        adjacency[a].set(b, len); adjacency[b].set(a, len);
+    }
+    for (const t of tris) {
+        const pairs = [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]];
+        if (pairs.some(([a, b]) => !adjacency[a].has(b))) return null;
+    }
+    const work = Array(n).fill(null);
+    const sketch = normalizedSketch();
+    const first = tris[0];
+    const A = first[0], B = first[1], C = first[2];
+    const ab = adjacency[A].get(B), bc = adjacency[B].get(C), ca = adjacency[C].get(A);
+    if (!ab || !bc || !ca) return null;
+
+    work[A] = { x: 0, y: 0, letter: points[A].letter };
+    work[B] = { x: ab, y: 0, letter: points[B].letter };
+    let sols = circleIntersections(work[A], ca, work[B], bc);
+    if (!sols.length) return null;
+    const sC = sketch[C] || { x: 0, y: 1 };
+    let cand = sols[0];
+    if (sols.length > 1) {
+        const score = p => {
+            const v = { x: p.x / Math.max(ab, 1), y: p.y / Math.max(ab, 1) };
+            return Math.hypot(v.x - sC.x, v.y - sC.y);
+        };
+        const valid = sols.filter(p => cross(work[A], work[B], p) * sketchOrientation > 0);
+        cand = (valid.length ? valid : sols).sort((p, q) => score(p) - score(q))[0];
+    }
+    work[C] = { x: cand.x, y: cand.y, letter: points[C].letter };
+
+    const placed = new Set([A, B, C]);
+    let progress = true;
+    while (placed.size < n && progress) {
+        progress = false;
+        for (const tri of tris) {
+            const ps = tri.filter(v => placed.has(v));
+            const un = tri.filter(v => !placed.has(v));
+            if (un.length !== 1 || ps.length !== 2) continue;
+            const u = un[0], p = ps[0], q = ps[1];
+            const rp = adjacency[u].get(p), rq = adjacency[u].get(q);
+            if (!rp || !rq) continue;
+            const sols2 = circleIntersections(work[p], rp, work[q], rq);
+            if (!sols2.length) return null;
+            let best = null, bestScore = Infinity;
+            for (const s of sols2) {
+                let score = 0;
+                const prev = (u - 1 + n) % n, next = (u + 1) % n;
+                if (work[prev]) score += dist(s, work[prev]);
+                if (work[next]) score += dist(s, work[next]);
+                const skU = sketch[u] || { x: 0, y: 0 };
+                score += 0.01 * Math.hypot(s.x / Math.max(ab, 1) - skU.x, s.y / Math.max(ab, 1) - skU.y);
+                if (work[prev] && work[next]) {
+                    const turn = cross(work[prev], s, work[next]);
+                    if (turn * sketchTurnSigns[u] <= 0) score += 1e9;
+                }
+                if (score < bestScore) { bestScore = score; best = s; }
             }
-            function byteLen(s) {
-                try { return new TextEncoder().encode(s).length; } catch (e) { return s.length; }
+            if (!best || bestScore >= 1e8) return null;
+            work[u] = { x: best.x, y: best.y, letter: points[u].letter };
+            placed.add(u); progress = true;
+        }
+    }
+    if (placed.size < n) return null;
+    if (!topologyValid(work)) return null;
+    return work;
+}
+
+function verifyConstraints(work, constraints) {
+    for (const [k, lenCm] of constraints.entries()) {
+        const [a, b] = k.split(':').map(Number);
+        const actual = dist(work[a], work[b]);
+        if (Math.abs(actual - lenCm) > Math.max(0.2, lenCm * 0.001)) return false;
+    }
+    return true;
+}
+
+function countNearRightAngles(snapDeg = 30) {
+    const n = sketchPoints.length;
+    const right = Math.PI / 2;
+    const snap = snapDeg * Math.PI / 180;
+    let near = 0;
+    for (let i = 0; i < n; i++) {
+        const a = sketchPoints[(i - 1 + n) % n];
+        const b = sketchPoints[i];
+        const c = sketchPoints[(i + 1) % n];
+        const v1x = b.x - a.x, v1y = b.y - a.y;
+        const v2x = c.x - b.x, v2y = c.y - b.y;
+        const len1 = Math.hypot(v1x, v1y) || 1;
+        const len2 = Math.hypot(v2x, v2y) || 1;
+        let cosA = (v1x * v2x + v1y * v2y) / (len1 * len2);
+        cosA = Math.max(-1, Math.min(1, cosA));
+        const ang = Math.acos(cosA);
+        if (Math.abs(ang - right) < snap) near++;
+    }
+    return near;
+}
+
+function sketchTurnSignAt(i) {
+    const n = sketchPoints.length;
+    const a = sketchPoints[(i - 1 + n) % n];
+    const b = sketchPoints[i];
+    const c = sketchPoints[(i + 1) % n];
+    const cr = cross(a, b, c);
+    if (Math.abs(cr) < 1e-10) return 0;
+    return (cr * sketchOrientation > 0) ? 1 : -1;
+}
+
+function reconstructOrthogonal() {
+    const n = points.length;
+    if (n < 3 || !allSideLengthsKnown()) return null;
+
+    const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
+    let dirX = sk1.x - sk0.x;
+    let dirY = sk1.y - sk0.y;
+    let dlen = Math.hypot(dirX, dirY) || 1;
+    dirX /= dlen;
+    dirY /= dlen;
+    if (Math.abs(dirX) >= Math.abs(dirY)) {
+        dirX = dirX >= 0 ? 1 : -1;
+        dirY = 0;
+    } else {
+        dirX = 0;
+        dirY = dirY >= 0 ? 1 : -1;
+    }
+
+    const work = Array(n).fill(null);
+    work[0] = { x: 0, y: 0, letter: points[0].letter };
+    work[1] = {
+        x: dirX * edges[0].lengthCm,
+        y: dirY * edges[0].lengthCm,
+        letter: points[1].letter
+    };
+
+    let ux = dirX, uy = dirY;
+
+    for (let i = 1; i < n; i++) {
+        if (i < n - 1) {
+            const sign = sketchTurnSignAt(i);
+            if (sign >= 0) {
+                const nx = -uy, ny = ux;
+                ux = nx; uy = ny;
+            } else {
+                const nx = uy, ny = -ux;
+                ux = nx; uy = ny;
             }
-            function toUrlB64(bytes) {
-                var bin = '';
-                for (var i = 0; i < bytes.length; i += 0x8000) {
-                    bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
-                }
-                return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            const len = edges[i].lengthCm;
+            work[i + 1] = {
+                x: work[i].x + ux * len,
+                y: work[i].y + uy * len,
+                letter: points[i + 1].letter
+            };
+        }
+    }
+
+    if (n >= 3) {
+        const prev = work[n - 2];
+        const lastTargetLen = edges[n - 2].lengthCm;
+        let lx = work[n - 1].x - prev.x;
+        let ly = work[n - 1].y - prev.y;
+        const ll = Math.hypot(lx, ly) || 1;
+        lx /= ll; ly /= ll;
+        work[n - 1] = {
+            x: prev.x + lx * lastTargetLen,
+            y: prev.y + ly * lastTargetLen,
+            letter: points[n - 1].letter
+        };
+    }
+
+    const minX = Math.min(...work.map(p => p.x));
+    const minY = Math.min(...work.map(p => p.y));
+    for (const p of work) {
+        p.x -= minX;
+        p.y -= minY;
+    }
+
+    if (hasSelfIntersection(work)) return null;
+    if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
+
+    if (polygonSignedArea(work) * sketchOrientation < 0) {
+        for (const p of work) p.y = -p.y;
+        const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
+        const targetAng = Math.atan2(dirY, dirX);
+        const currentAng = Math.atan2(wdy, wdx);
+        let dAng = targetAng - currentAng;
+        while (dAng > Math.PI) dAng -= 2 * Math.PI;
+        while (dAng < -Math.PI) dAng += 2 * Math.PI;
+        const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
+        const ox = work[0].x, oy = work[0].y;
+        for (let i = 1; i < n; i++) {
+            const px = work[i].x - ox, py = work[i].y - oy;
+            work[i].x = ox + px * cosR - py * sinR;
+            work[i].y = oy + px * sinR + py * cosR;
+        }
+    }
+
+    return work;
+}
+
+function reconstructFromSidesAndSketch() {
+    const n = points.length;
+    if (n < 3 || !allSideLengthsKnown()) return null;
+
+    const right = Math.PI / 2;
+    const snapRad = 35 * Math.PI / 180;
+    const turnAngles = [];
+
+    for (let i = 0; i < n; i++) {
+        const a = sketchPoints[(i - 1 + n) % n];
+        const b = sketchPoints[i];
+        const c = sketchPoints[(i + 1) % n];
+        const v1x = b.x - a.x, v1y = b.y - a.y;
+        const v2x = c.x - b.x, v2y = c.y - b.y;
+        const len1 = Math.hypot(v1x, v1y) || 1;
+        const len2 = Math.hypot(v2x, v2y) || 1;
+        let cosA = (v1x * v2x + v1y * v2y) / (len1 * len2);
+        cosA = Math.max(-1, Math.min(1, cosA));
+        let ang = Math.acos(cosA);
+        const cr = cross(a, b, c);
+        const sign = (cr * sketchOrientation < 0) ? -1 : 1;
+        if (Math.abs(ang - right) < snapRad) ang = right;
+        turnAngles.push(sign * ang);
+    }
+
+    const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
+    let dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
+    let dlen = Math.hypot(dirX, dirY) || 1;
+    dirX /= dlen; dirY /= dlen;
+    if (Math.abs(dirX) >= Math.abs(dirY) * 2.5) { dirX = dirX >= 0 ? 1 : -1; dirY = 0; }
+    else if (Math.abs(dirY) >= Math.abs(dirX) * 2.5) { dirX = 0; dirY = dirY >= 0 ? 1 : -1; }
+
+    const work = Array(n).fill(null);
+    work[0] = { x: 0, y: 0, letter: points[0].letter };
+    work[1] = { x: dirX * edges[0].lengthCm, y: dirY * edges[0].lengthCm, letter: points[1].letter };
+
+    for (let i = 1; i < n - 1; i++) {
+        const prev = work[i - 1], cur = work[i];
+        const sideLen = edges[i].lengthCm;
+        const vx = cur.x - prev.x, vy = cur.y - prev.y;
+        const vlen = Math.hypot(vx, vy) || 1;
+        const ux = vx / vlen, uy = vy / vlen;
+        const ang = turnAngles[i];
+        const cosT = Math.cos(ang), sinT = Math.sin(ang);
+        const nx = ux * cosT - uy * sinT;
+        const ny = ux * sinT + uy * cosT;
+        work[i + 1] = {
+            x: cur.x + nx * sideLen,
+            y: cur.y + ny * sideLen,
+            letter: points[i + 1].letter
+        };
+    }
+
+    if (n >= 3) {
+        const prevP = work[n - 2];
+        const sols = circleIntersections(prevP, edges[n - 2].lengthCm, work[0], edges[n - 1].lengthCm);
+        if (sols.length) {
+            let best = sols[0], bestScore = Infinity;
+            for (const s of sols) {
+                let score = dist(s, work[n - 1] || s);
+                if (cross(prevP, s, work[0]) * sketchOrientation <= 0) score += 1e6;
+                if (score < bestScore) { bestScore = score; best = s; }
             }
-            async function deflateB64(str) {
-                if (typeof CompressionStream === 'undefined') return null;
-                try {
-                    var data = new TextEncoder().encode(str);
-                    var cs = new CompressionStream('deflate');
-                    var w = cs.writable.getWriter();
-                    await w.write(data);
-                    await w.close();
-                    var buf = await new Response(cs.readable).arrayBuffer();
-                    return toUrlB64(new Uint8Array(buf));
-                } catch (e) {
-                    console.warn('deflate', e);
-                    return null;
-                }
-            }
-            try {
-                var webApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
-                if (!webApp) { note('Нет Telegram.WebApp — откройте через кнопку бота'); return; }
-                try { webApp.ready(); } catch (e) {}
-                if (typeof webApp.sendData !== 'function') {
-                    note('sendData недоступен. Откройте Draw кнопкой «Начать замер» в чате (не из меню).');
-                    return;
-                }
+            work[n - 1] = { x: best.x, y: best.y, letter: points[n - 1].letter };
+        }
+    }
 
-                function sameCeilingGeom(a, b) {
-                    if (!a || !b || !a.points || !b.points) return false;
-                    if (a.points.length !== b.points.length) return false;
-                    for (var i = 0; i < a.points.length; i++) {
-                        if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
-                        if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
-                    }
-                    return true;
-                }
-                if (points.length >= 3) {
-                    try {
-                        if (isEditMode && editCeilingIndex >= 0) {
-                            saveEditorToCompleted();
-                        } else {
-                            var current = getCurrentCeilingPayload();
-                            if (current.points && current.points.length >= 3) {
-                                var last = completedCeilings[completedCeilings.length - 1];
-                                if (last && sameCeilingGeom(last, current)) {
-                                    completedCeilings[completedCeilings.length - 1] = current;
-                                } else {
-                                    completedCeilings.push(current);
-                                }
-                            }
-                        }
-                    } catch (e) { console.warn(e); }
-                }
-                if (!completedCeilings.length) {
-                    note('Нет потолка для отправки.');
-                    return;
-                }
-
-                function r(v, n) {
-                    var x = Number(v);
-                    if (!Number.isFinite(x)) return 0;
-                    var p = Math.pow(10, n);
-                    return Math.round(x * p) / p;
-                }
-                function asM(v) {
-                    var x = Number(v);
-                    if (!Number.isFinite(x)) return 0;
-                    if (Math.abs(x) > 50) x = x / 100;
-                    return r(x, 3);
-                }
-
-                function buildLevel(level) {
-                    return completedCeilings.map(function (c) {
-                        var pts = (c.points || []).map(function (p) {
-                            return [asM(p.x), asM(p.y)];
-                        });
-                        var sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
-                        var diags = [];
-                        if (level < 7) {
-                            diags = (c.diagonals || []).map(function (d) {
-                                if (Array.isArray(d)) return [d[0]|0, d[1]|0];
-                                return [d.p1|0, d.p2|0];
-                            });
-                        }
-                        var profiles = (c.profiles || []).slice();
-                        var fx = [];
-                        if (level < 6) {
-                            var list = (c.fixtures || []).slice();
-                            var spots = list.filter(function (f) { return f.type === 'spot'; });
-                            var rest = list.filter(function (f) { return f.type !== 'spot'; });
-                            if (level >= 5) {
-                                list = rest;
-                            } else if (level >= 4) {
-                                list = rest.concat(spots.slice(0, 20));
-                            } else if (level >= 3) {
-                                list = rest.concat(spots.slice(0, 40));
-                            } else {
-                                list = rest.concat(spots);
-                            }
-                            fx = list.map(function (f) {
-                                if (f.type === 'strip') {
-                                    var o = { t: 'p', len: r(f.length_cm || 0, 1) };
-                                    if (level < 2) {
-                                        o.pts = (f.points || []).map(function (p) {
-                                            return [asM(p.x), asM(p.y)];
-                                        });
-                                    }
-                                    return o;
-                                }
-                                if (f.type === 'cornice') {
-                                    return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
-                                }
-                                if (f.type === 'chandelier') {
-                                    return { t: 'c', x: asM(f.x), y: asM(f.y) };
-                                }
-                                var s = { t: 's', x: asM(f.x), y: asM(f.y) };
-                                if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
-                                if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
-                                return s;
-                            });
-                        }
-                        return {
-                            pts: pts, s: sides, d: diags,
-                            m: c.material || 'Мат', col: c.color || 'Белый',
-                            pr: profiles, fx: fx, u: 'm'
-                        };
-                    });
-                }
-
-                function makePayload(level) {
-                    var payload = {
-                        type: 'drawing_set',
-                        v: 3,
-                        unit: 'm',
-                        truncate_level: level,
-                        truncated: level > 0,
-                        ceilings: buildLevel(level)
-                    };
-                    if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
-                    return JSON.stringify(payload);
-                }
-
-                var LIMIT = 4096;
-                var toSend = null;
-                var usedLevel = 0;
-                var noteExtra = '';
-
-                var fxTotal = 0;
-                completedCeilings.forEach(function (c) {
-                    fxTotal += (c.fixtures || []).length;
-                });
-
-                for (var lv = 0; lv <= 7; lv++) {
-                    var raw = makePayload(lv);
-                    if (byteLen(raw) <= LIMIT) {
-                        toSend = raw;
-                        usedLevel = lv;
-                        break;
-                    }
-                    var zb = await deflateB64(raw);
-                    if (zb) {
-                        var wrapped = JSON.stringify({ type: 'drawing_set_z', v: 3, z: zb });
-                        if (byteLen(wrapped) <= LIMIT) {
-                            toSend = wrapped;
-                            usedLevel = lv;
-                            noteExtra = ' (сжато)';
-                            break;
-                        }
-                    }
-                    toSend = raw;
-                    usedLevel = lv;
-                }
-
-                if (!toSend || byteLen(toSend) > LIMIT) {
-                    note('Слишком много данных (' + (toSend ? byteLen(toSend) : 0) + ' байт, лимит 4096). Уберите часть светильников.');
-                    return;
-                }
-
-                var sentFx = 0;
-                try {
-                    var parsedLv = JSON.parse(makePayload(usedLevel));
-                    (parsedLv.ceilings || []).forEach(function (c) {
-                        sentFx += (c.fx || []).length;
-                    });
-                } catch (e) {}
-
-                try {
-                    webApp.sendData(toSend);
-                } catch (sendErr) {
-                    var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
-                    note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате.');
-                    return;
-                }
-
-                if (usedLevel >= 6) noteExtra += ' ⚠ освещение НЕ передано';
-                else if (usedLevel >= 5) noteExtra += ' ⚠ споты убраны (люстры/карнизы/полосы есть)';
-                else if (usedLevel >= 4) noteExtra += ' ⚠ споты ≤20';
-                else if (usedLevel >= 3) noteExtra += ' ⚠ споты ≤40';
-                else if (usedLevel >= 2) noteExtra += ' (полосы без точек)';
-                else if (usedLevel >= 1) noteExtra += ' (без отступов стен)';
-
-                note('Отправлено ' + completedCeilings.length + ' пот., освещение: ' + sentFx + '/' + fxTotal + ', ' + byteLen(toSend) + ' б' + noteExtra);
-                try {
-                    if (webApp.HapticFeedback && webApp.HapticFeedback.notificationOccurred) {
-                        webApp.HapticFeedback.notificationOccurred('success');
-                    }
-                } catch (e) {}
-                setTimeout(function () {
-                    try { if (webApp.close) webApp.close(); } catch (e) {}
-                }, 800);
-            } catch (err) {
-                console.error(err);
-                note('Ошибка: ' + (err && err.message ? err.message : err));
+    for (let iter = 0; iter < 12; iter++) {
+        let maxErr = 0;
+        for (let i = 0; i < n; i++) {
+            const a = work[i], b = work[(i + 1) % n];
+            const target = edges[i].lengthCm;
+            const actual = dist(a, b);
+            const err = Math.abs(actual - target);
+            if (err > maxErr) maxErr = err;
+            if (actual > 1e-6 && err > 0.08) {
+                const scale = target / actual;
+                const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                b.x = mx + (b.x - mx) * scale;
+                b.y = my + (b.y - my) * scale;
+                a.x = mx + (a.x - mx) * scale;
+                a.y = my + (a.y - my) * scale;
             }
         }
+        if (maxErr < 0.12) break;
+    }
 
-        function copyData() {
-            try {
-                const all = [...completedCeilings];
-                if (state === 'DONE' && points.length >= 3) all.push(getCurrentCeilingPayload());
-                const data = { type: 'drawing_set', ceilings: all };
-                const str = JSON.stringify(data, null, 2);
-                navigator.clipboard.writeText(str).then(() => showToast('Скопировано.', 2000))
-                    .catch(() => { showToast('Не удалось скопировать.', 2000); console.log(str); });
-            } catch (e) {
-                showToast('Ошибка копирования.', 2000);
+    if (hasSelfIntersection(work)) return null;
+    if (Math.abs(polygonSignedArea(work)) < 1e-4) return null;
+
+    if (polygonSignedArea(work) * sketchOrientation < 0) {
+        for (const p of work) p.y = -p.y;
+    }
+
+    const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
+    const targetAng = Math.atan2(dirY, dirX);
+    const currentAng = Math.atan2(wdy, wdx);
+    let dAng = targetAng - currentAng;
+    while (dAng > Math.PI) dAng -= 2 * Math.PI;
+    while (dAng < -Math.PI) dAng += 2 * Math.PI;
+    if (Math.abs(dAng) > 1e-6) {
+        const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
+        const ox = work[0].x, oy = work[0].y;
+        for (let i = 1; i < n; i++) {
+            const px = work[i].x - ox, py = work[i].y - oy;
+            work[i].x = ox + px * cosR - py * sinR;
+            work[i].y = oy + px * sinR + py * cosR;
+        }
+    }
+    return work;
+}
+
+function alignToSketchOrientation(pts) {
+    if (!pts || pts.length < 2 || !sketchPoints.length) return pts;
+    const work = clonePoints(pts);
+    const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
+    const dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
+    const targetAng = Math.atan2(dirY, dirX);
+    const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
+    const currentAng = Math.atan2(wdy, wdx);
+    let dAng = targetAng - currentAng;
+    while (dAng > Math.PI) dAng -= 2 * Math.PI;
+    while (dAng < -Math.PI) dAng += 2 * Math.PI;
+    const cosR = Math.cos(dAng), sinR = Math.sin(dAng);
+    const ox = work[0].x, oy = work[0].y;
+    for (let i = 1; i < work.length; i++) {
+        const px = work[i].x - ox, py = work[i].y - oy;
+        work[i].x = ox + px * cosR - py * sinR;
+        work[i].y = oy + px * sinR + py * cosR;
+    }
+    if (polygonSignedArea(work) * sketchOrientation < 0) {
+        for (const p of work) p.y = -p.y;
+        const wdx2 = work[1].x - work[0].x, wdy2 = work[1].y - work[0].y;
+        const cur2 = Math.atan2(wdy2, wdx2);
+        let d2 = targetAng - cur2;
+        while (d2 > Math.PI) d2 -= 2 * Math.PI;
+        while (d2 < -Math.PI) d2 += 2 * Math.PI;
+        const c2 = Math.cos(d2), s2 = Math.sin(d2);
+        for (let i = 1; i < work.length; i++) {
+            const px = work[i].x - ox, py = work[i].y - oy;
+            work[i].x = ox + px * c2 - py * s2;
+            work[i].y = oy + px * s2 + py * c2;
+        }
+    }
+    return work;
+}
+
+function solveExactGeometry() {
+    if (!allSideLengthsKnown()) return false;
+
+    const n = points.length;
+    const nearRight = countNearRightAngles(32);
+    const preferOrtho = nearRight >= Math.max(2, Math.floor(n * 0.5));
+
+    if (preferOrtho) {
+        const ortho = reconstructOrthogonal();
+        if (ortho) {
+            points = ortho;
+            usedExactGeometry = false;
+            return true;
+        }
+    }
+
+    const constraints = buildConstraintMap();
+    const minNeeded = Math.max(0, n - 3);
+    const hasEnoughDiags = selectedDiagonals.length >= minNeeded &&
+        selectedDiagonals.every(d => Number.isFinite(d.lengthCm) && d.lengthCm > 0);
+
+    if (hasEnoughDiags) {
+        const tris = triangulateBySketch();
+        if (tris.length === n - 2) {
+            const result = buildExactFromTriangulation(tris, constraints);
+            if (result && verifyConstraints(result, constraints)) {
+                points = alignToSketchOrientation(result) || result;
+                usedExactGeometry = true;
+                return true;
             }
         }
+    }
 
-        // =====================================================================
-        //  Инициализация
-        // =====================================================================
-        const webApp = getTelegramWebApp();
-        if (webApp) {
-            webApp.ready();
-            if (typeof webApp.expand === 'function') webApp.expand();
-            try {
-                if (webApp.isVersionAtLeast && webApp.isVersionAtLeast('6.2') &&
-                    typeof webApp.enableClosingConfirmation === 'function') {
-                    webApp.enableClosingConfirmation();
-                }
-            } catch (e) { /* старый клиент Telegram */ }
-            tryLoadEditFromUrl().then(loaded => {
-                if (loaded) console.log('Edit mode loaded');
-            });
+    const fallback = reconstructFromSidesAndSketch();
+    if (fallback) {
+        points = fallback;
+        usedExactGeometry = false;
+        return true;
+    }
+
+    const ortho2 = reconstructOrthogonal();
+    if (ortho2) {
+        points = ortho2;
+        usedExactGeometry = false;
+        return true;
+    }
+    return false;
+}
+
+// =====================================================================
+//  ОСНОВНАЯ ФУНКЦИЯ ОТРИСОВКИ (полная версия)
+// =====================================================================
+
+function drawSummaryCardOnCanvas() {
+    if (state !== 'DONE' && state !== 'SELECT_MATERIAL' && state !== 'INSTALL') return;
+    let maxY = Math.max(...points.map(p => p.y));
+    let minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+    let cx = (minX + maxX) / 2;
+
+    let matStr = `Материал: ${selectedMaterial}   |   Цвет: ${selectedColor}`;
+    let sidesStrArr = edges.map(e => `${e.label} = ${e.lengthCm != null ? e.lengthCm : '?'} см`);
+    let diagStrArr = selectedDiagonals.filter(d => d.lengthCm != null).map(d => `${d.label} = ${d.lengthCm} см`);
+
+    let perimeter = edges.reduce((s, e) => s + (e.lengthCm || 0), 0);
+    let areaPx = 0;
+    for (let i = 0; i < points.length; i++) {
+        let p1 = points[i], p2 = points[(i + 1) % points.length];
+        areaPx += (p1.x * p2.y - p2.x * p1.y);
+    }
+    let areaM2 = (Math.abs(areaPx / 2) / 10000).toFixed(2);
+    let totalStr = `Периметр: ${(perimeter / 100).toFixed(2)} м   |   Площадь: ${areaM2} м²`;
+    if (!usedExactGeometry) totalStr += '   |   (по сторонам + эскиз)';
+
+    let screenPos = toScreen(cx, maxY + 40 / camera.zoom);
+    let boxX = screenPos.x, boxY = screenPos.y;
+
+    ctx.save();
+    ctx.font = '13px Arial';
+    let sideLines = [];
+    for (let i = 0; i < sidesStrArr.length; i += 5) {
+        const chunk = sidesStrArr.slice(i, i + 5);
+        sideLines.push((i === 0 ? "Стороны: " : "") + chunk.join(", "));
+    }
+    let diagLines = [];
+    if (diagStrArr.length) {
+        let curD = "Диагонали: ";
+        diagStrArr.forEach((s, idx) => {
+            let item = s + (idx < diagStrArr.length - 1 ? ", " : "");
+            if (ctx.measureText(curD + item).width > 340) {
+                diagLines.push(curD); curD = item;
+            } else curD += item;
+        });
+        if (curD) diagLines.push(curD);
+    }
+    let allTextLines = [matStr, ...sideLines, ...diagLines, totalStr];
+    let lineHeight = 20, boxPadding = 12, boxWidth = 390;
+    let boxHeight = allTextLines.length * lineHeight + boxPadding * 2;
+    let rectX = boxX - boxWidth / 2, rectY = boxY;
+
+    ctx.shadowColor = 'rgba(0,0,0,0.12)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#0066cc';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(rectX, rectY, boxWidth, boxHeight, 8);
+    else ctx.rect(rectX, rectY, boxWidth, boxHeight);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    allTextLines.forEach((line, idx) => {
+        let lineY = rectY + boxPadding + idx * lineHeight + lineHeight / 2;
+        if (idx === 0) { ctx.fillStyle = '#0066cc'; ctx.font = 'bold 14px Arial'; }
+        else if (idx === allTextLines.length - 1) { ctx.fillStyle = '#28a745'; ctx.font = 'bold 13px Arial'; }
+        else { ctx.fillStyle = '#222222'; ctx.font = '12px Arial'; }
+        ctx.fillText(line, rectX + boxPadding, lineY);
+    });
+    ctx.restore();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+    let gridSize = 30 * camera.zoom;
+    if (gridSize > 8) {
+        let oX = camera.x % gridSize, oY = camera.y % gridSize;
+        for (let x = oX; x < canvas.width; x += gridSize) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+        }
+        for (let y = oY; y < canvas.height; y += gridSize) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+    }
+    if (points.length === 0) return;
+
+    ctx.beginPath();
+    let start = toScreen(points[0].x, points[0].y);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < points.length; i++) {
+        let pt = toScreen(points[i].x, points[i].y);
+        ctx.lineTo(pt.x, pt.y);
+    }
+    if (isClosed) {
+        ctx.lineTo(start.x, start.y);
+        ctx.fillStyle = 'rgba(0,102,204,0.07)';
+        ctx.fill();
+    }
+
+    if (selectedDiagonals.length > 0 && isClosed) {
+        ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#d32f2f';
+        selectedDiagonals.forEach(d => {
+            if (d.p1 >= points.length || d.p2 >= points.length) return;
+            let s1 = toScreen(points[d.p1].x, points[d.p1].y);
+            let s2 = toScreen(points[d.p2].x, points[d.p2].y);
+            ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+            if (d.lengthCm != null) {
+                let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+                ctx.font = 'bold 12px Arial';
+                let w = ctx.measureText(String(d.lengthCm)).width;
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 2, mY - 8, w + 4, 16);
+                ctx.fillStyle = '#d32f2f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(String(d.lengthCm), mX, mY);
+            }
+        });
+        ctx.setLineDash([]);
+    }
+
+    const showInstall = (state === 'INSTALL' || state === 'DONE');
+
+    for (let i = 0; i < points.length; i++) {
+        let nxt = (i + 1) % points.length;
+        if (!isClosed && nxt === 0) continue;
+        let s1 = toScreen(points[i].x, points[i].y);
+        let s2 = toScreen(points[nxt].x, points[nxt].y);
+        ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+        if (state === 'INPUT_SIDES' && edges[currentInputEdge] && i === edges[currentInputEdge].startIdx) {
+            ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 4;
+        } else if (showInstall && sideProfiles[i]) {
+            ctx.strokeStyle = PROFILE_COLORS[sideProfiles[i]] || '#2c3e50';
+            ctx.lineWidth = 3.2;
         } else {
-            showToast("⚠️ Откройте Draw через кнопку Telegram", 5000);
-            tryLoadEditFromUrl();
+            ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2.5;
+        }
+        ctx.stroke();
+
+        if (isClosed && edges[i] && edges[i].lengthCm != null) {
+            let text = edges[i].lengthCm;
+            let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+            ctx.font = 'bold 13px Arial';
+            let w = ctx.measureText(String(text)).width;
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
+            ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1; ctx.strokeRect(mX - w / 2 - 4, mY - 9, w + 8, 18);
+            ctx.fillStyle = '#d32f2f';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(String(text), mX, mY);
+        }
+        if (showInstall && sideProfiles[i] && sideProfiles[i] !== 'Стандартный') {
+            const short = { 'Теневой': 'Тен.', 'Парящий': 'Пар.' }[sideProfiles[i]] || sideProfiles[i];
+            let mX = (s1.x + s2.x) / 2, mY = (s1.y + s2.y) / 2;
+            ctx.font = 'bold 11px Arial';
+            ctx.fillStyle = PROFILE_COLORS[sideProfiles[i]] || '#333';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText(short, mX, mY + 12);
+        }
+    }
+
+    // ---- Отрисовка линий между светильниками ----
+    if (showInstall) {
+        drawSpotLines();
+    }
+
+    // ---- Отрисовка монтажных элементов ----
+    if (showInstall && fixtures.length) {
+        fixtures.forEach(f => {
+            if (f.type === 'cornice' && typeof f.edge_index === 'number' && points[f.edge_index]) {
+                const i = f.edge_index;
+                const a = points[i], b = points[(i + 1) % points.length];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const len = Math.hypot(dx, dy) || 1;
+                let nx = -dy / len, ny = dx / len;
+                const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+                const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+                const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+                const off = (f.offset_cm || 5);
+                const s1 = toScreen(a.x + nx * off, a.y + ny * off);
+                const s2 = toScreen(b.x + nx * off, b.y + ny * off);
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2.5; ctx.stroke();
+                return;
+            }
+            const sp = toScreen(f.x, f.y);
+            if (f.type === 'spot') {
+                ctx.beginPath();
+                ctx.fillStyle = '#f39c12'; ctx.strokeStyle = '#b9770e'; ctx.lineWidth = 2;
+                ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(sp.x - 4, sp.y); ctx.lineTo(sp.x + 4, sp.y); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 4); ctx.lineTo(sp.x, sp.y + 4); ctx.stroke();
+                ctx.fillStyle = '#b9770e'; ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                ctx.fillText(f.label || 'S', sp.x + 10, sp.y - 4);
+            } else if (f.type === 'chandelier') {
+                ctx.beginPath();
+                ctx.fillStyle = '#c0392b'; ctx.strokeStyle = '#7b241c'; ctx.lineWidth = 2;
+                ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+                ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y - 5); ctx.lineTo(sp.x + 5, sp.y + 5); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sp.x + 5, sp.y - 5); ctx.lineTo(sp.x - 5, sp.y + 5); ctx.stroke();
+                ctx.fillStyle = '#c0392b'; ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+                ctx.fillText(f.label || 'L', sp.x + 12, sp.y - 4);
+            } else if (f.type === 'strip' && f.points && f.points.length >= 2) {
+                ctx.beginPath();
+                const p0 = toScreen(f.points[0].x, f.points[0].y);
+                ctx.moveTo(p0.x, p0.y);
+                for (let k = 1; k < f.points.length; k++) {
+                    const pk = toScreen(f.points[k].x, f.points[k].y);
+                    ctx.lineTo(pk.x, pk.y);
+                }
+                ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                ctx.stroke();
+                const mid = f.points[Math.floor(f.points.length / 2)];
+                const sm = toScreen(mid.x, mid.y);
+                ctx.fillStyle = '#b7950b'; ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                ctx.fillText(`${f.label || 'P'} ${f.length_cm}см`, sm.x, sm.y - 6);
+            }
+        });
+    }
+
+    // ---- Если рисуем полосу (stripDrawing) ----
+    if (stripDrawing && stripDrawing.active && state === 'INSTALL' && lightingSub === 'strip') {
+        const s1 = toScreen(stripDrawing.startX, stripDrawing.startY);
+        const s2 = toScreen(stripDrawing.endX, stripDrawing.endY);
+        ctx.beginPath();
+        ctx.moveTo(s1.x, s1.y);
+        ctx.lineTo(s2.x, s2.y);
+        ctx.strokeStyle = '#f39c12';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.fillStyle = '#f39c12';
+        ctx.arc(s1.x, s1.y, 6, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.fillStyle = '#f39c12';
+        ctx.arc(s2.x, s2.y, 6, 0, Math.PI*2); ctx.fill();
+        const dist = Math.hypot(stripDrawing.endX - stripDrawing.startX, stripDrawing.endY - stripDrawing.startY) * 100;
+        const midX = (s1.x + s2.x) / 2;
+        const midY = (s1.y + s2.y) / 2;
+        ctx.save();
+        ctx.font = 'bold 14px Arial';
+        const txt = dist.toFixed(1) + ' см';
+        const w = ctx.measureText(txt).width;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillRect(midX - w/2 - 4, midY - 12, w + 8, 24);
+        ctx.fillStyle = '#e67e22';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(txt, midX, midY);
+        ctx.restore();
+        // Отображение отступов для обеих точек (упрощённо)
+        const off1 = twoNearestEdgeOffsetsCm({x: stripDrawing.startX, y: stripDrawing.startY});
+        const off2 = twoNearestEdgeOffsetsCm({x: stripDrawing.endX, y: stripDrawing.endY});
+        // можно вывести их, но для краткости пропускаем
+    }
+
+    // ---- Вершины ----
+    points.forEach((p, idx) => {
+        let sp = toScreen(p.x, p.y);
+        ctx.beginPath();
+        ctx.fillStyle = (idx === 0 && !isClosed) ? '#28a745' : '#ffffff';
+        ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2;
+        ctx.arc(sp.x, sp.y, (idx === 0 && !isClosed) ? 7 : 5, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        ctx.fillText(p.letter, sp.x + 8, sp.y - 8);
+    });
+
+    drawSummaryCardOnCanvas();
+    drawDragHelpers();
+}
+
+// =====================================================================
+//  ОТПРАВКА ДАННЫХ В БОТ
+// =====================================================================
+
+async function sendToBot() {
+    function note(m) {
+        console.log('[sendToBot]', m);
+        try { showToast(String(m), 5500); } catch (e) {}
+    }
+    function byteLen(s) {
+        try { return new TextEncoder().encode(s).length; } catch (e) { return s.length; }
+    }
+    function toUrlB64(bytes) {
+        var bin = '';
+        for (var i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+        }
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    async function deflateB64(str) {
+        if (typeof CompressionStream === 'undefined') return null;
+        try {
+            var data = new TextEncoder().encode(str);
+            var cs = new CompressionStream('deflate');
+            var w = cs.writable.getWriter();
+            await w.write(data);
+            await w.close();
+            var buf = await new Response(cs.readable).arrayBuffer();
+            return toUrlB64(new Uint8Array(buf));
+        } catch (e) {
+            console.warn('deflate', e);
+            return null;
+        }
+    }
+    try {
+        var webApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+        if (!webApp) { note('Нет Telegram.WebApp — откройте через кнопку бота'); return; }
+        try { webApp.ready(); } catch (e) {}
+        if (typeof webApp.sendData !== 'function') {
+            note('sendData недоступен. Откройте Draw кнопкой «Начать замер» в чате (не из меню).');
+            return;
         }
 
-        // Инициализация floating button (скрыта по умолчанию)
-        document.getElementById('float-menu-btn').style.display = 'none';
-    </script>
+        function sameCeilingGeom(a, b) {
+            if (!a || !b || !a.points || !b.points) return false;
+            if (a.points.length !== b.points.length) return false;
+            for (var i = 0; i < a.points.length; i++) {
+                if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
+                if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
+            }
+            return true;
+        }
+        if (points.length >= 3) {
+            try {
+                if (isEditMode && editCeilingIndex >= 0) {
+                    saveEditorToCompleted();
+                } else {
+                    var current = getCurrentCeilingPayload();
+                    if (current.points && current.points.length >= 3) {
+                        var last = completedCeilings[completedCeilings.length - 1];
+                        if (last && sameCeilingGeom(last, current)) {
+                            completedCeilings[completedCeilings.length - 1] = current;
+                        } else {
+                            completedCeilings.push(current);
+                        }
+                    }
+                }
+            } catch (e) { console.warn(e); }
+        }
+        if (!completedCeilings.length) {
+            note('Нет потолка для отправки.');
+            return;
+        }
+
+        function r(v, n) {
+            var x = Number(v);
+            if (!Number.isFinite(x)) return 0;
+            var p = Math.pow(10, n);
+            return Math.round(x * p) / p;
+        }
+        function asM(v) {
+            var x = Number(v);
+            if (!Number.isFinite(x)) return 0;
+            if (Math.abs(x) > 50) x = x / 100;
+            return r(x, 3);
+        }
+
+        function buildLevel(level) {
+            return completedCeilings.map(function (c) {
+                var pts = (c.points || []).map(function (p) {
+                    return [asM(p.x), asM(p.y)];
+                });
+                var sides = (c.sides_cm || []).map(function (s) { return r(s, 1); });
+                var diags = [];
+                if (level < 7) {
+                    diags = (c.diagonals || []).map(function (d) {
+                        if (Array.isArray(d)) return [d[0]|0, d[1]|0];
+                        return [d.p1|0, d.p2|0];
+                    });
+                }
+                var profiles = (c.profiles || []).slice();
+                var fx = [];
+                if (level < 6) {
+                    var list = (c.fixtures || []).slice();
+                    var spots = list.filter(function (f) { return f.type === 'spot'; });
+                    var rest = list.filter(function (f) { return f.type !== 'spot'; });
+                    if (level >= 5) {
+                        list = rest;
+                    } else if (level >= 4) {
+                        list = rest.concat(spots.slice(0, 20));
+                    } else if (level >= 3) {
+                        list = rest.concat(spots.slice(0, 40));
+                    } else {
+                        list = rest.concat(spots);
+                    }
+                    fx = list.map(function (f) {
+                        if (f.type === 'strip') {
+                            var o = { t: 'p', len: r(f.length_cm || 0, 1) };
+                            if (level < 2) {
+                                o.pts = (f.points || []).map(function (p) {
+                                    return [asM(p.x), asM(p.y)];
+                                });
+                            }
+                            return o;
+                        }
+                        if (f.type === 'cornice') {
+                            return { t: 'k', e: f.edge_index|0, o: r(f.offset_cm || 5, 0) };
+                        }
+                        if (f.type === 'chandelier') {
+                            return { t: 'c', x: asM(f.x), y: asM(f.y) };
+                        }
+                        var s = { t: 's', x: asM(f.x), y: asM(f.y) };
+                        if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
+                        if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
+                        return s;
+                    });
+                }
+                return {
+                    pts: pts, s: sides, d: diags,
+                    m: c.material || 'Мат', col: c.color || 'Белый',
+                    pr: profiles, fx: fx, u: 'm'
+                };
+            });
+        }
+
+        function makePayload(level) {
+            var payload = {
+                type: 'drawing_set',
+                v: 3,
+                unit: 'm',
+                truncate_level: level,
+                truncated: level > 0,
+                ceilings: buildLevel(level)
+            };
+            if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
+            return JSON.stringify(payload);
+        }
+
+        var LIMIT = 4096;
+        var toSend = null;
+        var usedLevel = 0;
+        var noteExtra = '';
+
+        var fxTotal = 0;
+        completedCeilings.forEach(function (c) {
+            fxTotal += (c.fixtures || []).length;
+        });
+
+        for (var lv = 0; lv <= 7; lv++) {
+            var raw = makePayload(lv);
+            if (byteLen(raw) <= LIMIT) {
+                toSend = raw;
+                usedLevel = lv;
+                break;
+            }
+            var zb = await deflateB64(raw);
+            if (zb) {
+                var wrapped = JSON.stringify({ type: 'drawing_set_z', v: 3, z: zb });
+                if (byteLen(wrapped) <= LIMIT) {
+                    toSend = wrapped;
+                    usedLevel = lv;
+                    noteExtra = ' (сжато)';
+                    break;
+                }
+            }
+            toSend = raw;
+            usedLevel = lv;
+        }
+
+        if (!toSend || byteLen(toSend) > LIMIT) {
+            note('Слишком много данных (' + (toSend ? byteLen(toSend) : 0) + ' байт, лимит 4096). Уберите часть светильников.');
+            return;
+        }
+
+        var sentFx = 0;
+        try {
+            var parsedLv = JSON.parse(makePayload(usedLevel));
+            (parsedLv.ceilings || []).forEach(function (c) {
+                sentFx += (c.fx || []).length;
+            });
+        } catch (e) {}
+
+        try {
+            webApp.sendData(toSend);
+        } catch (sendErr) {
+            var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
+            note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате.');
+            return;
+        }
+
+        if (usedLevel >= 6) noteExtra += ' ⚠ освещение НЕ передано';
+        else if (usedLevel >= 5) noteExtra += ' ⚠ споты убраны (люстры/карнизы/полосы есть)';
+        else if (usedLevel >= 4) noteExtra += ' ⚠ споты ≤20';
+        else if (usedLevel >= 3) noteExtra += ' ⚠ споты ≤40';
+        else if (usedLevel >= 2) noteExtra += ' (полосы без точек)';
+        else if (usedLevel >= 1) noteExtra += ' (без отступов стен)';
+
+        note('Отправлено ' + completedCeilings.length + ' пот., освещение: ' + sentFx + '/' + fxTotal + ', ' + byteLen(toSend) + ' б' + noteExtra);
+        try {
+            if (webApp.HapticFeedback && webApp.HapticFeedback.notificationOccurred) {
+                webApp.HapticFeedback.notificationOccurred('success');
+            }
+        } catch (e) {}
+        setTimeout(function () {
+            try { if (webApp.close) webApp.close(); } catch (e) {}
+        }, 800);
+    } catch (err) {
+        console.error(err);
+        note('Ошибка: ' + (err && err.message ? err.message : err));
+    }
+}
+
+function copyData() {
+    try {
+        const all = [...completedCeilings];
+        if (state === 'DONE' && points.length >= 3) all.push(getCurrentCeilingPayload());
+        const data = { type: 'drawing_set', ceilings: all };
+        const str = JSON.stringify(data, null, 2);
+        navigator.clipboard.writeText(str).then(() => showToast('Скопировано.', 2000))
+            .catch(() => { showToast('Не удалось скопировать.', 2000); console.log(str); });
+    } catch (e) {
+        showToast('Ошибка копирования.', 2000);
+    }
+}
+
+// =====================================================================
+//  ИНИЦИАЛИЗАЦИЯ (дополнение к уже существующей в первой части)
+// =====================================================================
+
+// В первой части уже есть блок инициализации с webApp и tryLoadEditFromUrl.
+// Дублировать его не нужно. Всё уже работает.
+
+// Закрывающие теги html
+</script>
 </body>
 </html>
