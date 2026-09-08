@@ -304,6 +304,14 @@
                 <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстра</button>
                 <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полоса</button>
             </div>
+            <div id="spot-extra-tools" style="display:none; margin-top:6px;">
+                <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                    <button type="button" class="btn btn-outline" id="btn-spot-snap" onclick="toggleSpotSnap()" style="flex:1;min-width:70px;padding:6px;font-size:0.7rem;">🧲 Примагн. ВКЛ</button>
+                    <button type="button" class="btn btn-outline" id="btn-spot-even" onclick="evenlyPlaceSpots()" style="flex:1;min-width:70px;padding:6px;font-size:0.7rem;">📏 Равномерно</button>
+                    <button type="button" class="btn btn-outline" onclick="clearLastSpotRow()" style="flex:1;min-width:70px;padding:6px;font-size:0.7rem;">↩ Очистить ряд</button>
+                </div>
+                <div class="hint" style="margin-top:4px;" id="spot-row-hint">1) Поставьте первый светильник и подвиньте куда нужно. 2) От него идут 2 штриховые линии (горизонт + вертикаль). 3) Второй и дальше магнитятся к этим линиям. 4) «Равномерно» — разнести все на линии равными шагами.</div>
+            </div>
             <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
         </div>
 
@@ -383,6 +391,16 @@
         let stripDraft = [];
         let stripPreviewLen = 0;
         const PROFILE_COLORS = { 'Стандартный': '#2c3e50', 'Теневой': '#8e44ad', 'Парящий': '#e67e22' };
+
+        // Освещение — ряд и примагничивание
+        let spotSnapEnabled = true;
+        let spotRowGuide = null; // { ax, ay, bx, by, ux, uy } единичный вектор направления ряда
+        let lastSpotRowIndices = []; // индексы светильников текущего ряда в fixtures
+        let longPressTimer = null;
+        let longPressStart = null;
+        const SNAP_THRESHOLD_CM = 12; // радиус примагничивания к линии ряда
+        const MIN_SPOT_WALL_CM = 12;  // предупреждение если ближе к стене
+        const MIN_SPOT_DIST_CM = 15;  // предупреждение если слишком близко к другому споту
 
         let lastActivePanelId = null;
         let dragState = null;
@@ -1141,7 +1159,8 @@
         }
 
         function getFixtureAtPoint(worldX, worldY) {
-            const threshold = 25 / camera.zoom;
+            // Крупнее зона захвата для удобства на телефоне
+            const threshold = Math.max(28 / camera.zoom, 18);
             for (let i = 0; i < fixtures.length; i++) {
                 const f = fixtures[i];
                 if (f.type === 'strip' && f.points && f.points.length >= 2) {
@@ -1227,36 +1246,270 @@
             drawDistLine(cx, cy, c, d, 'Стена B', '#2980b9');
         }
 
+        // ===== Освещение: крестовые направляющие + примагничивание + равномерно =====
+        function getSpots() {
+            return fixtures.filter(f => f.type === 'spot');
+        }
+
+        function getSpotAnchor() {
+            // Якорь = первый поставленный светильник (или последний, если хотите менять)
+            const spots = getSpots();
+            return spots.length ? spots[0] : null;
+        }
+
+        function projectPointToLine(px, py, ax, ay, ux, uy) {
+            const t = (px - ax) * ux + (py - ay) * uy;
+            return { x: ax + t * ux, y: ay + t * uy, t };
+        }
+
+        // Примагничивание ко горизонтали и вертикали от якоря (первый светильник)
+        function snapToCrosshair(worldPos, excludeIndex) {
+            if (!spotSnapEnabled) return { x: worldPos.x, y: worldPos.y, snapped: false, axis: null };
+            const anchor = getSpotAnchor();
+            if (!anchor) return { x: worldPos.x, y: worldPos.y, snapped: false, axis: null };
+
+            const dx = Math.abs(worldPos.x - anchor.x);
+            const dy = Math.abs(worldPos.y - anchor.y);
+
+            // Если близко и к H, и к V — приоритет той оси, к которой ближе
+            let best = null;
+            if (dy <= SNAP_THRESHOLD_CM) {
+                best = { x: worldPos.x, y: anchor.y, snapped: true, axis: 'h', dist: dy };
+            }
+            if (dx <= SNAP_THRESHOLD_CM) {
+                if (!best || dx < best.dist) {
+                    best = { x: anchor.x, y: worldPos.y, snapped: true, axis: 'v', dist: dx };
+                }
+            }
+            // Если уже есть 2+ спота примерно на одной произвольной линии — тоже можно примагнитить к ней
+            if (!best && getSpots().length >= 2) {
+                const spots = getSpots();
+                // берём линию от якоря до самого дальнего спота
+                let far = spots[1], farD = 0;
+                for (let i = 1; i < spots.length; i++) {
+                    const d = Math.hypot(spots[i].x - anchor.x, spots[i].y - anchor.y);
+                    if (d > farD) { farD = d; far = spots[i]; }
+                }
+                const dx2 = far.x - anchor.x, dy2 = far.y - anchor.y;
+                const len = Math.hypot(dx2, dy2) || 1;
+                const ux = dx2 / len, uy = dy2 / len;
+                const p = projectPointToLine(worldPos.x, worldPos.y, anchor.x, anchor.y, ux, uy);
+                const distToLine = Math.hypot(worldPos.x - p.x, worldPos.y - p.y);
+                if (distToLine <= SNAP_THRESHOLD_CM) {
+                    best = { x: p.x, y: p.y, snapped: true, axis: 'line', dist: distToLine };
+                }
+            }
+            return best || { x: worldPos.x, y: worldPos.y, snapped: false, axis: null };
+        }
+
+        function toggleSpotSnap() {
+            spotSnapEnabled = !spotSnapEnabled;
+            const btn = document.getElementById('btn-spot-snap');
+            if (btn) {
+                btn.textContent = spotSnapEnabled ? '🧲 Примагн. ВКЛ' : '🧲 Примагн. ВЫКЛ';
+                btn.style.borderColor = spotSnapEnabled ? '#1a73e8' : '#ccc';
+                btn.style.background = spotSnapEnabled ? '#e8f0fe' : '#f8f9fa';
+            }
+            showToast(spotSnapEnabled ? 'Примагничивание к осям ВКЛ' : 'Примагничивание ВЫКЛ', 1800);
+            draw();
+        }
+
+        function clearLastSpotRow() {
+            const before = fixtures.length;
+            fixtures = fixtures.filter(f => f.type !== 'spot');
+            lastSpotRowIndices = [];
+            spotRowGuide = null;
+            renumberFixtures();
+            updateFixtureList();
+            draw();
+            showToast(before > fixtures.length ? 'Все светильники удалены' : 'Нет светильников', 2000);
+        }
+
+        function renumberFixtures() {
+            let sn = 1, ln = 1, pn = 1;
+            fixtures.forEach(f => {
+                if (f.type === 'spot') f.label = 'S' + (sn++);
+                if (f.type === 'chandelier') f.label = 'L' + (ln++);
+                if (f.type === 'strip') f.label = 'P' + (pn++);
+            });
+        }
+
+        // Находит все споты, лежащие примерно на одной линии (H, V или произвольной),
+        // и равномерно расставляет их между двумя крайними.
+        function evenlyPlaceSpots() {
+            const spots = getSpots();
+            if (spots.length < 2) {
+                showToast('Нужно минимум 2 светильника на одной линии', 2800);
+                return;
+            }
+
+            const anchor = spots[0];
+            // Определяем доминирующее направление: горизонталь / вертикаль / линия
+            let axis = null;
+            let onLine = [];
+
+            // Сначала пробуем горизонталь (Y ≈ anchor.y)
+            const horiz = spots.filter(s => Math.abs(s.y - anchor.y) <= SNAP_THRESHOLD_CM * 1.5);
+            // Вертикаль
+            const vert = spots.filter(s => Math.abs(s.x - anchor.x) <= SNAP_THRESHOLD_CM * 1.5);
+
+            if (horiz.length >= 2 && horiz.length >= vert.length) {
+                axis = 'h';
+                onLine = horiz.slice().sort((a, b) => a.x - b.x);
+            } else if (vert.length >= 2) {
+                axis = 'v';
+                onLine = vert.slice().sort((a, b) => a.y - b.y);
+            } else {
+                // Произвольная линия: от первого до самого дальнего
+                let far = spots[1], farD = 0;
+                for (let i = 1; i < spots.length; i++) {
+                    const d = Math.hypot(spots[i].x - anchor.x, spots[i].y - anchor.y);
+                    if (d > farD) { farD = d; far = spots[i]; }
+                }
+                const dx = far.x - anchor.x, dy = far.y - anchor.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const ux = dx / len, uy = dy / len;
+                onLine = spots.filter(s => {
+                    const p = projectPointToLine(s.x, s.y, anchor.x, anchor.y, ux, uy);
+                    return Math.hypot(s.x - p.x, s.y - p.y) <= SNAP_THRESHOLD_CM * 1.5;
+                });
+                // Сортируем по параметру t вдоль линии
+                onLine.sort((a, b) => {
+                    const ta = (a.x - anchor.x) * ux + (a.y - anchor.y) * uy;
+                    const tb = (b.x - anchor.x) * ux + (b.y - anchor.y) * uy;
+                    return ta - tb;
+                });
+                axis = 'line';
+            }
+
+            if (onLine.length < 2) {
+                showToast('Недостаточно светильников на одной линии. Подтяните их к штриховым линиям.', 3500);
+                return;
+            }
+
+            const first = onLine[0], last = onLine[onLine.length - 1];
+            const totalDist = Math.hypot(last.x - first.x, last.y - first.y);
+            if (totalDist < 8) {
+                showToast('Слишком короткий ряд', 2000);
+                return;
+            }
+
+            // Равномерно расставляем существующие точки между first и last
+            const n = onLine.length;
+            for (let i = 0; i < n; i++) {
+                const t = i / (n - 1);
+                onLine[i].x = first.x + (last.x - first.x) * t;
+                onLine[i].y = first.y + (last.y - first.y) * t;
+                const off = twoNearestEdgeOffsetsCm({ x: onLine[i].x, y: onLine[i].y });
+                onLine[i].offset_wall_a_cm = off.offset_wall_a_cm;
+                onLine[i].offset_wall_b_cm = off.offset_wall_b_cm;
+            }
+
+            renumberFixtures();
+            updateFixtureList();
+            draw();
+            const step = totalDist / (n - 1);
+            showToast(`Равномерно: ${n} шт., шаг ${step.toFixed(1)} см`, 3000);
+        }
+
+        function checkSpotWarnings(x, y, excludeIndex) {
+            const warnings = [];
+            const off = twoNearestEdgeOffsetsCm({ x, y });
+            if (off.offset_wall_a_cm < MIN_SPOT_WALL_CM || off.offset_wall_b_cm < MIN_SPOT_WALL_CM) {
+                warnings.push('близко к стене');
+            }
+            fixtures.forEach((f, i) => {
+                if (i === excludeIndex || f.type !== 'spot') return;
+                const d = Math.hypot(f.x - x, f.y - y);
+                if (d < MIN_SPOT_DIST_CM) warnings.push('близко к другому');
+            });
+            return warnings;
+        }
+
         function drawSpotLines() {
-            const spots = fixtures.filter(f => f.type === 'spot');
+            const spots = getSpots();
+            const anchor = getSpotAnchor();
+
+            // 1. Крестовые направляющие от первого светильника (горизонталь + вертикаль)
+            if (anchor && spotSnapEnabled) {
+                const len = 8000;
+                // Горизонталь
+                const h1 = toScreen(anchor.x - len, anchor.y);
+                const h2 = toScreen(anchor.x + len, anchor.y);
+                ctx.save();
+                ctx.setLineDash([6, 5]);
+                ctx.strokeStyle = 'rgba(26,115,232,0.45)';
+                ctx.lineWidth = 1.4;
+                ctx.beginPath();
+                ctx.moveTo(h1.x, h1.y);
+                ctx.lineTo(h2.x, h2.y);
+                ctx.stroke();
+                // Вертикаль
+                const v1 = toScreen(anchor.x, anchor.y - len);
+                const v2 = toScreen(anchor.x, anchor.y + len);
+                ctx.beginPath();
+                ctx.moveTo(v1.x, v1.y);
+                ctx.lineTo(v2.x, v2.y);
+                ctx.stroke();
+                ctx.restore();
+            }
+
             if (spots.length < 2) return;
+
+            // 2. Линии между соседними + расстояния
             for (let i = 0; i < spots.length - 1; i++) {
                 const a = spots[i];
-                const b = spots[i+1];
-                const dist = Math.hypot(a.x - b.x, a.y - b.y); // world units = cm
+                const b = spots[i + 1];
+                const dist = Math.hypot(a.x - b.x, a.y - b.y);
                 const s1 = toScreen(a.x, a.y);
                 const s2 = toScreen(b.x, b.y);
                 ctx.save();
-                ctx.setLineDash([5, 5]);
+                ctx.setLineDash([5, 4]);
                 ctx.strokeStyle = '#1a73e8';
-                ctx.lineWidth = 1.5;
+                ctx.lineWidth = 1.8;
                 ctx.beginPath();
                 ctx.moveTo(s1.x, s1.y);
                 ctx.lineTo(s2.x, s2.y);
                 ctx.stroke();
                 ctx.restore();
+
                 const midX = (s1.x + s2.x) / 2;
                 const midY = (s1.y + s2.y) / 2;
                 ctx.save();
                 ctx.font = 'bold 12px Arial';
                 const txt = dist.toFixed(1) + ' см';
                 const w = ctx.measureText(txt).width;
-                ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                ctx.fillRect(midX - w/2 - 4, midY - 10, w + 8, 20);
+                ctx.fillStyle = 'rgba(255,255,255,0.92)';
+                ctx.fillRect(midX - w / 2 - 4, midY - 10, w + 8, 20);
+                ctx.strokeStyle = '#1a73e8';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(midX - w / 2 - 4, midY - 10, w + 8, 20);
                 ctx.fillStyle = '#1a73e8';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(txt, midX, midY);
+                ctx.restore();
+            }
+
+            // 3. Общая длина / средний шаг
+            if (spots.length >= 3) {
+                let total = 0;
+                for (let i = 0; i < spots.length - 1; i++) {
+                    total += Math.hypot(spots[i + 1].x - spots[i].x, spots[i + 1].y - spots[i].y);
+                }
+                const avg = total / (spots.length - 1);
+                const last = spots[spots.length - 1];
+                const sp = toScreen(last.x, last.y);
+                ctx.save();
+                ctx.font = 'bold 11px Arial';
+                const info = `Ряд: ${total.toFixed(1)} см • шаг ~${avg.toFixed(1)}`;
+                const iw = ctx.measureText(info).width;
+                ctx.fillStyle = 'rgba(26,115,232,0.92)';
+                ctx.fillRect(sp.x + 14, sp.y - 28, iw + 10, 20);
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(info, sp.x + 19, sp.y - 18);
                 ctx.restore();
             }
         }
@@ -1306,13 +1559,36 @@
                     draw();
                     return;
                 } else { // spot
-                    const off = twoNearestEdgeOffsetsCm(worldPos);
+                    // Примагничивание к крестовым направляющим от первого светильника
+                    let pos = { x: worldPos.x, y: worldPos.y };
+                    const snapped = snapToCrosshair(pos, -1);
+                    if (snapped.snapped) {
+                        pos.x = snapped.x;
+                        pos.y = snapped.y;
+                    }
+
+                    const off = twoNearestEdgeOffsetsCm(pos);
                     const n = fixtures.filter(f => f.type === 'spot').length + 1;
+                    const warnings = checkSpotWarnings(pos.x, pos.y, -1);
                     fixtures.push({
-                        type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
+                        type: 'spot', x: pos.x, y: pos.y, label: 'S' + n,
                         offset_wall_a_cm: off.offset_wall_a_cm, offset_wall_b_cm: off.offset_wall_b_cm
                     });
-                    showToast(`Светильник S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`, 2500);
+
+                    let msg = `S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`;
+                    if (snapped.snapped) {
+                        if (snapped.axis === 'h') msg += ' (гориз.)';
+                        else if (snapped.axis === 'v') msg += ' (верт.)';
+                        else msg += ' (линия)';
+                    }
+                    if (warnings.length) msg += ' ⚠ ' + warnings.join(', ');
+                    const spots = getSpots();
+                    if (spots.length >= 2) {
+                        const prev = spots[spots.length - 2];
+                        const step = Math.hypot(pos.x - prev.x, pos.y - prev.y);
+                        msg += ` • шаг ${step.toFixed(1)} см`;
+                    }
+                    showToast(msg, 3200);
                     updateFixtureList();
                     draw();
                 }
@@ -1411,7 +1687,25 @@
 
             if (stripDrawing && stripDrawing.active && state === 'INSTALL' && lightingSub === 'strip') {
                 const rect = canvas.getBoundingClientRect();
-                const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                let worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                // Лёгкое примагничивание конца полосы к ближайшей стороне (если близко)
+                if (points.length >= 3) {
+                    let bestD = 8, bestProj = null;
+                    for (let i = 0; i < points.length; i++) {
+                        const a = points[i], b = points[(i + 1) % points.length];
+                        const d = distPointToSegment(worldPos, a, b);
+                        if (d < bestD) {
+                            bestD = d;
+                            // проекция
+                            const dx = b.x - a.x, dy = b.y - a.y;
+                            const len2 = dx*dx + dy*dy || 1;
+                            let t = ((worldPos.x - a.x)*dx + (worldPos.y - a.y)*dy) / len2;
+                            t = Math.max(0, Math.min(1, t));
+                            bestProj = { x: a.x + t*dx, y: a.y + t*dy };
+                        }
+                    }
+                    if (bestProj) worldPos = bestProj;
+                }
                 stripDrawing.endX = worldPos.x;
                 stripDrawing.endY = worldPos.y;
                 draw();
@@ -1434,8 +1728,15 @@
                         f.x = f.points.reduce((s,p) => s + p.x, 0) / f.points.length;
                         f.y = f.points.reduce((s,p) => s + p.y, 0) / f.points.length;
                     } else {
-                        f.x = worldPos.x + dragState.offsetX;
-                        f.y = worldPos.y + dragState.offsetY;
+                        let nx = worldPos.x + dragState.offsetX;
+                        let ny = worldPos.y + dragState.offsetY;
+                        // Примагничивание к кресту (H/V) от первого светильника
+                        if (f.type === 'spot' && spotSnapEnabled) {
+                            const snapped = snapToCrosshair({x: nx, y: ny}, dragState.fixtureIndex);
+                            if (snapped.snapped) { nx = snapped.x; ny = snapped.y; }
+                        }
+                        f.x = nx;
+                        f.y = ny;
                     }
                     updateFixtureOffsets(f);
                     draw();
@@ -1959,16 +2260,27 @@
             const centerBtn = document.getElementById('chandelier-center-btn');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
+            const spotExtra = document.getElementById('spot-extra-tools');
             if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
+            if (spotExtra) spotExtra.style.display = sub === 'spot' ? 'block' : 'none';
             if (sub === 'strip') {
-                miniPanel.style.display = 'none'; // live feedback now on canvas
+                if (miniPanel) miniPanel.style.display = 'none';
                 if (finishBtn) finishBtn.style.display = 'none';
                 hint.innerText = 'Полоса: зажмите в начале, тяните палец — длина и отступы от стен видны в реальном времени. Отпустите — точка зафиксируется.';
             } else {
-                miniPanel.style.display = 'none';
+                if (miniPanel) miniPanel.style.display = 'none';
                 if (finishBtn) finishBtn.style.display = 'none';
-                if (sub === 'spot') hint.innerText = 'Светильник: тап внутри контура. Со 2-го — штриховая линия ряда + расстояние в см.';
-                else if (sub === 'chandelier') hint.innerText = 'Люстра: тап или «по центру» (можно несколько)';
+                if (sub === 'spot') {
+                    hint.innerText = 'Первый светильник — якорь (от него крест H/V). Остальные магнитятся к линиям. «Равномерно» — равные шаги по линии.';
+                    const btn = document.getElementById('btn-spot-snap');
+                    if (btn) {
+                        btn.textContent = spotSnapEnabled ? '🧲 Примагн. ВКЛ' : '🧲 Примагн. ВЫКЛ';
+                        btn.style.borderColor = spotSnapEnabled ? '#1a73e8' : '#ccc';
+                        btn.style.background = spotSnapEnabled ? '#e8f0fe' : '#f8f9fa';
+                    }
+                } else if (sub === 'chandelier') {
+                    hint.innerText = 'Люстра: тап или «по центру» (можно несколько)';
+                }
             }
             draw();
         }
@@ -2021,12 +2333,9 @@
 
         function removeFixture(idx) {
             fixtures.splice(idx, 1);
-            let sn = 1, ln = 1, pn = 1;
-            fixtures.forEach(f => {
-                if (f.type === 'spot') f.label = 'S' + (sn++);
-                if (f.type === 'chandelier') f.label = 'L' + (ln++);
-                if (f.type === 'strip') f.label = 'P' + (pn++);
-            });
+            lastSpotRowIndices = [];
+            spotRowGuide = null;
+            renumberFixtures();
             updateFixtureList();
             draw();
         }
@@ -2788,6 +3097,11 @@
             editCeilingIndex = -1;
             dragState = null;
             stripDrawing = null;
+            spotSnapEnabled = true;
+            spotRowGuide = null;
+            lastSpotRowIndices = [];
+            longPressTimer = null;
+            longPressStart = null;
 
             state = 'DRAWING';
             statusText.innerText = full
