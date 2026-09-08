@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908i</title>
+    <title>ПРО Замер потолков v20260908j</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -257,15 +257,6 @@
             <button class="btn btn-outline" onclick="undoStripPoint()">↩</button>
             <button class="btn btn-accent" onclick="finishStrip()">✅</button>
         </div>
-        <!-- Компактная панель ИИ при просмотре вариантов (больше места чертежу) -->
-        <div id="ai-mini-bar">
-            <span class="ai-info" id="ai-mini-info">Вариант 1/5</span>
-            <button type="button" class="btn btn-outline" onclick="aiPrevVariant()">◀</button>
-            <button type="button" class="btn btn-outline" onclick="aiNextVariant()">▶ Другой</button>
-            <button type="button" class="btn btn-success" onclick="aiAcceptLighting()">✅ Принять</button>
-            <button type="button" class="btn btn-danger" onclick="aiClearPreview()">✕</button>
-            <button type="button" class="btn btn-outline" onclick="aiShowFullPanel()">☰ План</button>
-        </div>
     </div>
 
     <div id="bottom-input-bar" class="bottom-panel">
@@ -326,122 +317,30 @@
         </div>
 
         <div id="lighting-tools" style="display:none;">
-            <div class="install-modes" style="margin-top:2px;">
-                <button type="button" class="install-mode-btn active" id="lmode-spot" onclick="setLightingSub('spot')">Светильник</button>
-                <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстра</button>
-                <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полоса</button>
+            <div class="panel-title" style="font-size:0.85rem;margin-bottom:4px;">Освещение</div>
+            <div class="hint" style="margin-bottom:6px;">Укажите количество → «Разместить» — объекты появятся <b>под чертежом</b>. Перетащите на места. При перетаскивании видны отступы от стен (см).</div>
+            <div class="color-row" style="margin-bottom:3px;">
+                <label style="min-width:90px;">Светильники:</label>
+                <input type="number" id="place-spot-count" value="4" min="0" max="60" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
             </div>
-            <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
-
-            <!-- Точная расстановка по размерам клиента -->
-            <div id="exact-light-tools" style="margin-top:6px; padding:6px; background:#eef9f0; border-radius:8px; border:1px solid #a8d5b5;">
-                <div class="panel-title" style="font-size:0.8rem; margin-bottom:4px;">📏 По размерам клиента</div>
-                <div class="hint" style="margin-bottom:4px;">Клиент назвал отступы и шаг — вводите сюда. Тап по стороне на чертеже = выбрать стену-ориентир.</div>
-
-                <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Стена:</label>
-                    <select id="exact-edge-select" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;"></select>
-                </div>
-                <div class="hint" id="exact-edge-hint" style="margin-bottom:4px;">Или тапните сторону на чертеже</div>
-
-                <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:78px;">Что ставим:</label>
-                    <select id="exact-what" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;" onchange="updateExactForm()">
-                        <option value="row">Ряд светильников</option>
-                        <option value="one">Один светильник</option>
-                        <option value="strip">Световая полоса</option>
-                        <option value="grid">Сетка светильников</option>
-                    </select>
-                </div>
-
-                <div id="exact-fields-row">
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">От стены:</label>
-                        <input type="number" id="exact-offset" value="60" min="1" max="500" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см</span>
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">От начала:</label>
-                        <input type="number" id="exact-start" value="50" min="0" max="1000" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см</span>
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;" id="exact-count-row">
-                        <label style="min-width:78px;">Кол-во:</label>
-                        <input type="number" id="exact-count" value="4" min="1" max="40" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;" id="exact-step-row">
-                        <label style="min-width:78px;">Шаг:</label>
-                        <input type="number" id="exact-step" value="80" min="10" max="500" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см между</span>
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px; display:none;" id="exact-len-row">
-                        <label style="min-width:78px;">Длина:</label>
-                        <input type="number" id="exact-len" value="200" min="20" max="1000" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см</span>
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px; display:none;" id="exact-rows-row">
-                        <label style="min-width:78px;">Рядов:</label>
-                        <input type="number" id="exact-rows" value="2" min="1" max="10" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px; display:none;" id="exact-rowstep-row">
-                        <label style="min-width:78px;">Шаг рядов:</label>
-                        <input type="number" id="exact-rowstep" value="100" min="10" max="500" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см</span>
-                    </div>
-                </div>
-
-                <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
-                    <button type="button" class="btn btn-success" style="flex:2;min-width:120px;padding:8px;font-size:0.8rem;" onclick="exactPlaceByMeasures()">📍 Поставить по размерам</button>
-                    <button type="button" class="btn btn-outline" style="flex:1;min-width:70px;padding:8px;font-size:0.75rem;" onclick="exactPreviewMeasures()">👁 Превью</button>
-                </div>
-                <div class="hint" id="exact-hint" style="margin-top:4px;">Пример: стена A-B, от стены 60 см, от начала 50 см, 4 шт, шаг 80 см.</div>
+            <div class="color-row" style="margin-bottom:3px;">
+                <label style="min-width:90px;">Люстры:</label>
+                <input type="number" id="place-ch-count" value="0" min="0" max="10" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
             </div>
-
-            <!-- ИИ свёрнут — вторичный -->
-            <details style="margin-top:6px;">
-                <summary style="font-size:0.75rem;color:#666;cursor:pointer;padding:4px;">🤖 ИИ-подсказки (необязательно)</summary>
-                <div id="ai-light-tools" style="margin-top:4px; padding:6px; background:#f0f7ff; border-radius:8px; border:1px solid #c5d9f0;">
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">Светильники:</label>
-                        <input type="number" id="ai-spot-count" value="4" min="0" max="60" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">Люстры:</label>
-                        <input type="number" id="ai-ch-count" value="0" min="0" max="10" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">Полосы:</label>
-                        <input type="number" id="ai-strip-count" value="0" min="0" max="8" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">Дл. полосы:</label>
-                        <input type="number" id="ai-strip-len" value="150" min="30" max="800" step="10" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см</span>
-                    </div>
-                    <div class="color-row" style="margin-bottom:3px;">
-                        <label style="min-width:78px;">Отступ:</label>
-                        <input type="number" id="ai-spot-margin" value="30" min="5" max="80" step="5" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                        <span style="font-size:0.75rem;">см</span>
-                    </div>
-                    <div class="color-row" style="margin-bottom:4px;">
-                        <label style="min-width:78px;">Стиль:</label>
-                        <select id="ai-spot-pattern" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
-                            <option value="all">Все стили</option>
-                            <option value="symmetry">Симметрия</option>
-                            <option value="grid">Сетка</option>
-                            <option value="rows">Ряды</option>
-                            <option value="perimeter">Периметр</option>
-                            <option value="random">Случайный</option>
-                        </select>
-                    </div>
-                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                        <button type="button" class="btn btn-accent" style="flex:1;padding:6px;font-size:0.75rem;" onclick="aiProposeLighting()">Предложить</button>
-                        <button type="button" class="btn btn-outline" style="flex:1;padding:6px;font-size:0.75rem;" onclick="aiNextVariant()">Другой</button>
-                        <button type="button" class="btn btn-success" style="flex:1;padding:6px;font-size:0.75rem;" onclick="aiAcceptLighting()">Принять</button>
-                    </div>
-                    <div class="hint" id="ai-spot-hint" style="margin-top:4px;">ИИ — только черновик. Для клиента используйте «По размерам».</div>
-                </div>
-            </details>
+            <div class="color-row" style="margin-bottom:3px;">
+                <label style="min-width:90px;">Полосы:</label>
+                <input type="number" id="place-strip-count" value="0" min="0" max="8" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+            </div>
+            <div class="color-row" style="margin-bottom:6px;">
+                <label style="min-width:90px;">Дл. полосы:</label>
+                <input type="number" id="place-strip-len" value="150" min="20" max="800" step="5" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+                <span style="font-size:0.75rem;">см</span>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                <button type="button" class="btn btn-success" style="flex:2;min-width:120px;padding:8px;font-size:0.85rem;" onclick="placeLightingBatch()">📍 Разместить</button>
+                <button type="button" class="btn btn-outline" style="flex:1;min-width:80px;padding:8px;font-size:0.8rem;" onclick="clearLightingFixtures()">Очистить свет</button>
+            </div>
+            <div class="hint" style="margin-top:6px;">Можно добавить ещё раз — новые объекты снова появятся под чертежом. Удаление одной точки — в списке ниже (✕).</div>
         </div>
 
         <div id="cornice-tools" style="display:none;">
@@ -570,16 +469,127 @@
         function toWorld(sx, sy) { return { x: (sx - camera.x) / camera.zoom, y: (sy - camera.y) / camera.zoom }; }
         function toScreen(wx, wy) { return { x: wx * camera.zoom + camera.x, y: wy * camera.zoom + camera.y }; }
 
-        // --- Pointer / zoom ---
+        // --- Pointer / zoom / drag fixtures ---
         let activePointers = [];
         let isDragging = false, lastPanPos = null, initialPinchDist = null, initialZoom = 1;
+        let dragFixture = null; // { idx, grabDx, grabDy, liveOffsets }
+        let dragLiveLabel = null; // { x, y, text } screen space for overlay
+
+        function hitTestFixture(worldPos) {
+            const hitR = 18 / Math.max(camera.zoom, 0.01);
+            // с конца списка — верхние объекты
+            for (let i = fixtures.length - 1; i >= 0; i--) {
+                const f = fixtures[i];
+                if (f.type === 'strip' && f.points && f.points.length >= 2) {
+                    for (let k = 0; k < f.points.length - 1; k++) {
+                        if (distPointToSegment(worldPos, f.points[k], f.points[k + 1]) < hitR) {
+                            return { idx: i, mode: 'strip' };
+                        }
+                    }
+                    // концы
+                    for (let k = 0; k < f.points.length; k++) {
+                        if (Math.hypot(worldPos.x - f.points[k].x, worldPos.y - f.points[k].y) < hitR) {
+                            return { idx: i, mode: 'strip' };
+                        }
+                    }
+                } else if (f.type === 'spot' || f.type === 'chandelier') {
+                    if (Math.hypot(worldPos.x - f.x, worldPos.y - f.y) < hitR) {
+                        return { idx: i, mode: 'point' };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function formatWallOffsets(worldPos) {
+            if (!points.length) return '';
+            const offs = [];
+            for (let i = 0; i < points.length; i++) {
+                const a = points[i], b = points[(i + 1) % points.length];
+                const d = distPointToSegment(worldPos, a, b);
+                const lab = edges[i] ? edges[i].label : (getLetter(i) + '-' + getLetter((i + 1) % points.length));
+                offs.push({ lab, d, i });
+            }
+            offs.sort((u, v) => u.d - v.d);
+            const a = offs[0], b = offs[1] || offs[0];
+            return `${a.lab}: ${a.d.toFixed(1)} см\n${b.lab}: ${b.d.toFixed(1)} см`;
+        }
+
+        function applyFixtureDrag(worldPos) {
+            if (!dragFixture) return;
+            const f = fixtures[dragFixture.idx];
+            if (!f) return;
+            if (dragFixture.mode === 'point') {
+                f.x = worldPos.x - dragFixture.grabDx;
+                f.y = worldPos.y - dragFixture.grabDy;
+                const off = twoNearestEdgeOffsetsCm({ x: f.x, y: f.y });
+                f.offset_wall_a_cm = off.offset_wall_a_cm;
+                f.offset_wall_b_cm = off.offset_wall_b_cm;
+                dragLiveLabel = {
+                    wx: f.x, wy: f.y,
+                    text: formatWallOffsets({ x: f.x, y: f.y })
+                };
+            } else if (dragFixture.mode === 'strip' && f.points) {
+                const nx = worldPos.x - dragFixture.grabDx;
+                const ny = worldPos.y - dragFixture.grabDy;
+                const dx = nx - (dragFixture.originX || 0);
+                const dy = ny - (dragFixture.originY || 0);
+                // move relative to last applied - store base points on drag start
+                if (dragFixture.basePoints) {
+                    f.points = dragFixture.basePoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                    f.x = f.points[0].x;
+                    f.y = f.points[0].y;
+                    f.wall_offsets = stripWallOffsets(f.points);
+                    const mid = f.points[Math.floor(f.points.length / 2)];
+                    dragLiveLabel = {
+                        wx: mid.x, wy: mid.y,
+                        text: formatWallOffsets(mid) + (f.length_cm ? `\nдлина: ${f.length_cm} см` : '')
+                    };
+                }
+            }
+        }
 
         canvas.addEventListener('pointerdown', e => {
             activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
             if (activePointers.length === 1) {
                 lastPanPos = { x: e.clientX, y: e.clientY };
                 isDragging = false;
+                dragFixture = null;
+                dragLiveLabel = null;
+                // захват светильника/полосы в режиме монтажа
+                if (state === 'INSTALL' && installMode === 'lighting' && fixtures.length) {
+                    const rect = canvas.getBoundingClientRect();
+                    const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                    const hit = hitTestFixture(worldPos);
+                    if (hit) {
+                        const f = fixtures[hit.idx];
+                        if (hit.mode === 'point') {
+                            dragFixture = {
+                                idx: hit.idx,
+                                mode: 'point',
+                                grabDx: worldPos.x - f.x,
+                                grabDy: worldPos.y - f.y
+                            };
+                        } else {
+                            dragFixture = {
+                                idx: hit.idx,
+                                mode: 'strip',
+                                grabDx: 0,
+                                grabDy: 0,
+                                originX: worldPos.x,
+                                originY: worldPos.y,
+                                basePoints: (f.points || []).map(p => ({ x: p.x, y: p.y }))
+                            };
+                        }
+                        isDragging = true;
+                        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+                        applyFixtureDrag(worldPos);
+                        draw();
+                    }
+                }
             } else if (activePointers.length === 2) {
+                dragFixture = null;
+                dragLiveLabel = null;
                 initialPinchDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
                 initialZoom = camera.zoom;
             }
@@ -588,6 +598,14 @@
             let idx = activePointers.findIndex(p => p.id === e.pointerId);
             if (idx !== -1) { activePointers[idx].x = e.clientX; activePointers[idx].y = e.clientY; }
             if (activePointers.length === 1) {
+                if (dragFixture) {
+                    isDragging = true;
+                    const rect = canvas.getBoundingClientRect();
+                    const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+                    applyFixtureDrag(worldPos);
+                    draw();
+                    return;
+                }
                 let dx = e.clientX - lastPanPos.x, dy = e.clientY - lastPanPos.y;
                 if (Math.hypot(dx, dy) > 5) isDragging = true;
                 if (isDragging) {
@@ -616,7 +634,13 @@
         const handlePointerEnd = (e) => {
             let idx = activePointers.findIndex(p => p.id === e.pointerId);
             if (idx !== -1) {
-                if (activePointers.length === 1 && !isDragging) {
+                if (dragFixture) {
+                    // конец перетаскивания
+                    updateFixtureList();
+                    dragFixture = null;
+                    dragLiveLabel = null;
+                    draw();
+                } else if (activePointers.length === 1 && !isDragging) {
                     let rect = canvas.getBoundingClientRect();
                     let worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
                     handleCanvasTap(worldPos);
@@ -1379,45 +1403,99 @@
                 return;
             }
             if (installMode === 'lighting') {
-                // Тап близко к стене — выбор ориентира для «По размерам»
-                const nearEi = nearestEdgeIndex(worldPos);
-                if (nearEi >= 0 && points.length >= 2) {
-                    const a = points[nearEi], b = points[(nearEi + 1) % points.length];
-                    const dEdge = distPointToSegment(worldPos, a, b);
-                    if (dEdge < 25 / Math.max(camera.zoom, 0.01)) {
-                        selectExactEdge(nearEi);
-                        // не ставим точку, только выбираем стену
-                        if (lightingSub !== 'strip') return;
-                    }
-                }
-                if (lightingSub === 'strip') {
-                    stripDraft.push({ x: worldPos.x, y: worldPos.y });
-                    stripPreviewLen = polylineLength(stripDraft);
-                    updateStripMiniPanel();
-                    updateFinishStripBtn();
-                    draw();
-                    return;
-                }
-                if (!pointInPolygon(worldPos, points)) {
-                    showToast('Ставьте точку внутри контура', 2000);
-                    return;
-                }
-                if (lightingSub === 'chandelier') {
-                    const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
-                    fixtures.push({ type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n });
-                    showToast(`Люстра L${n}`, 2000);
-                } else {
-                    const off = twoNearestEdgeOffsetsCm(worldPos);
-                    const n = fixtures.filter(f => f.type === 'spot').length + 1;
-                    fixtures.push({
-                        type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
-                        offset_wall_a_cm: off.offset_wall_a_cm, offset_wall_b_cm: off.offset_wall_b_cm
-                    });
-                    showToast(`Светильник S${n}: ${off.offset_wall_a_cm} / ${off.offset_wall_b_cm} см`, 2500);
-                }
-                updateFixtureList();
-                draw();
+                // размещение только через «Разместить» + перетаскивание
+                showToast('Введите кол-во и нажмите «Разместить», затем перетащите объекты', 2500);
             }
+        }
+
+        function placeLightingBatch() {
+            if (points.length < 3) {
+                showToast('Сначала постройте контур', 2500);
+                return;
+            }
+            const nSpot = Math.max(0, Math.min(60, parseInt((document.getElementById('place-spot-count') || {}).value, 10) || 0));
+            const nCh = Math.max(0, Math.min(10, parseInt((document.getElementById('place-ch-count') || {}).value, 10) || 0));
+            const nStrip = Math.max(0, Math.min(8, parseInt((document.getElementById('place-strip-count') || {}).value, 10) || 0));
+            const stripLen = Math.max(20, Math.min(800, parseFloat((document.getElementById('place-strip-len') || {}).value) || 150));
+            if (nSpot + nCh + nStrip === 0) {
+                showToast('Укажите хотя бы одно количество', 2500);
+                return;
+            }
+
+            const bb = bboxOf(points);
+            const gap = 28;
+            let cursorX = bb.minX;
+            const rowY = bb.maxY + 50;
+            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
+            let ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
+            let pn = fixtures.filter(f => f.type === 'strip').length + 1;
+
+            for (let i = 0; i < nSpot; i++) {
+                const x = cursorX + i * gap;
+                const y = rowY;
+                const off = twoNearestEdgeOffsetsCm({ x, y });
+                fixtures.push({
+                    type: 'spot', x, y, label: 'S' + (sn++),
+                    offset_wall_a_cm: off.offset_wall_a_cm,
+                    offset_wall_b_cm: off.offset_wall_b_cm,
+                    staged: true
+                });
+            }
+            cursorX = bb.minX;
+            const rowY2 = rowY + gap + 10;
+            for (let i = 0; i < nCh; i++) {
+                fixtures.push({
+                    type: 'chandelier',
+                    x: cursorX + i * (gap + 8),
+                    y: rowY2,
+                    label: 'L' + (ln++),
+                    staged: true
+                });
+            }
+            const rowY3 = rowY2 + (nCh ? gap + 12 : 0);
+            for (let i = 0; i < nStrip; i++) {
+                const y = rowY3 + i * 22;
+                const x0 = bb.minX;
+                const pts = [
+                    { x: x0, y },
+                    { x: x0 + stripLen, y }
+                ];
+                fixtures.push({
+                    type: 'strip',
+                    points: pts,
+                    length_cm: Math.round(stripLen * 10) / 10,
+                    label: 'P' + (pn++),
+                    wall_offsets: stripWallOffsets(pts),
+                    x: pts[0].x, y: pts[0].y,
+                    staged: true
+                });
+            }
+
+            updateFixtureList();
+            // кадр с учётом склада под чертежом
+            const allX = points.map(p => p.x).concat(fixtures.map(f => f.x || 0));
+            const allY = points.map(p => p.y).concat(fixtures.map(f => f.y || 0));
+            fixtures.forEach(f => {
+                if (f.points) f.points.forEach(p => { allX.push(p.x); allY.push(p.y); });
+            });
+            const minX = Math.min(...allX), maxX = Math.max(...allX);
+            const minY = Math.min(...allY), maxY = Math.max(...allY);
+            const w = maxX - minX || 1, h = maxY - minY || 1;
+            const pad = 0.35;
+            const scaleX = canvas.width / (w * (1 + pad));
+            const scaleY = canvas.height / (h * (1 + pad));
+            camera.zoom = Math.min(scaleX, scaleY, 8);
+            camera.x = canvas.width / 2 - ((minX + maxX) / 2) * camera.zoom;
+            camera.y = canvas.height / 2 - ((minY + maxY) / 2) * camera.zoom;
+            draw();
+            showToast(`Размещено: ${nSpot} спот., ${nCh} люстр, ${nStrip} полос — перетащите на чертёж`, 4000);
+        }
+
+        function clearLightingFixtures() {
+            fixtures = fixtures.filter(f => f.type === 'cornice');
+            updateFixtureList();
+            draw();
+            showToast('Освещение очищено', 2000);
         }
 
         function updateStripMiniPanel() {
@@ -1477,9 +1555,7 @@
             if (mode === 'profile') {
                 hint.innerText = 'Выберите профиль, тапните стороны. Без тапов — на все стороны.';
             } else if (mode === 'lighting') {
-                refreshExactEdgeSelect();
-                updateExactForm();
-                setLightingSub(lightingSub || 'spot');
+                setLightingSub('spot');
             } else if (mode === 'cornice') {
                 hint.innerText = 'Выберите тип в списке, затем тапните сторону — карниз по пог.м.';
             }
@@ -1488,30 +1564,15 @@
         }
 
         function setLightingSub(sub) {
-            lightingSub = sub;
+            lightingSub = sub || 'spot';
             stripDraft = [];
             stripPreviewLen = 0;
-            ['spot', 'chandelier', 'strip'].forEach(s => {
-                const b = document.getElementById('lmode-' + s);
-                if (b) b.classList.toggle('active', s === sub);
-            });
             const hint = document.getElementById('install-hint');
-            const centerBtn = document.getElementById('chandelier-center-btn');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
-            if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
-            refreshExactEdgeSelect();
-            if (sub === 'strip') {
-                miniPanel.style.display = 'flex';
-                updateStripMiniPanel();
-                updateFinishStripBtn();
-                hint.innerText = 'Полоса: точки вручную ИЛИ блок «По размерам» (стена + отступ + длина).';
-            } else {
-                miniPanel.style.display = 'none';
-                finishBtn.style.display = 'none';
-                if (sub === 'spot') hint.innerText = 'Светильник: тап вручную ИЛИ «По размерам клиента» (отступ, шаг, кол-во).';
-                else if (sub === 'chandelier') hint.innerText = 'Люстра: тап или «по центру».';
-            }
+            if (miniPanel) miniPanel.style.display = 'none';
+            if (finishBtn) finishBtn.style.display = 'none';
+            if (hint) hint.innerText = 'Введите кол-во → «Разместить» → перетащите объекты на чертёж. Отступы от стен видны при перетаскивании.';
             draw();
         }
 
@@ -3985,49 +4046,35 @@
                 }
             }
 
-            // Подсветка выбранной стены для «По размерам»
-            if (state === 'INSTALL' && installMode === 'lighting' && points.length >= 2) {
-                const ei = exactEdgeIndex | 0;
-                if (ei >= 0 && ei < points.length) {
-                    const s1 = toScreen(points[ei].x, points[ei].y);
-                    const s2 = toScreen(points[(ei + 1) % points.length].x, points[(ei + 1) % points.length].y);
-                    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
-                    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 5; ctx.stroke();
-                }
+            // Подсказка отступов при перетаскивании
+            if (dragLiveLabel && dragLiveLabel.text) {
+                const sp = toScreen(dragLiveLabel.wx, dragLiveLabel.wy);
+                const lines = String(dragLiveLabel.text).split('\n');
+                ctx.save();
+                ctx.font = 'bold 13px Arial';
+                let maxW = 0;
+                lines.forEach(ln => { maxW = Math.max(maxW, ctx.measureText(ln).width); });
+                const boxW = maxW + 16, boxH = lines.length * 18 + 10;
+                let bx = sp.x + 14, by = sp.y - boxH - 8;
+                if (bx + boxW > canvas.width) bx = sp.x - boxW - 14;
+                if (by < 4) by = sp.y + 14;
+                ctx.fillStyle = 'rgba(0,0,0,0.82)';
+                ctx.strokeStyle = '#f1c40f';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(bx, by, boxW, boxH, 6);
+                else ctx.rect(bx, by, boxW, boxH);
+                ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                lines.forEach((ln, i) => {
+                    ctx.fillText(ln, bx + 8, by + 6 + i * 18);
+                });
+                ctx.restore();
             }
 
-            // Превью точной расстановки по размерам
-            if (state === 'INSTALL' && exactPreview) {
-                (exactPreview.strips || []).forEach(st => {
-                    if (!st.points || st.points.length < 2) return;
-                    ctx.beginPath();
-                    const s0 = toScreen(st.points[0].x, st.points[0].y);
-                    ctx.moveTo(s0.x, s0.y);
-                    for (let k = 1; k < st.points.length; k++) {
-                        const sk = toScreen(st.points[k].x, st.points[k].y);
-                        ctx.lineTo(sk.x, sk.y);
-                    }
-                    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 4; ctx.setLineDash([6, 4]);
-                    ctx.stroke(); ctx.setLineDash([]);
-                });
-                (exactPreview.spots || []).forEach((p, idx) => {
-                    const sp = toScreen(p.x, p.y);
-                    ctx.beginPath();
-                    ctx.fillStyle = 'rgba(39,174,96,0.3)';
-                    ctx.strokeStyle = '#27ae60';
-                    ctx.lineWidth = 2;
-                    ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
-                    ctx.fill(); ctx.stroke();
-                    ctx.fillStyle = '#1e8449';
-                    ctx.font = 'bold 10px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText('S' + (idx + 1), sp.x, sp.y - 12);
-                });
-            }
-
-            // Превью ИИ-плана освещения
-            if (state === 'INSTALL' && aiSpotPreview && typeof aiSpotPreview === 'object') {
+            if (false && state === 'INSTALL' && aiSpotPreview && typeof aiSpotPreview === 'object') {
                 // полосы (жёлтые пунктир)
                 (aiSpotPreview.strips || []).forEach((st, idx) => {
                     if (!st.points || st.points.length < 2) return;
