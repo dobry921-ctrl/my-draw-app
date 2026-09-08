@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908g</title>
+    <title>ПРО Замер потолков v20260908h</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -362,9 +362,13 @@
                 <div class="color-row" style="margin-bottom:4px;">
                     <label style="min-width:78px;">Стиль:</label>
                     <select id="ai-spot-pattern" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
-                        <option value="grid">Сетка + центр</option>
-                        <option value="rows">Ряды + полосы вдоль</option>
-                        <option value="perimeter">Периметр + центр</option>
+                        <option value="all">Все стили (15–20 вар.)</option>
+                        <option value="symmetry">Симметрия</option>
+                        <option value="grid">Сетка</option>
+                        <option value="rows">Ряды вдоль длинной</option>
+                        <option value="cols">Ряды вдоль короткой</option>
+                        <option value="perimeter">По периметру</option>
+                        <option value="center">К центру</option>
                         <option value="mixed">Смешанный</option>
                         <option value="random">Случайный</option>
                     </select>
@@ -1702,23 +1706,236 @@
         function generateCenterSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'center'); }
         function generateRandomSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'random'); }
 
+        // Явная сетка rows×cols внутри отступа (сильно отличается от farthest)
+        function placeRectGrid(n, margin, seed, forceRows, forceCols, alongLong) {
+            margin = effectiveMargin(margin);
+            const bb = bboxOf(points);
+            const alongX = alongLong == null ? (bb.w >= bb.h) : !!alongLong;
+            let cols, rows;
+            if (forceRows && forceCols) {
+                rows = forceRows; cols = forceCols;
+            } else {
+                const aspect = (bb.w - 2 * margin) / Math.max(1, bb.h - 2 * margin);
+                cols = Math.max(1, Math.round(Math.sqrt(n * aspect)));
+                rows = Math.max(1, Math.ceil(n / cols));
+                while (cols * rows < n) { if (aspect >= 1) cols++; else rows++; }
+                if (forceRows) { rows = forceRows; cols = Math.ceil(n / rows); }
+                if (forceCols) { cols = forceCols; rows = Math.ceil(n / cols); }
+            }
+            // для cols-стиля меняем ориентацию
+            if (alongLong === false) {
+                const t = rows; rows = cols; cols = t;
+            }
+            const rng = mulberry32(seed);
+            const usableW = Math.max(1, bb.w - 2 * margin);
+            const usableH = Math.max(1, bb.h - 2 * margin);
+            const stepX = cols > 1 ? usableW / (cols - 1) : 0;
+            const stepY = rows > 1 ? usableH / (rows - 1) : 0;
+            const ox = (rng() - 0.5) * Math.min(stepX, 8) * 0.3;
+            const oy = (rng() - 0.5) * Math.min(stepY, 8) * 0.3;
+            const cand = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (cand.length >= n) break;
+                    const x = bb.minX + margin + (cols === 1 ? usableW / 2 : c * stepX) + ox;
+                    const y = bb.minY + margin + (rows === 1 ? usableH / 2 : r * stepY) + oy;
+                    const p = pullInside({ x, y }, margin);
+                    if (p && pointInPolygonStrict(p, points, margin * 0.9)) cand.push(p);
+                }
+            }
+            if (cand.length < n) {
+                const extra = placeSpotsSmart(n - cand.length, margin, seed + 3, 'grid');
+                extra.forEach(p => {
+                    if (cand.length >= n) return;
+                    if (!cand.some(c => Math.hypot(c.x - p.x, c.y - p.y) < 10)) cand.push(p);
+                });
+            }
+            return cand.slice(0, n);
+        }
+
+        // Симметрия: зеркало по осям через центроид
+        function placeSymmetric(n, margin, seed, mode) {
+            // mode: 'mirrorX' | 'mirrorY' | 'quad' | 'rotate180'
+            margin = effectiveMargin(margin);
+            const cen = polygonCentroid(points);
+            const half = Math.ceil(n / (mode === 'quad' ? 4 : 2));
+            // генерим половину (четверть) в одной зоне
+            const dens = collectInteriorCandidates(margin, 10);
+            let zone;
+            if (mode === 'mirrorX' || mode === 'quad') {
+                // правая половина
+                zone = dens.filter(p => p.x >= cen.x - 2);
+            } else if (mode === 'mirrorY') {
+                zone = dens.filter(p => p.y >= cen.y - 2);
+            } else {
+                zone = dens.filter(p => p.x >= cen.x - 2 || p.y >= cen.y - 2);
+            }
+            if (zone.length < half) zone = dens;
+            let seeds = pickFarthestPoints(zone, half, seed, []);
+            seeds = lloydRelax(seeds, margin, 5);
+
+            const out = [];
+            const add = (p) => {
+                const q = pullInside(p, margin);
+                if (!q) return;
+                if (out.some(o => Math.hypot(o.x - q.x, o.y - q.y) < 10)) return;
+                if (pointInPolygonStrict(q, points, margin * 0.85)) out.push(q);
+            };
+
+            seeds.forEach(p => {
+                add(p);
+                if (mode === 'mirrorX' || mode === 'quad' || mode === 'rotate180') {
+                    add({ x: 2 * cen.x - p.x, y: p.y });
+                }
+                if (mode === 'mirrorY' || mode === 'quad') {
+                    add({ x: p.x, y: 2 * cen.y - p.y });
+                }
+                if (mode === 'quad') {
+                    add({ x: 2 * cen.x - p.x, y: 2 * cen.y - p.y });
+                }
+                if (mode === 'rotate180') {
+                    add({ x: 2 * cen.x - p.x, y: 2 * cen.y - p.y });
+                }
+            });
+
+            // если недобор — добрать симметрично
+            if (out.length < n) {
+                const extra = placeSpotsSmart(n - out.length, margin, seed + 11, 'grid');
+                extra.forEach(p => {
+                    add(p);
+                    add({ x: 2 * cen.x - p.x, y: 2 * cen.y - p.y });
+                });
+            }
+            return out.slice(0, n);
+        }
+
+        // Крест / ромб от центра
+        function placeCross(n, margin, seed) {
+            margin = effectiveMargin(margin);
+            const cen = polygonCentroid(points);
+            const bb = bboxOf(points);
+            const out = [];
+            if (pointInPolygonStrict(cen, points, margin * 0.5)) out.push({ x: cen.x, y: cen.y });
+            const arms = Math.max(1, Math.ceil((n - 1) / 4));
+            const maxR = Math.min(bb.w, bb.h) / 2 - margin;
+            for (let a = 1; a <= arms && out.length < n; a++) {
+                const t = a / (arms + 0.5);
+                const r = maxR * t;
+                const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                // чуть повернуть по seed
+                const ang0 = ((seed % 5) * Math.PI) / 10;
+                dirs.forEach(([dx, dy]) => {
+                    if (out.length >= n) return;
+                    const ca = Math.cos(ang0), sa = Math.sin(ang0);
+                    const rx = dx * ca - dy * sa, ry = dx * sa + dy * ca;
+                    const p = pullInside({ x: cen.x + rx * r, y: cen.y + ry * r }, margin);
+                    if (p && pointInPolygonStrict(p, points, margin * 0.9)) out.push(p);
+                });
+            }
+            if (out.length < n) {
+                const extra = placeSpotsSmart(n - out.length, margin, seed, 'center');
+                extra.forEach(p => { if (out.length < n) out.push(p); });
+            }
+            return out.slice(0, n);
+        }
+
+        // Две/три параллельные линии
+        function placeParallelRows(n, margin, seed, numRows) {
+            margin = effectiveMargin(margin);
+            const bb = bboxOf(points);
+            const alongX = bb.w >= bb.h;
+            const rows = Math.max(1, numRows || 2);
+            const perRow = Math.ceil(n / rows);
+            const cand = [];
+            for (let r = 0; r < rows; r++) {
+                const t = (r + 1) / (rows + 1);
+                for (let c = 0; c < perRow && cand.length < n; c++) {
+                    const u = perRow === 1 ? 0.5 : c / (perRow - 1);
+                    let x, y;
+                    if (alongX) {
+                        x = bb.minX + margin + u * (bb.w - 2 * margin);
+                        y = bb.minY + margin + t * (bb.h - 2 * margin);
+                    } else {
+                        x = bb.minX + margin + t * (bb.w - 2 * margin);
+                        y = bb.minY + margin + u * (bb.h - 2 * margin);
+                    }
+                    const p = pullInside({ x, y }, margin);
+                    if (p && pointInPolygonStrict(p, points, margin * 0.9)) cand.push(p);
+                }
+            }
+            return lloydRelax(cand, margin, 4).slice(0, n);
+        }
+
         function generateSpotVariant(pattern, n, margin, seed) {
             if (n <= 0) return [];
             switch (pattern) {
-                case 'rows': return generateRowsSpots(n, margin, seed);
+                case 'rows': return placeRectGrid(n, margin, seed, null, null, true);
+                case 'cols': return placeRectGrid(n, margin, seed, null, null, false);
                 case 'perimeter': return generatePerimeterSpots(n, margin, seed);
                 case 'center': return generateCenterSpots(n, margin, seed);
                 case 'random': return generateRandomSpots(n, margin, seed);
+                case 'symmetry':
+                case 'sym_quad': return placeSymmetric(n, margin, seed, 'quad');
+                case 'sym_x': return placeSymmetric(n, margin, seed, 'mirrorX');
+                case 'sym_y': return placeSymmetric(n, margin, seed, 'mirrorY');
+                case 'sym_180': return placeSymmetric(n, margin, seed, 'rotate180');
+                case 'cross': return placeCross(n, margin, seed);
+                case 'rows2': return placeParallelRows(n, margin, seed, 2);
+                case 'rows3': return placeParallelRows(n, margin, seed, 3);
+                case 'grid2x2': return placeRectGrid(n, margin, seed, 2, 2, true);
+                case 'grid2x3': return placeRectGrid(n, margin, seed, 2, 3, true);
+                case 'grid3x3': return placeRectGrid(n, margin, seed, 3, 3, true);
+                case 'grid3x4': return placeRectGrid(n, margin, seed, 3, 4, true);
+                case 'grid4x4': return placeRectGrid(n, margin, seed, 4, 4, true);
                 case 'mixed': {
-                    const a = Math.ceil(n * 0.65), b = n - a;
-                    const g = generateGridSpots(a, margin, seed);
-                    const p = generatePerimeterSpots(b, margin, seed + 9);
-                    // слить и слегка размазать
-                    return lloydRelax(g.concat(p), effectiveMargin(margin), 5).slice(0, n);
+                    const a = Math.ceil(n * 0.6);
+                    const g = placeRectGrid(a, margin, seed, null, null, true);
+                    const p = generatePerimeterSpots(n - a, margin, seed + 9);
+                    return lloydRelax(g.concat(p), effectiveMargin(margin), 4).slice(0, n);
                 }
                 case 'grid':
-                default: return generateGridSpots(n, margin, seed);
+                default: return placeRectGrid(n, margin, seed, null, null, true);
             }
+        }
+
+        // Каталог стратегий для генерации 15–20 разных вариантов
+        function listLightingStrategies(preferred) {
+            const all = [
+                { id: 'grid', name: 'Сетка' },
+                { id: 'grid2x2', name: 'Сетка 2×2' },
+                { id: 'grid2x3', name: 'Сетка 2×3' },
+                { id: 'grid3x3', name: 'Сетка 3×3' },
+                { id: 'grid3x4', name: 'Сетка 3×4' },
+                { id: 'grid4x4', name: 'Сетка 4×4' },
+                { id: 'rows', name: 'Ряды вдоль длинной' },
+                { id: 'cols', name: 'Ряды вдоль короткой' },
+                { id: 'rows2', name: '2 параллельных ряда' },
+                { id: 'rows3', name: '3 параллельных ряда' },
+                { id: 'perimeter', name: 'По периметру' },
+                { id: 'center', name: 'К центру' },
+                { id: 'cross', name: 'Крест от центра' },
+                { id: 'sym_quad', name: 'Симметрия 4 оси' },
+                { id: 'sym_x', name: 'Симметрия лево-право' },
+                { id: 'sym_y', name: 'Симметрия верх-низ' },
+                { id: 'sym_180', name: 'Симметрия 180°' },
+                { id: 'mixed', name: 'Сетка + периметр' },
+                { id: 'random', name: 'Случайный A' },
+                { id: 'random', name: 'Случайный B', seedOff: 77 },
+            ];
+            if (!preferred || preferred === 'all') return all;
+            if (preferred === 'symmetry') {
+                return all.filter(s => s.id.startsWith('sym') || s.id === 'cross' || s.id === 'grid3x3' || s.id === 'grid2x2');
+            }
+            if (preferred === 'grid') {
+                return all.filter(s => s.id.startsWith('grid'));
+            }
+            if (preferred === 'rows' || preferred === 'cols') {
+                return all.filter(s => s.id === 'rows' || s.id === 'cols' || s.id === 'rows2' || s.id === 'rows3');
+            }
+            // один стиль — несколько seed-вариантов этого стиля + соседние
+            const base = all.filter(s => s.id === preferred);
+            const extra = all.filter(s => s.id !== preferred).slice(0, 8);
+            return base.concat(base).concat(base).concat(extra); // несколько seed одного стиля
         }
 
         function generateChandelierPositions(n, margin, seed, avoidPts) {
@@ -1849,18 +2066,15 @@
             return strips;
         }
 
-        function buildLightingVariant(cfg, seed) {
-            const pattern = cfg.pattern;
-            const spotPat = (pattern === 'mixed' || pattern === 'grid') ? 'grid'
-                : (pattern === 'rows') ? 'rows'
-                : (pattern === 'perimeter') ? 'perimeter'
-                : (pattern === 'random') ? 'random' : 'grid';
-
-            const spots = generateSpotVariant(spotPat, cfg.spots, cfg.margin, seed);
+        function buildLightingVariant(cfg, seed, strategyId) {
+            const pattern = strategyId || cfg.pattern || 'grid';
+            const spots = generateSpotVariant(pattern, cfg.spots, cfg.margin, seed);
             const chandeliers = generateChandelierPositions(cfg.chandeliers, cfg.margin, seed + 41, spots);
-            const strips = generateStripLayouts(cfg.strips, cfg.stripLen, cfg.margin, seed + 77, pattern);
-
-            return { spots, chandeliers, strips };
+            const stripStyle = (pattern === 'perimeter' || pattern.indexOf('sym') === 0) ? 'perimeter'
+                : (pattern === 'rows' || pattern === 'cols' || pattern.indexOf('rows') === 0) ? 'rows'
+                : (pattern === 'random') ? 'random' : 'grid';
+            const strips = generateStripLayouts(cfg.strips, cfg.stripLen, cfg.margin, seed + 77, stripStyle);
+            return { spots, chandeliers, strips, strategy: pattern };
         }
 
         function readAiLightingConfig() {
@@ -1911,7 +2125,8 @@
             const s = (aiSpotPreview.spots || []).length;
             const c = (aiSpotPreview.chandeliers || []).length;
             const p = (aiSpotPreview.strips || []).length;
-            el.textContent = `Вар. ${aiSpotVariantIdx + 1}/${aiSpotVariants.length || 1}: ${s}S · ${c}L · ${p}P`;
+            const name = aiSpotPreview.strategyName || '';
+            el.textContent = `${aiSpotVariantIdx + 1}/${aiSpotVariants.length || 1} ${name}: ${s}S · ${c}L · ${p}P`;
         }
 
         function aiProposeLighting() {
@@ -1925,19 +2140,49 @@
                 return;
             }
 
+            const strategies = listLightingStrategies(cfg.pattern);
             aiSpotVariants = [];
-            const styleCycle = ['grid', 'rows', 'perimeter', 'mixed', 'random'];
-            for (let v = 0; v < 5; v++) {
-                const localCfg = Object.assign({}, cfg, {
-                    pattern: styleCycle[v]
-                });
-                // всегда крутим разные стили — так варианты реально отличаются
-                const seed = aiSpotSeed + v * 131 + cfg.spots * 7 + cfg.chandeliers * 17 + cfg.strips * 23 + (Date.now() % 1000);
-                const plan = buildLightingVariant(localCfg, seed);
-                // отфильтровать пустые / почти пустые
+            const baseSeed = aiSpotSeed + cfg.spots * 7 + cfg.chandeliers * 17 + cfg.strips * 23 + (Date.now() % 997);
+
+            strategies.forEach((st, v) => {
+                const seed = baseSeed + v * 173 + (st.seedOff || 0) * 19;
+                const plan = buildLightingVariant(cfg, seed, st.id);
+                plan.strategyName = st.name;
                 const total = (plan.spots || []).length + (plan.chandeliers || []).length + (plan.strips || []).length;
                 if (total > 0) aiSpotVariants.push(plan);
+            });
+
+            let extra = 0;
+            while (aiSpotVariants.length < 15 && extra < 12) {
+                const st = strategies[extra % strategies.length];
+                const seed = baseSeed + 900 + extra * 211;
+                const plan = buildLightingVariant(cfg, seed, st.id);
+                plan.strategyName = st.name + ' · alt';
+                const total = (plan.spots || []).length + (plan.chandeliers || []).length + (plan.strips || []).length;
+                if (total > 0) aiSpotVariants.push(plan);
+                extra++;
             }
+
+            // убрать почти одинаковые
+            const unique = [];
+            aiSpotVariants.forEach(plan => {
+                const pts = plan.spots || [];
+                if (!pts.length) { unique.push(plan); return; }
+                const ax = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+                const ay = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+                const spread = pts.reduce((s, p) => s + Math.hypot(p.x - ax, p.y - ay), 0) / pts.length;
+                const same = unique.some(u => {
+                    const up = u.spots || [];
+                    if (up.length !== pts.length) return false;
+                    const ux = up.reduce((s, p) => s + p.x, 0) / up.length;
+                    const uy = up.reduce((s, p) => s + p.y, 0) / up.length;
+                    const us = up.reduce((s, p) => s + Math.hypot(p.x - ux, p.y - uy), 0) / up.length;
+                    return Math.hypot(ax - ux, ay - uy) < 12 && Math.abs(spread - us) < 15;
+                });
+                if (!same) unique.push(plan);
+            });
+            aiSpotVariants = unique.slice(0, 20);
+
             if (!aiSpotVariants.length) {
                 showToast('Не удалось разместить. Уменьшите отступ или количество.', 3500);
                 return;
@@ -1946,11 +2191,8 @@
             aiSpotPreview = aiSpotVariants[0];
             updateAiHint();
             const s = aiSpotPreview.spots.length, c = aiSpotPreview.chandeliers.length, p = aiSpotPreview.strips.length;
-            const em = effectiveMargin(cfg.margin);
-            let msg = `Вариант 1/${aiSpotVariants.length}: ${s} спот., ${c} люстр, ${p} полос`;
-            if (Math.abs(em - cfg.margin) > 1) msg += ` (отступ ≈${Math.round(em)} см)`;
-            showToast(msg, 2500);
-            // свернуть панель — максимальный чертёж
+            const name = aiSpotPreview.strategyName || '';
+            showToast(`1/${aiSpotVariants.length}: ${name} · ${s} спот. ${c} люстр ${p} полос`, 2800);
             showAiMiniBar();
             draw();
         }
@@ -1961,7 +2203,8 @@
             const s = aiSpotPreview.spots ? aiSpotPreview.spots.length : 0;
             const c = aiSpotPreview.chandeliers ? aiSpotPreview.chandeliers.length : 0;
             const p = aiSpotPreview.strips ? aiSpotPreview.strips.length : 0;
-            hint.innerText = `Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${s} спот. · ${c} люстр · ${p} полос. Смотрите на чертеже.`;
+            const name = aiSpotPreview.strategyName || aiSpotPreview.strategy || '';
+            hint.innerText = `Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: «${name}» · ${s} спот. · ${c} люстр · ${p} полос`;
             updateAiMiniInfo();
         }
 
@@ -1973,7 +2216,8 @@
             aiSpotVariantIdx = (aiSpotVariantIdx - 1 + aiSpotVariants.length) % aiSpotVariants.length;
             aiSpotPreview = aiSpotVariants[aiSpotVariantIdx];
             updateAiHint();
-            showToast(`Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}`, 1200);
+            const nm = aiSpotPreview.strategyName || '';
+            showToast(`${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${nm}`, 1400);
             draw();
         }
 
@@ -1985,7 +2229,8 @@
             aiSpotVariantIdx = (aiSpotVariantIdx + 1) % aiSpotVariants.length;
             aiSpotPreview = aiSpotVariants[aiSpotVariantIdx];
             updateAiHint();
-            showToast(`Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}`, 1200);
+            const nm = aiSpotPreview.strategyName || '';
+            showToast(`${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${nm}`, 1400);
             draw();
         }
 
