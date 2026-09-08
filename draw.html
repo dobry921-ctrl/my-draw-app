@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908d</title>
+    <title>ПРО Замер потолков v20260908e</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -308,35 +308,49 @@
             </div>
             <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
 
-            <!-- ИИ-расстановка светильников -->
-            <div id="ai-spot-tools" style="display:none; margin-top:6px; padding:6px; background:#f0f7ff; border-radius:8px; border:1px solid #c5d9f0;">
-                <div class="panel-title" style="font-size:0.8rem; margin-bottom:4px;">🤖 ИИ-расстановка</div>
-                <div class="color-row" style="margin-bottom:4px;">
-                    <label style="min-width:70px;">Кол-во:</label>
-                    <input type="number" id="ai-spot-count" value="4" min="1" max="60" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+            <!-- ИИ: полный план освещения -->
+            <div id="ai-light-tools" style="margin-top:6px; padding:6px; background:#f0f7ff; border-radius:8px; border:1px solid #c5d9f0;">
+                <div class="panel-title" style="font-size:0.8rem; margin-bottom:4px;">🤖 ИИ-план освещения</div>
+                <div class="hint" style="margin-bottom:4px;">Укажите всё планируемое освещение, затем «Предложить». ИИ даст несколько вариантов расстановки внутри контура.</div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:78px;">Светильники:</label>
+                    <input type="number" id="ai-spot-count" value="4" min="0" max="60" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
                 </div>
-                <div class="color-row" style="margin-bottom:4px;">
-                    <label style="min-width:70px;">Отступ:</label>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:78px;">Люстры:</label>
+                    <input type="number" id="ai-ch-count" value="0" min="0" max="10" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                </div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:78px;">Полосы:</label>
+                    <input type="number" id="ai-strip-count" value="0" min="0" max="8" step="1" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                </div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:78px;">Дл. полосы:</label>
+                    <input type="number" id="ai-strip-len" value="150" min="30" max="800" step="10" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
+                    <span style="font-size:0.75rem;">см</span>
+                </div>
+                <div class="color-row" style="margin-bottom:3px;">
+                    <label style="min-width:78px;">Отступ:</label>
                     <input type="number" id="ai-spot-margin" value="30" min="5" max="80" step="5" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;">
-                    <span style="font-size:0.75rem;">см от стен</span>
+                    <span style="font-size:0.75rem;">см</span>
                 </div>
                 <div class="color-row" style="margin-bottom:4px;">
-                    <label style="min-width:70px;">Схема:</label>
+                    <label style="min-width:78px;">Стиль:</label>
                     <select id="ai-spot-pattern" style="flex:1;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
-                        <option value="grid">Сетка (равномерно)</option>
-                        <option value="rows">Ряды вдоль длинной стороны</option>
-                        <option value="perimeter">По периметру</option>
-                        <option value="center">К центру (кластер)</option>
-                        <option value="random">Случайно (с мин. расст.)</option>
+                        <option value="grid">Сетка + центр</option>
+                        <option value="rows">Ряды + полосы вдоль</option>
+                        <option value="perimeter">Периметр + центр</option>
+                        <option value="mixed">Смешанный</option>
+                        <option value="random">Случайный</option>
                     </select>
                 </div>
                 <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">
-                    <button type="button" class="btn btn-accent" style="flex:1;min-width:90px;padding:6px;font-size:0.75rem;" onclick="aiProposeSpots()">Предложить</button>
+                    <button type="button" class="btn btn-accent" style="flex:1;min-width:90px;padding:6px;font-size:0.75rem;" onclick="aiProposeLighting()">Предложить</button>
                     <button type="button" class="btn btn-outline" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiNextVariant()">Другой вар.</button>
-                    <button type="button" class="btn btn-success" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiAcceptSpots()">Принять</button>
+                    <button type="button" class="btn btn-success" style="flex:1;min-width:70px;padding:6px;font-size:0.75rem;" onclick="aiAcceptLighting()">Принять</button>
                     <button type="button" class="btn btn-danger" style="flex:1;min-width:60px;padding:6px;font-size:0.75rem;" onclick="aiClearPreview()">Сброс</button>
                 </div>
-                <div class="hint" id="ai-spot-hint" style="margin-top:4px;">Введите кол-во и отступ, нажмите «Предложить». Можно переключать варианты.</div>
+                <div class="hint" id="ai-spot-hint" style="margin-top:4px;">Заполните план → «Предложить». Синие = споты, красные = люстры, жёлтые линии = полосы.</div>
             </div>
         </div>
 
@@ -1382,20 +1396,20 @@
             const centerBtn = document.getElementById('chandelier-center-btn');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
-            const aiTools = document.getElementById('ai-spot-tools');
+            const aiTools = document.getElementById('ai-light-tools');
             if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
-            if (aiTools) aiTools.style.display = sub === 'spot' ? 'block' : 'none';
+            if (aiTools) aiTools.style.display = 'block';
             // Управление мини-панелью и кнопкой
             if (sub === 'strip') {
                 miniPanel.style.display = 'flex';
                 updateStripMiniPanel();
                 updateFinishStripBtn();
-                hint.innerText = 'Освещение → полоса: рисуйте точками, длина считается автоматически. Введите вручную при необходимости. Завершить можно кнопкой ниже или в мини-панели.';
+                hint.innerText = 'Полоса вручную: рисуйте точками. Или задайте план в ИИ-блоке ниже.';
             } else {
                 miniPanel.style.display = 'none';
                 finishBtn.style.display = 'none';
-                if (sub === 'spot') hint.innerText = 'Освещение → светильник: тап вручную или используйте ИИ-расстановку ниже';
-                else if (sub === 'chandelier') hint.innerText = 'Освещение → люстра: тап или «по центру» (можно несколько)';
+                if (sub === 'spot') hint.innerText = 'Светильник: тап вручную или полный план в ИИ-блоке ниже.';
+                else if (sub === 'chandelier') hint.innerText = 'Люстра: тап / «по центру» или полный план в ИИ-блоке.';
             }
             draw();
         }
@@ -1413,10 +1427,10 @@
         }
 
         // =====================================================================
-        //  ИИ-расстановка светильников (алгоритмические варианты)
+        //  ИИ-план освещения (споты + люстры + полосы)
         // =====================================================================
-        let aiSpotPreview = [];      // временные точки превью
-        let aiSpotVariants = [];     // массив вариантов
+        let aiSpotPreview = null;    // { spots, chandeliers, strips } или null
+        let aiSpotVariants = [];     // массив планов
         let aiSpotVariantIdx = 0;
         let aiSpotSeed = 1;
 
@@ -1656,93 +1670,271 @@
         }
 
         function generateSpotVariant(pattern, n, margin, seed) {
+            if (n <= 0) return [];
             switch (pattern) {
                 case 'rows': return generateRowsSpots(n, margin, seed);
                 case 'perimeter': return generatePerimeterSpots(n, margin, seed);
                 case 'center': return generateCenterSpots(n, margin, seed);
                 case 'random': return generateRandomSpots(n, margin, seed);
+                case 'mixed':
+                    // половина сетка + половина периметр
+                    const a = Math.ceil(n / 2), b = n - a;
+                    return generateGridSpots(a, margin, seed).concat(generatePerimeterSpots(b, margin, seed + 9));
                 case 'grid':
                 default: return generateGridSpots(n, margin, seed);
             }
         }
 
-        function aiProposeSpots() {
+        function generateChandelierPositions(n, margin, seed, avoidPts) {
+            if (n <= 0) return [];
+            const cen = polygonCentroid(points);
+            const bb = bboxOf(points);
+            const out = [];
+            if (n === 1) {
+                out.push({ x: cen.x, y: cen.y });
+                return out;
+            }
+            // 1 в центре + остальные по кругу / сетке
+            out.push({ x: cen.x, y: cen.y });
+            const rest = generateCenterSpots(n, margin + 10, seed + 5).filter(p =>
+                Math.hypot(p.x - cen.x, p.y - cen.y) > 15
+            );
+            rest.forEach(p => {
+                if (out.length >= n) return;
+                if (avoidPts && avoidPts.some(a => Math.hypot(a.x - p.x, a.y - p.y) < 25)) return;
+                out.push(p);
+            });
+            if (out.length < n) {
+                const extra = generateGridSpots(n + 4, margin + 15, seed + 21);
+                extra.forEach(p => {
+                    if (out.length >= n) return;
+                    if (out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 30)) return;
+                    out.push(p);
+                });
+            }
+            return out.slice(0, n);
+        }
+
+        function generateStripLayouts(n, targetLen, margin, seed, style) {
+            if (n <= 0) return [];
+            const bb = bboxOf(points);
+            const cen = polygonCentroid(points);
+            const alongX = bb.w >= bb.h;
+            const strips = [];
+            const rng = mulberry32(seed);
+
+            for (let i = 0; i < n; i++) {
+                let pts = [];
+                const variant = (style === 'perimeter') ? 0
+                    : (style === 'rows') ? 1
+                    : (style === 'random') ? Math.floor(rng() * 3)
+                    : (i + seed) % 3;
+
+                if (variant === 0) {
+                    // вдоль одной из длинных стен (с отступом)
+                    const edgeIdx = (i + seed) % points.length;
+                    const a = points[edgeIdx], b = points[(edgeIdx + 1) % points.length];
+                    const dx = b.x - a.x, dy = b.y - a.y;
+                    const elen = Math.hypot(dx, dy) || 1;
+                    let nx = -dy / elen, ny = dx / elen;
+                    if ((cen.x - (a.x + b.x) / 2) * nx + (cen.y - (a.y + b.y) / 2) * ny < 0) {
+                        nx = -nx; ny = -ny;
+                    }
+                    const off = margin;
+                    const len = Math.min(targetLen, elen * 0.85);
+                    const t0 = (elen - len) / 2 / elen;
+                    const t1 = t0 + len / elen;
+                    pts = [
+                        { x: a.x + dx * t0 + nx * off, y: a.y + dy * t0 + ny * off },
+                        { x: a.x + dx * t1 + nx * off, y: a.y + dy * t1 + ny * off }
+                    ];
+                } else if (variant === 1) {
+                    // через центр параллельно длинной стороне
+                    const half = targetLen / 2;
+                    if (alongX) {
+                        const y = bb.minY + margin + (bb.h - 2 * margin) * ((i + 1) / (n + 1));
+                        pts = [
+                            { x: Math.max(bb.minX + margin, cen.x - half), y },
+                            { x: Math.min(bb.maxX - margin, cen.x + half), y }
+                        ];
+                    } else {
+                        const x = bb.minX + margin + (bb.w - 2 * margin) * ((i + 1) / (n + 1));
+                        pts = [
+                            { x, y: Math.max(bb.minY + margin, cen.y - half) },
+                            { x, y: Math.min(bb.maxY - margin, cen.y + half) }
+                        ];
+                    }
+                } else {
+                    // диагональ / угол
+                    const ang = rng() * Math.PI;
+                    const half = targetLen / 2;
+                    pts = [
+                        { x: cen.x - Math.cos(ang) * half, y: cen.y - Math.sin(ang) * half },
+                        { x: cen.x + Math.cos(ang) * half, y: cen.y + Math.sin(ang) * half }
+                    ];
+                    // подтянуть внутрь если вышли
+                    pts = pts.map(p => {
+                        if (pointInPolygonStrict(p, points, margin * 0.3)) return p;
+                        return { x: cen.x + (p.x - cen.x) * 0.5, y: cen.y + (p.y - cen.y) * 0.5 };
+                    });
+                }
+                // фильтр: обе точки внутри
+                if (pts.every(p => pointInPolygon(p, points))) {
+                    const len = polylineLength(pts);
+                    strips.push({ points: pts, length_cm: Math.round(len * 10) / 10 });
+                }
+            }
+            return strips;
+        }
+
+        function buildLightingVariant(cfg, seed) {
+            const pattern = cfg.pattern;
+            const spotPat = (pattern === 'mixed' || pattern === 'grid') ? 'grid'
+                : (pattern === 'rows') ? 'rows'
+                : (pattern === 'perimeter') ? 'perimeter'
+                : (pattern === 'random') ? 'random' : 'grid';
+
+            const spots = generateSpotVariant(spotPat, cfg.spots, cfg.margin, seed);
+            const chandeliers = generateChandelierPositions(cfg.chandeliers, cfg.margin, seed + 41, spots);
+            const strips = generateStripLayouts(cfg.strips, cfg.stripLen, cfg.margin, seed + 77, pattern);
+
+            return { spots, chandeliers, strips };
+        }
+
+        function readAiLightingConfig() {
+            const spots = Math.max(0, Math.min(60, parseInt((document.getElementById('ai-spot-count') || {}).value, 10) || 0));
+            const chandeliers = Math.max(0, Math.min(10, parseInt((document.getElementById('ai-ch-count') || {}).value, 10) || 0));
+            const strips = Math.max(0, Math.min(8, parseInt((document.getElementById('ai-strip-count') || {}).value, 10) || 0));
+            const stripLen = Math.max(30, Math.min(800, parseFloat((document.getElementById('ai-strip-len') || {}).value) || 150));
+            const margin = Math.max(5, Math.min(80, parseFloat((document.getElementById('ai-spot-margin') || {}).value) || 30));
+            const pattern = ((document.getElementById('ai-spot-pattern') || {}).value) || 'grid';
+            return { spots, chandeliers, strips, stripLen, margin, pattern };
+        }
+
+        // aiSpotPreview теперь объект { spots, chandeliers, strips } или null
+        // aiSpotVariants — массив таких объектов
+
+        function aiProposeLighting() {
             if (points.length < 3 || !isClosed) {
                 showToast('Сначала замкните контур и введите размеры', 2500);
                 return;
             }
-            const countEl = document.getElementById('ai-spot-count');
-            const marginEl = document.getElementById('ai-spot-margin');
-            const patternEl = document.getElementById('ai-spot-pattern');
-            const n = Math.max(1, Math.min(60, parseInt(countEl && countEl.value, 10) || 4));
-            const margin = Math.max(5, Math.min(80, parseFloat(marginEl && marginEl.value) || 30));
-            const pattern = (patternEl && patternEl.value) || 'grid';
+            const cfg = readAiLightingConfig();
+            if (cfg.spots + cfg.chandeliers + cfg.strips === 0) {
+                showToast('Укажите хотя бы что-то: светильники, люстры или полосы', 3000);
+                return;
+            }
 
             aiSpotVariants = [];
-            // генерируем 4–5 вариантов с разными seed
+            // 5 разных стилей/сидов, чтобы «Другой вар.» реально менял картину
+            const styleCycle = ['grid', 'rows', 'perimeter', 'mixed', 'random'];
             for (let v = 0; v < 5; v++) {
-                const pts = generateSpotVariant(pattern, n, margin, aiSpotSeed + v * 17 + n);
-                if (pts.length) aiSpotVariants.push(pts);
+                const localCfg = Object.assign({}, cfg, {
+                    pattern: cfg.pattern === 'mixed' || cfg.pattern === 'random'
+                        ? styleCycle[v]
+                        : (v === 0 ? cfg.pattern : styleCycle[v])
+                });
+                const seed = aiSpotSeed + v * 97 + cfg.spots * 3 + cfg.chandeliers * 11 + cfg.strips * 19;
+                const plan = buildLightingVariant(localCfg, seed);
+                if (plan.spots.length || plan.chandeliers.length || plan.strips.length) {
+                    aiSpotVariants.push(plan);
+                }
             }
             if (!aiSpotVariants.length) {
-                showToast('Не удалось разместить точки внутри контура. Уменьшите отступ или кол-во.', 3500);
+                showToast('Не удалось разместить. Уменьшите отступ или количество.', 3500);
                 return;
             }
             aiSpotVariantIdx = 0;
-            aiSpotPreview = aiSpotVariants[0].map(p => ({ x: p.x, y: p.y }));
-            const hint = document.getElementById('ai-spot-hint');
-            if (hint) hint.innerText = `Вариант 1/${aiSpotVariants.length}: ${aiSpotPreview.length} точек. «Другой вар.» — следующий, «Принять» — добавить.`;
-            showToast(`Предложено ${aiSpotPreview.length} точек (вариант 1/${aiSpotVariants.length})`, 2500);
+            aiSpotPreview = aiSpotVariants[0];
+            updateAiHint();
+            const s = aiSpotPreview.spots.length, c = aiSpotPreview.chandeliers.length, p = aiSpotPreview.strips.length;
+            showToast(`Вариант 1/${aiSpotVariants.length}: ${s} спот., ${c} люстр, ${p} полос`, 2800);
             draw();
+        }
+
+        function updateAiHint() {
+            const hint = document.getElementById('ai-spot-hint');
+            if (!hint || !aiSpotPreview) return;
+            const s = aiSpotPreview.spots ? aiSpotPreview.spots.length : 0;
+            const c = aiSpotPreview.chandeliers ? aiSpotPreview.chandeliers.length : 0;
+            const p = aiSpotPreview.strips ? aiSpotPreview.strips.length : 0;
+            hint.innerText = `Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${s} спот. · ${c} люстр · ${p} полос. «Другой вар.» / «Принять».`;
         }
 
         function aiNextVariant() {
             if (!aiSpotVariants.length) {
-                aiProposeSpots();
+                aiProposeLighting();
                 return;
             }
             aiSpotVariantIdx = (aiSpotVariantIdx + 1) % aiSpotVariants.length;
-            aiSpotPreview = aiSpotVariants[aiSpotVariantIdx].map(p => ({ x: p.x, y: p.y }));
-            const hint = document.getElementById('ai-spot-hint');
-            if (hint) hint.innerText = `Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${aiSpotPreview.length} точек. «Принять» — добавить в замер.`;
-            showToast(`Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}`, 1800);
+            aiSpotPreview = aiSpotVariants[aiSpotVariantIdx];
+            updateAiHint();
+            showToast(`Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}`, 1600);
             draw();
         }
 
-        function aiAcceptSpots() {
-            if (!aiSpotPreview.length) {
+        function aiAcceptLighting() {
+            if (!aiSpotPreview || (
+                !(aiSpotPreview.spots && aiSpotPreview.spots.length) &&
+                !(aiSpotPreview.chandeliers && aiSpotPreview.chandeliers.length) &&
+                !(aiSpotPreview.strips && aiSpotPreview.strips.length)
+            )) {
                 showToast('Сначала нажмите «Предложить»', 2000);
                 return;
             }
             let sn = fixtures.filter(f => f.type === 'spot').length + 1;
-            aiSpotPreview.forEach(p => {
+            let ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
+            let pn = fixtures.filter(f => f.type === 'strip').length + 1;
+            let addedS = 0, addedC = 0, addedP = 0;
+
+            (aiSpotPreview.spots || []).forEach(p => {
                 const off = twoNearestEdgeOffsetsCm(p);
                 fixtures.push({
-                    type: 'spot',
-                    x: p.x, y: p.y,
-                    label: 'S' + (sn++),
+                    type: 'spot', x: p.x, y: p.y, label: 'S' + (sn++),
                     offset_wall_a_cm: off.offset_wall_a_cm,
                     offset_wall_b_cm: off.offset_wall_b_cm
                 });
+                addedS++;
             });
-            const added = aiSpotPreview.length;
-            aiSpotPreview = [];
+            (aiSpotPreview.chandeliers || []).forEach(p => {
+                fixtures.push({ type: 'chandelier', x: p.x, y: p.y, label: 'L' + (ln++) });
+                addedC++;
+            });
+            (aiSpotPreview.strips || []).forEach(st => {
+                const offsets = stripWallOffsets(st.points);
+                fixtures.push({
+                    type: 'strip',
+                    points: st.points.map(p => ({ x: p.x, y: p.y })),
+                    length_cm: st.length_cm,
+                    label: 'P' + (pn++),
+                    wall_offsets: offsets,
+                    x: st.points[0].x,
+                    y: st.points[0].y
+                });
+                addedP++;
+            });
+
+            aiSpotPreview = null;
             aiSpotVariants = [];
             aiSpotVariantIdx = 0;
-            aiSpotSeed = (aiSpotSeed + 31) % 10000;
+            aiSpotSeed = (aiSpotSeed + 53) % 100000;
             updateFixtureList();
             const hint = document.getElementById('ai-spot-hint');
-            if (hint) hint.innerText = 'Точки добавлены. Можно предложить ещё или править вручную.';
-            showToast(`Добавлено ${added} светильников`, 2500);
+            if (hint) hint.innerText = 'План принят. Можно править вручную или предложить ещё.';
+            showToast(`Добавлено: ${addedS} спот., ${addedC} люстр, ${addedP} полос`, 3000);
             draw();
         }
 
+        // совместимость со старыми onclick, если остались
+        function aiProposeSpots() { aiProposeLighting(); }
+        function aiAcceptSpots() { aiAcceptLighting(); }
+
         function aiClearPreview() {
-            aiSpotPreview = [];
+            aiSpotPreview = null;
             aiSpotVariants = [];
             aiSpotVariantIdx = 0;
             const hint = document.getElementById('ai-spot-hint');
-            if (hint) hint.innerText = 'Превью сброшено. Введите параметры и нажмите «Предложить».';
+            if (hint) hint.innerText = 'Превью сброшено. Заполните план и нажмите «Предложить».';
             draw();
             showToast('Превью сброшено', 1500);
         }
@@ -1926,7 +2118,7 @@
                 sideProfiles = points.map(() => selectedProfileName);
             }
             stripDraft = [];
-            aiSpotPreview = [];
+            aiSpotPreview = null;
             aiSpotVariants = [];
             document.getElementById('strip-mini-panel').style.display = 'none';
             document.getElementById('finish-strip-btn').style.display = 'none';
@@ -2587,7 +2779,7 @@
             profileEdgesPainted = false;
             stripDraft = [];
             stripPreviewLen = 0;
-            aiSpotPreview = [];
+            aiSpotPreview = null;
             aiSpotVariants = [];
             aiSpotVariantIdx = 0;
             editCeilingIndex = -1;
@@ -3166,12 +3358,37 @@
                 }
             }
 
-            // Превью ИИ-расстановки светильников
-            if (state === 'INSTALL' && aiSpotPreview && aiSpotPreview.length) {
-                aiSpotPreview.forEach((p, idx) => {
+            // Превью ИИ-плана освещения
+            if (state === 'INSTALL' && aiSpotPreview && typeof aiSpotPreview === 'object') {
+                // полосы (жёлтые пунктир)
+                (aiSpotPreview.strips || []).forEach((st, idx) => {
+                    if (!st.points || st.points.length < 2) return;
+                    ctx.beginPath();
+                    const s0 = toScreen(st.points[0].x, st.points[0].y);
+                    ctx.moveTo(s0.x, s0.y);
+                    for (let k = 1; k < st.points.length; k++) {
+                        const sk = toScreen(st.points[k].x, st.points[k].y);
+                        ctx.lineTo(sk.x, sk.y);
+                    }
+                    ctx.strokeStyle = '#f1c40f';
+                    ctx.lineWidth = 4;
+                    ctx.setLineDash([8, 5]);
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    const mid = st.points[Math.floor(st.points.length / 2)];
+                    const sm = toScreen(mid.x, mid.y);
+                    ctx.fillStyle = '#b7950b';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText('P' + (idx + 1) + ' ~' + (st.length_cm || '') + 'см', sm.x, sm.y - 6);
+                });
+                // споты (синие)
+                (aiSpotPreview.spots || []).forEach((p, idx) => {
                     const sp = toScreen(p.x, p.y);
                     ctx.beginPath();
-                    ctx.fillStyle = 'rgba(26, 115, 232, 0.25)';
+                    ctx.fillStyle = 'rgba(26, 115, 232, 0.28)';
                     ctx.strokeStyle = '#1a73e8';
                     ctx.lineWidth = 2;
                     ctx.setLineDash([4, 3]);
@@ -3179,7 +3396,6 @@
                     ctx.fill();
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    // крестик
                     ctx.strokeStyle = '#1a73e8';
                     ctx.lineWidth = 1.5;
                     ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y); ctx.lineTo(sp.x + 5, sp.y); ctx.stroke();
@@ -3189,6 +3405,28 @@
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
                     ctx.fillText('S' + (idx + 1), sp.x, sp.y - 12);
+                });
+                // люстры (красные)
+                (aiSpotPreview.chandeliers || []).forEach((p, idx) => {
+                    const sp = toScreen(p.x, p.y);
+                    ctx.beginPath();
+                    ctx.fillStyle = 'rgba(192, 57, 43, 0.3)';
+                    ctx.strokeStyle = '#c0392b';
+                    ctx.lineWidth = 2.5;
+                    ctx.setLineDash([5, 3]);
+                    ctx.arc(sp.x, sp.y, 13, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.strokeStyle = '#c0392b';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(sp.x - 6, sp.y - 6); ctx.lineTo(sp.x + 6, sp.y + 6); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(sp.x + 6, sp.y - 6); ctx.lineTo(sp.x - 6, sp.y + 6); ctx.stroke();
+                    ctx.fillStyle = '#c0392b';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText('L' + (idx + 1), sp.x, sp.y - 15);
                 });
             }
 
