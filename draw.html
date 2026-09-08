@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908e</title>
+    <title>ПРО Замер потолков v20260908f</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -1451,16 +1451,20 @@
             return { x: cx / (6 * a), y: cy / (6 * a) };
         }
 
-        function pointInPolygonStrict(pt, poly, marginCm) {
-            // сначала обычный inside
-            if (!pointInPolygon(pt, poly)) return false;
-            if (!marginCm || marginCm <= 0) return true;
-            // проверка расстояния до всех рёбер
+        function minDistToBoundary(pt, poly) {
+            let d = Infinity;
             for (let i = 0; i < poly.length; i++) {
                 const a = poly[i], b = poly[(i + 1) % poly.length];
-                if (distPointToSegment(pt, a, b) < marginCm) return false;
+                const dd = distPointToSegment(pt, a, b);
+                if (dd < d) d = dd;
             }
-            return true;
+            return d;
+        }
+
+        function pointInPolygonStrict(pt, poly, marginCm) {
+            if (!pointInPolygon(pt, poly)) return false;
+            if (!marginCm || marginCm <= 0) return true;
+            return minDistToBoundary(pt, poly) >= marginCm - 0.01;
         }
 
         function bboxOf(pts) {
@@ -1472,166 +1476,14 @@
             return { minX, maxX, minY, maxY, w: maxX - minX, h: maxY - minY };
         }
 
-        function generateGridSpots(n, margin, seed) {
+        function effectiveMargin(requested) {
             const bb = bboxOf(points);
-            const usableW = Math.max(1, bb.w - 2 * margin);
-            const usableH = Math.max(1, bb.h - 2 * margin);
-            // подбираем cols/rows близко к пропорциям
-            const aspect = usableW / usableH;
-            let cols = Math.max(1, Math.round(Math.sqrt(n * aspect)));
-            let rows = Math.max(1, Math.ceil(n / cols));
-            while (cols * rows < n) { if (usableW >= usableH) cols++; else rows++; }
-            const stepX = cols > 1 ? usableW / (cols - 1) : 0;
-            const stepY = rows > 1 ? usableH / (rows - 1) : 0;
-            const startX = bb.minX + margin;
-            const startY = bb.minY + margin;
-            const cand = [];
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const x = startX + c * stepX;
-                    const y = startY + r * stepY;
-                    if (pointInPolygonStrict({ x, y }, points, margin * 0.6)) {
-                        cand.push({ x, y });
-                    }
-                }
-            }
-            // если мало — уплотняем сетку
-            if (cand.length < n) {
-                const denser = [];
-                const densCols = cols + 2, densRows = rows + 2;
-                const dStepX = densCols > 1 ? usableW / (densCols - 1) : 0;
-                const dStepY = densRows > 1 ? usableH / (densRows - 1) : 0;
-                for (let r = 0; r < densRows; r++) {
-                    for (let c = 0; c < densCols; c++) {
-                        const x = startX + c * dStepX;
-                        const y = startY + r * dStepY;
-                        if (pointInPolygonStrict({ x, y }, points, margin * 0.5)) denser.push({ x, y });
-                    }
-                }
-                // перемешиваем по seed и берём n
-                const rng = mulberry32(seed);
-                denser.sort(() => rng() - 0.5);
-                return denser.slice(0, n);
-            }
-            // берём равномерно из cand
-            if (cand.length <= n) return cand;
-            const step = cand.length / n;
-            const out = [];
-            for (let i = 0; i < n; i++) out.push(cand[Math.min(cand.length - 1, Math.floor(i * step))]);
-            return out;
-        }
-
-        function generateRowsSpots(n, margin, seed) {
-            const bb = bboxOf(points);
-            const alongX = bb.w >= bb.h;
-            const long = alongX ? bb.w : bb.h;
-            const short = alongX ? bb.h : bb.w;
-            // число рядов ≈ sqrt(n * short/long)
-            let numRows = Math.max(1, Math.round(Math.sqrt(n * (short / Math.max(long, 1)))));
-            numRows = Math.min(numRows, n);
-            let perRow = Math.ceil(n / numRows);
-            const usableLong = Math.max(1, long - 2 * margin);
-            const usableShort = Math.max(1, short - 2 * margin);
-            const rowStep = numRows > 1 ? usableShort / (numRows - 1) : 0;
-            const colStep = perRow > 1 ? usableLong / (perRow - 1) : 0;
-            const out = [];
-            for (let r = 0; r < numRows && out.length < n; r++) {
-                for (let c = 0; c < perRow && out.length < n; c++) {
-                    let x, y;
-                    if (alongX) {
-                        x = bb.minX + margin + c * colStep;
-                        y = bb.minY + margin + r * rowStep;
-                    } else {
-                        x = bb.minX + margin + r * rowStep;
-                        y = bb.minY + margin + c * colStep;
-                    }
-                    if (pointInPolygonStrict({ x, y }, points, margin * 0.5)) out.push({ x, y });
-                }
-            }
-            // добор если не хватило
-            if (out.length < n) {
-                const extra = generateGridSpots(n - out.length + 4, margin, seed + 7);
-                extra.forEach(p => {
-                    if (out.length >= n) return;
-                    if (!out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 8)) out.push(p);
-                });
-            }
-            return out.slice(0, n);
-        }
-
-        function generatePerimeterSpots(n, margin, seed) {
-            // точки вдоль shrink-полигона
-            const shrink = margin;
-            const out = [];
-            const nPts = points.length;
-            // длина периметра
-            let peri = 0;
-            const segs = [];
-            for (let i = 0; i < nPts; i++) {
-                const a = points[i], b = points[(i + 1) % nPts];
-                const len = dist(a, b);
-                segs.push({ a, b, len });
-                peri += len;
-            }
-            if (peri < 1) return out;
-            const step = peri / n;
-            let acc = step * 0.5; // начинаем с середины первого шага
-            for (let k = 0; k < n; k++) {
-                let t = acc % peri;
-                for (let s = 0; s < segs.length; s++) {
-                    if (t <= segs[s].len) {
-                        const ratio = segs[s].len > 0 ? t / segs[s].len : 0;
-                        const mx = segs[s].a.x + (segs[s].b.x - segs[s].a.x) * ratio;
-                        const my = segs[s].a.y + (segs[s].b.y - segs[s].a.y) * ratio;
-                        // сдвигаем внутрь по нормали
-                        const dx = segs[s].b.x - segs[s].a.x, dy = segs[s].b.y - segs[s].a.y;
-                        const llen = Math.hypot(dx, dy) || 1;
-                        let nx = -dy / llen, ny = dx / llen;
-                        // направление внутрь
-                        const cen = polygonCentroid(points);
-                        const midX = (segs[s].a.x + segs[s].b.x) / 2, midY = (segs[s].a.y + segs[s].b.y) / 2;
-                        if ((cen.x - midX) * nx + (cen.y - midY) * ny < 0) { nx = -nx; ny = -ny; }
-                        const px = mx + nx * shrink, py = my + ny * shrink;
-                        if (pointInPolygon({ x: px, y: py }, points)) out.push({ x: px, y: py });
-                        break;
-                    }
-                    t -= segs[s].len;
-                }
-                acc += step;
-            }
-            return out;
-        }
-
-        function generateCenterSpots(n, margin, seed) {
-            const cen = polygonCentroid(points);
-            const bb = bboxOf(points);
-            const rMax = Math.min(bb.w, bb.h) / 2 - margin;
-            const out = [{ x: cen.x, y: cen.y }];
-            if (n === 1) return out;
-            const rings = Math.ceil(Math.sqrt(n));
-            let placed = 1;
-            for (let ring = 1; ring <= rings && placed < n; ring++) {
-                const countOnRing = Math.min(n - placed, Math.max(6, ring * 6));
-                const rad = (rMax * ring) / rings;
-                for (let i = 0; i < countOnRing && placed < n; i++) {
-                    const ang = (2 * Math.PI * i) / countOnRing + (seed % 7) * 0.1;
-                    const x = cen.x + rad * Math.cos(ang);
-                    const y = cen.y + rad * Math.sin(ang);
-                    if (pointInPolygonStrict({ x, y }, points, margin * 0.4)) {
-                        out.push({ x, y });
-                        placed++;
-                    }
-                }
-            }
-            // добор
-            if (out.length < n) {
-                const extra = generateGridSpots(n, margin, seed + 3);
-                extra.forEach(p => {
-                    if (out.length >= n) return;
-                    if (!out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 10)) out.push(p);
-                });
-            }
-            return out.slice(0, n);
+            const roomMin = Math.min(bb.w, bb.h);
+            // не больше 22% меньшей стороны и не меньше 15 см (если комната позволяет)
+            const maxM = Math.max(12, roomMin * 0.22);
+            let m = Math.min(requested, maxM);
+            if (m < 15 && roomMin > 80) m = 15;
+            return m;
         }
 
         function mulberry32(a) {
@@ -1643,30 +1495,229 @@
             };
         }
 
-        function generateRandomSpots(n, margin, seed) {
+        // Плотный набор кандидатов строго внутри контура с полным отступом
+        function collectInteriorCandidates(margin, stepCm) {
             const bb = bboxOf(points);
+            const step = Math.max(8, stepCm || Math.max(12, Math.min(bb.w, bb.h) / 18));
+            const cand = [];
+            const x0 = bb.minX + margin;
+            const y0 = bb.minY + margin;
+            const x1 = bb.maxX - margin;
+            const y1 = bb.maxY - margin;
+            for (let y = y0; y <= y1 + 0.01; y += step) {
+                for (let x = x0; x <= x1 + 0.01; x += step) {
+                    const p = { x, y };
+                    if (pointInPolygonStrict(p, points, margin)) cand.push(p);
+                }
+            }
+            // если пусто — чуть уменьшаем шаг и margin
+            if (cand.length < 4) {
+                const m2 = margin * 0.7;
+                const step2 = step * 0.6;
+                for (let y = bb.minY + m2; y <= bb.maxY - m2 + 0.01; y += step2) {
+                    for (let x = bb.minX + m2; x <= bb.maxX - m2 + 0.01; x += step2) {
+                        const p = { x, y };
+                        if (pointInPolygonStrict(p, points, m2)) cand.push(p);
+                    }
+                }
+            }
+            return cand;
+        }
+
+        // Жадный farthest-point: равномерно разбрасывает N точек по кандидатам
+        function pickFarthestPoints(candidates, n, seed, existing) {
+            if (!candidates.length || n <= 0) return [];
             const rng = mulberry32(seed);
-            const minDist = Math.max(15, Math.sqrt((bb.w * bb.h) / (n * 2.5)));
-            const out = [];
-            let attempts = 0;
-            const maxAttempts = n * 80;
-            while (out.length < n && attempts < maxAttempts) {
-                attempts++;
-                const x = bb.minX + margin + rng() * Math.max(1, bb.w - 2 * margin);
-                const y = bb.minY + margin + rng() * Math.max(1, bb.h - 2 * margin);
-                if (!pointInPolygonStrict({ x, y }, points, margin * 0.5)) continue;
-                if (out.some(o => Math.hypot(o.x - x, o.y - y) < minDist)) continue;
-                out.push({ x, y });
+            const pool = candidates.slice();
+            // лёгкий джиттер порядка, чтобы варианты отличались
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(rng() * (i + 1));
+                const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
             }
-            // если не набрали — ослабляем
-            if (out.length < n) {
-                const extra = generateGridSpots(n - out.length + 2, margin * 0.7, seed + 11);
-                extra.forEach(p => {
-                    if (out.length >= n) return;
-                    if (!out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < minDist * 0.6)) out.push(p);
+            const chosen = (existing || []).map(p => ({ x: p.x, y: p.y }));
+            // старт: точка ближе к центроиду (или случайная из топ-20% по dist to boundary)
+            if (!chosen.length) {
+                const cen = polygonCentroid(points);
+                pool.sort((a, b) => {
+                    const da = Math.hypot(a.x - cen.x, a.y - cen.y);
+                    const db = Math.hypot(b.x - cen.x, b.y - cen.y);
+                    return da - db;
                 });
+                // для разнообразия вариантов берём не всегда самую центральную
+                const startIdx = Math.min(pool.length - 1, Math.floor(rng() * Math.min(5, pool.length)));
+                chosen.push(pool[startIdx]);
             }
-            return out.slice(0, n);
+            while (chosen.length < n && pool.length) {
+                let best = null, bestScore = -1;
+                for (let i = 0; i < pool.length; i++) {
+                    const p = pool[i];
+                    let minD = Infinity;
+                    for (const c of chosen) {
+                        const d = Math.hypot(p.x - c.x, p.y - c.y);
+                        if (d < minD) minD = d;
+                    }
+                    // бонус за удалённость от стен
+                    const wallBonus = minDistToBoundary(p, points) * 0.15;
+                    const score = minD + wallBonus;
+                    if (score > bestScore) { bestScore = score; best = i; }
+                }
+                if (best == null) break;
+                chosen.push(pool[best]);
+                pool.splice(best, 1);
+            }
+            // убрать preexisting из результата
+            if (existing && existing.length) {
+                return chosen.slice(existing.length);
+            }
+            return chosen;
+        }
+
+        function generateGridSpots(n, margin, seed) {
+            margin = effectiveMargin(margin);
+            const bb = bboxOf(points);
+            const area = Math.abs(polygonSignedArea(points));
+            // целевой шаг сетки
+            const idealStep = Math.sqrt(Math.max(area, 1) / Math.max(n, 1));
+            const step = Math.max(margin * 0.8, Math.min(idealStep, Math.min(bb.w, bb.h) / 3));
+
+            // кандидаты по сетке bbox, но только строго внутри
+            const cand = [];
+            const cols = Math.max(1, Math.round((bb.w - 2 * margin) / step) + 1);
+            const rows = Math.max(1, Math.round((bb.h - 2 * margin) / step) + 1);
+            const usableW = Math.max(1, bb.w - 2 * margin);
+            const usableH = Math.max(1, bb.h - 2 * margin);
+            const stepX = cols > 1 ? usableW / (cols - 1) : 0;
+            const stepY = rows > 1 ? usableH / (rows - 1) : 0;
+            // сдвиг сетки по seed для разных вариантов
+            const rng = mulberry32(seed);
+            const ox = (rng() - 0.5) * stepX * 0.25;
+            const oy = (rng() - 0.5) * stepY * 0.25;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const x = bb.minX + margin + c * stepX + ox;
+                    const y = bb.minY + margin + r * stepY + oy;
+                    if (pointInPolygonStrict({ x, y }, points, margin)) cand.push({ x, y });
+                }
+            }
+            if (cand.length >= n) {
+                // если сетка дала достаточно — берём farthest среди них (равномернее)
+                return pickFarthestPoints(cand, n, seed, []);
+            }
+            // добор из плотных кандидатов
+            const dense = collectInteriorCandidates(margin, step * 0.55);
+            const all = cand.concat(dense);
+            return pickFarthestPoints(all, n, seed, []);
+        }
+
+        function generateRowsSpots(n, margin, seed) {
+            margin = effectiveMargin(margin);
+            const bb = bboxOf(points);
+            const alongX = bb.w >= bb.h;
+            let numRows = Math.max(1, Math.round(Math.sqrt(n * (Math.min(bb.w, bb.h) / Math.max(bb.w, bb.h, 1)))));
+            numRows = Math.min(numRows, n);
+            const perRow = Math.ceil(n / numRows);
+            const usableLong = Math.max(1, (alongX ? bb.w : bb.h) - 2 * margin);
+            const usableShort = Math.max(1, (alongX ? bb.h : bb.w) - 2 * margin);
+            const rowStep = numRows > 1 ? usableShort / (numRows - 1) : 0;
+            const colStep = perRow > 1 ? usableLong / (perRow - 1) : 0;
+            const cand = [];
+            const rng = mulberry32(seed);
+            const jitter = Math.min(colStep, rowStep) * 0.12;
+            for (let r = 0; r < numRows; r++) {
+                for (let c = 0; c < perRow; c++) {
+                    let x, y;
+                    if (alongX) {
+                        x = bb.minX + margin + c * colStep + (rng() - 0.5) * jitter;
+                        y = bb.minY + margin + r * rowStep + (rng() - 0.5) * jitter;
+                    } else {
+                        x = bb.minX + margin + r * rowStep + (rng() - 0.5) * jitter;
+                        y = bb.minY + margin + c * colStep + (rng() - 0.5) * jitter;
+                    }
+                    if (pointInPolygonStrict({ x, y }, points, margin)) cand.push({ x, y });
+                }
+            }
+            if (cand.length >= n) return pickFarthestPoints(cand, n, seed, []);
+            const dense = collectInteriorCandidates(margin, 14);
+            return pickFarthestPoints(cand.concat(dense), n, seed, []);
+        }
+
+        function generatePerimeterSpots(n, margin, seed) {
+            margin = effectiveMargin(margin);
+            // точки на «внутреннем» контуре: сдвиг от каждого ребра на margin+
+            const outCand = [];
+            const nPts = points.length;
+            let peri = 0;
+            const segs = [];
+            for (let i = 0; i < nPts; i++) {
+                const a = points[i], b = points[(i + 1) % nPts];
+                const len = dist(a, b);
+                segs.push({ a, b, len });
+                peri += len;
+            }
+            if (peri < 1) return [];
+            // больше кандидатов, потом farthest
+            const samples = Math.max(n * 4, 16);
+            const step = peri / samples;
+            let acc = step * 0.5 + (seed % 7) * 0.01 * peri;
+            const cen = polygonCentroid(points);
+            const shrink = margin;
+            for (let k = 0; k < samples; k++) {
+                let t = ((acc % peri) + peri) % peri;
+                for (let s = 0; s < segs.length; s++) {
+                    if (t <= segs[s].len) {
+                        const ratio = segs[s].len > 0 ? t / segs[s].len : 0;
+                        // не ставим слишком близко к углам
+                        if (ratio < 0.08 || ratio > 0.92) break;
+                        const mx = segs[s].a.x + (segs[s].b.x - segs[s].a.x) * ratio;
+                        const my = segs[s].a.y + (segs[s].b.y - segs[s].a.y) * ratio;
+                        const dx = segs[s].b.x - segs[s].a.x, dy = segs[s].b.y - segs[s].a.y;
+                        const llen = Math.hypot(dx, dy) || 1;
+                        let nx = -dy / llen, ny = dx / llen;
+                        const midX = (segs[s].a.x + segs[s].b.x) / 2, midY = (segs[s].a.y + segs[s].b.y) / 2;
+                        if ((cen.x - midX) * nx + (cen.y - midY) * ny < 0) { nx = -nx; ny = -ny; }
+                        const p = { x: mx + nx * shrink, y: my + ny * shrink };
+                        if (pointInPolygonStrict(p, points, margin * 0.95)) outCand.push(p);
+                        break;
+                    }
+                    t -= segs[s].len;
+                }
+                acc += step;
+            }
+            if (outCand.length >= n) return pickFarthestPoints(outCand, n, seed, []);
+            const dense = collectInteriorCandidates(margin, 16);
+            return pickFarthestPoints(outCand.concat(dense), n, seed, []);
+        }
+
+        function generateCenterSpots(n, margin, seed) {
+            margin = effectiveMargin(margin);
+            const cen = polygonCentroid(points);
+            if (n === 1) {
+                if (pointInPolygonStrict(cen, points, margin * 0.5)) return [cen];
+                const dens = collectInteriorCandidates(margin, 12);
+                return dens.length ? [dens[0]] : [];
+            }
+            const bb = bboxOf(points);
+            const rMax = Math.max(10, Math.min(bb.w, bb.h) / 2 - margin);
+            const cand = [];
+            if (pointInPolygonStrict(cen, points, margin * 0.5)) cand.push({ x: cen.x, y: cen.y });
+            const rings = Math.max(2, Math.ceil(Math.sqrt(n)));
+            for (let ring = 1; ring <= rings; ring++) {
+                const countOnRing = Math.max(6, ring * 6);
+                const rad = (rMax * ring) / rings;
+                for (let i = 0; i < countOnRing; i++) {
+                    const ang = (2 * Math.PI * i) / countOnRing + (seed % 11) * 0.07;
+                    const p = { x: cen.x + rad * Math.cos(ang), y: cen.y + rad * Math.sin(ang) };
+                    if (pointInPolygonStrict(p, points, margin)) cand.push(p);
+                }
+            }
+            const dense = collectInteriorCandidates(margin, 14);
+            return pickFarthestPoints(cand.concat(dense), n, seed, []);
+        }
+
+        function generateRandomSpots(n, margin, seed) {
+            margin = effectiveMargin(margin);
+            const dense = collectInteriorCandidates(margin, 12);
+            return pickFarthestPoints(dense, n, seed, []);
         }
 
         function generateSpotVariant(pattern, n, margin, seed) {
@@ -1687,99 +1738,127 @@
 
         function generateChandelierPositions(n, margin, seed, avoidPts) {
             if (n <= 0) return [];
+            margin = effectiveMargin(margin);
+            // люстры — ещё дальше от стен
+            const chMargin = Math.max(margin + 10, margin * 1.35);
             const cen = polygonCentroid(points);
-            const bb = bboxOf(points);
-            const out = [];
+            const avoid = avoidPts || [];
+            const minAway = 35;
+
             if (n === 1) {
-                out.push({ x: cen.x, y: cen.y });
-                return out;
+                if (pointInPolygonStrict(cen, points, chMargin * 0.6) &&
+                    !avoid.some(a => Math.hypot(a.x - cen.x, a.y - cen.y) < minAway)) {
+                    return [{ x: cen.x, y: cen.y }];
+                }
+                const dens = collectInteriorCandidates(chMargin, 15)
+                    .filter(p => !avoid.some(a => Math.hypot(a.x - p.x, a.y - p.y) < minAway));
+                return dens.length ? pickFarthestPoints(dens, 1, seed, []) : [];
             }
-            // 1 в центре + остальные по кругу / сетке
-            out.push({ x: cen.x, y: cen.y });
-            const rest = generateCenterSpots(n, margin + 10, seed + 5).filter(p =>
-                Math.hypot(p.x - cen.x, p.y - cen.y) > 15
-            );
-            rest.forEach(p => {
-                if (out.length >= n) return;
-                if (avoidPts && avoidPts.some(a => Math.hypot(a.x - p.x, a.y - p.y) < 25)) return;
-                out.push(p);
-            });
-            if (out.length < n) {
-                const extra = generateGridSpots(n + 4, margin + 15, seed + 21);
-                extra.forEach(p => {
-                    if (out.length >= n) return;
-                    if (out.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 30)) return;
-                    out.push(p);
-                });
+
+            let cand = collectInteriorCandidates(chMargin, 18)
+                .filter(p => !avoid.some(a => Math.hypot(a.x - p.x, a.y - p.y) < minAway));
+            // предпочитаем центр
+            if (pointInPolygonStrict(cen, points, chMargin * 0.5)) {
+                cand.unshift({ x: cen.x, y: cen.y });
             }
-            return out.slice(0, n);
+            if (cand.length < n) {
+                cand = cand.concat(collectInteriorCandidates(margin, 14)
+                    .filter(p => !avoid.some(a => Math.hypot(a.x - p.x, a.y - p.y) < minAway * 0.7)));
+            }
+            return pickFarthestPoints(cand, n, seed, []);
         }
 
         function generateStripLayouts(n, targetLen, margin, seed, style) {
             if (n <= 0) return [];
+            margin = effectiveMargin(margin);
             const bb = bboxOf(points);
             const cen = polygonCentroid(points);
             const alongX = bb.w >= bb.h;
             const strips = [];
             const rng = mulberry32(seed);
+            const stripMargin = Math.max(margin, 20);
+
+            // сортируем рёбра по длине — длинные стены приоритетнее для полос
+            const edges = [];
+            for (let i = 0; i < points.length; i++) {
+                const a = points[i], b = points[(i + 1) % points.length];
+                edges.push({ i, a, b, len: dist(a, b) });
+            }
+            edges.sort((u, v) => v.len - u.len);
 
             for (let i = 0; i < n; i++) {
-                let pts = [];
+                let pts = null;
                 const variant = (style === 'perimeter') ? 0
                     : (style === 'rows') ? 1
                     : (style === 'random') ? Math.floor(rng() * 3)
                     : (i + seed) % 3;
 
-                if (variant === 0) {
-                    // вдоль одной из длинных стен (с отступом)
-                    const edgeIdx = (i + seed) % points.length;
-                    const a = points[edgeIdx], b = points[(edgeIdx + 1) % points.length];
-                    const dx = b.x - a.x, dy = b.y - a.y;
-                    const elen = Math.hypot(dx, dy) || 1;
+                if (variant === 0 && edges.length) {
+                    // вдоль длинной стены, строго с отступом внутрь
+                    const e = edges[i % edges.length];
+                    const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
+                    const elen = e.len || 1;
                     let nx = -dy / elen, ny = dx / elen;
-                    if ((cen.x - (a.x + b.x) / 2) * nx + (cen.y - (a.y + b.y) / 2) * ny < 0) {
+                    if ((cen.x - (e.a.x + e.b.x) / 2) * nx + (cen.y - (e.a.y + e.b.y) / 2) * ny < 0) {
                         nx = -nx; ny = -ny;
                     }
-                    const off = margin;
-                    const len = Math.min(targetLen, elen * 0.85);
+                    const off = stripMargin;
+                    const maxLen = Math.max(40, elen - 2 * stripMargin);
+                    const len = Math.min(targetLen, maxLen);
                     const t0 = (elen - len) / 2 / elen;
                     const t1 = t0 + len / elen;
-                    pts = [
-                        { x: a.x + dx * t0 + nx * off, y: a.y + dy * t0 + ny * off },
-                        { x: a.x + dx * t1 + nx * off, y: a.y + dy * t1 + ny * off }
-                    ];
-                } else if (variant === 1) {
-                    // через центр параллельно длинной стороне
-                    const half = targetLen / 2;
-                    if (alongX) {
-                        const y = bb.minY + margin + (bb.h - 2 * margin) * ((i + 1) / (n + 1));
-                        pts = [
-                            { x: Math.max(bb.minX + margin, cen.x - half), y },
-                            { x: Math.min(bb.maxX - margin, cen.x + half), y }
-                        ];
-                    } else {
-                        const x = bb.minX + margin + (bb.w - 2 * margin) * ((i + 1) / (n + 1));
-                        pts = [
-                            { x, y: Math.max(bb.minY + margin, cen.y - half) },
-                            { x, y: Math.min(bb.maxY - margin, cen.y + half) }
-                        ];
+                    const p0 = { x: e.a.x + dx * t0 + nx * off, y: e.a.y + dy * t0 + ny * off };
+                    const p1 = { x: e.a.x + dx * t1 + nx * off, y: e.a.y + dy * t1 + ny * off };
+                    if (pointInPolygonStrict(p0, points, stripMargin * 0.85) &&
+                        pointInPolygonStrict(p1, points, stripMargin * 0.85)) {
+                        pts = [p0, p1];
                     }
-                } else {
-                    // диагональ / угол
-                    const ang = rng() * Math.PI;
-                    const half = targetLen / 2;
-                    pts = [
-                        { x: cen.x - Math.cos(ang) * half, y: cen.y - Math.sin(ang) * half },
-                        { x: cen.x + Math.cos(ang) * half, y: cen.y + Math.sin(ang) * half }
-                    ];
-                    // подтянуть внутрь если вышли
-                    pts = pts.map(p => {
-                        if (pointInPolygonStrict(p, points, margin * 0.3)) return p;
-                        return { x: cen.x + (p.x - cen.x) * 0.5, y: cen.y + (p.y - cen.y) * 0.5 };
-                    });
                 }
-                // фильтр: обе точки внутри
-                if (pts.every(p => pointInPolygon(p, points))) {
+
+                if (!pts && (variant === 1 || variant === 0)) {
+                    // параллельно длинной стороне через внутреннюю зону
+                    const half = Math.min(targetLen / 2, (alongX ? bb.w : bb.h) / 2 - stripMargin);
+                    const t = (i + 1) / (n + 1);
+                    if (alongX) {
+                        const y = bb.minY + stripMargin + (bb.h - 2 * stripMargin) * t;
+                        const p0 = { x: cen.x - half, y };
+                        const p1 = { x: cen.x + half, y };
+                        if (pointInPolygonStrict(p0, points, stripMargin * 0.7) &&
+                            pointInPolygonStrict(p1, points, stripMargin * 0.7)) {
+                            pts = [p0, p1];
+                        }
+                    } else {
+                        const x = bb.minX + stripMargin + (bb.w - 2 * stripMargin) * t;
+                        const p0 = { x, y: cen.y - half };
+                        const p1 = { x, y: cen.y + half };
+                        if (pointInPolygonStrict(p0, points, stripMargin * 0.7) &&
+                            pointInPolygonStrict(p1, points, stripMargin * 0.7)) {
+                            pts = [p0, p1];
+                        }
+                    }
+                }
+
+                if (!pts) {
+                    // короткая полоса около центра, строго внутри
+                    const ang = (rng() * Math.PI * 0.5) + (alongX ? 0 : Math.PI / 2);
+                    const half = Math.min(targetLen / 2, Math.min(bb.w, bb.h) * 0.35);
+                    let p0 = { x: cen.x - Math.cos(ang) * half, y: cen.y - Math.sin(ang) * half };
+                    let p1 = { x: cen.x + Math.cos(ang) * half, y: cen.y + Math.sin(ang) * half };
+                    // если концы вылезли — укорачиваем к центру
+                    for (let iter = 0; iter < 8; iter++) {
+                        const ok0 = pointInPolygonStrict(p0, points, stripMargin * 0.7);
+                        const ok1 = pointInPolygonStrict(p1, points, stripMargin * 0.7);
+                        if (ok0 && ok1) break;
+                        p0 = { x: (p0.x + cen.x) / 2, y: (p0.y + cen.y) / 2 };
+                        p1 = { x: (p1.x + cen.x) / 2, y: (p1.y + cen.y) / 2 };
+                    }
+                    if (pointInPolygon(p0, points) && pointInPolygon(p1, points) &&
+                        Math.hypot(p0.x - p1.x, p0.y - p1.y) > 25) {
+                        pts = [p0, p1];
+                    }
+                }
+
+                if (pts) {
                     const len = polylineLength(pts);
                     strips.push({ points: pts, length_cm: Math.round(len * 10) / 10 });
                 }
@@ -1848,7 +1927,10 @@
             aiSpotPreview = aiSpotVariants[0];
             updateAiHint();
             const s = aiSpotPreview.spots.length, c = aiSpotPreview.chandeliers.length, p = aiSpotPreview.strips.length;
-            showToast(`Вариант 1/${aiSpotVariants.length}: ${s} спот., ${c} люстр, ${p} полос`, 2800);
+            const em = effectiveMargin(cfg.margin);
+            let msg = `Вариант 1/${aiSpotVariants.length}: ${s} спот., ${c} люстр, ${p} полос`;
+            if (Math.abs(em - cfg.margin) > 1) msg += ` (отступ ≈${Math.round(em)} см)`;
+            showToast(msg, 2800);
             draw();
         }
 
