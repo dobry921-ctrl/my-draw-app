@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260909b</title>
+    <title>ПРО Замер потолков v20260909c</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -4198,6 +4198,12 @@
                                 }
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
+                                }
+                                if (f.type === 'light_point') {
+                                    var tp = { t: 't', x: asM(f.x), y: asM(f.y) };
+                                    if (level < 1 && f.offset_wall_a_cm != null) tp.a = r(f.offset_wall_a_cm, 0);
+                                    if (level < 1 && f.offset_wall_b_cm != null) tp.b = r(f.offset_wall_b_cm, 0);
+                                    return tp;
                                 }
                                 var s = { t: 's', x: asM(f.x), y: asM(f.y) };
                                 if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
