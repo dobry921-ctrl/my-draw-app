@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908n</title>
+    <title>ПРО Замер потолков v20260909a</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -18,7 +18,7 @@
             --text-dark: #222222;
         }
         * { box-sizing: border-box; }
-        body {
+        html, body {
             margin: 0; padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: var(--bg-color);
@@ -26,6 +26,13 @@
             overflow: hidden;
             position: fixed; inset: 0;
             display: flex; flex-direction: column;
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: auto;
+            touch-action: none;
+        }
+        body.dragging-fixture {
+            overscroll-behavior: none;
+            touch-action: none;
         }
         #top-bar {
             background-color: var(--top-bg);
@@ -54,7 +61,7 @@
             touch-action: none; width: 100%; height: 100%;
             overflow: hidden;
         }
-        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
         #close-btn {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             background-color: var(--success); color: white;
@@ -336,28 +343,14 @@
         </div>
 
         <div id="lighting-tools" style="display:none;">
-            <div class="panel-title" style="font-size:0.85rem;margin-bottom:4px;">Освещение</div>
-            <div class="hint" style="margin-bottom:6px;">Добавьте объекты — появятся <b>внизу чертежа</b>. Перетащите на место. При перетаскивании — отступы от стен (см).</div>
-
-            <div style="display:flex;gap:6px;margin-bottom:6px;">
-                <button type="button" class="btn btn-success" style="flex:1;padding:10px;font-size:0.85rem;" onclick="addOneSpot()">💡 Добавить светильник</button>
+            <div class="install-modes" style="margin-top:2px;">
+                <button type="button" class="install-mode-btn active" id="lmode-spot" onclick="setLightingSub('spot')">Светильник</button>
+                <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстра</button>
+                <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полоса</button>
             </div>
-            <div style="display:flex;gap:6px;margin-bottom:6px;">
-                <button type="button" class="btn btn-success" style="flex:1;padding:10px;font-size:0.85rem;background:#c0392b;" onclick="addOneChandelier()">💡 Добавить люстру</button>
-            </div>
-
-            <div style="padding:6px;background:#fff8e6;border-radius:8px;border:1px solid #e8c96a;margin-bottom:6px;">
-                <div class="panel-title" style="font-size:0.8rem;margin-bottom:4px;">Световая полоса</div>
-                <div class="color-row" style="margin-bottom:4px;">
-                    <label style="min-width:70px;">Длина:</label>
-                    <input type="number" id="place-strip-len" value="150" min="20" max="800" step="5" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
-                    <span style="font-size:0.75rem;">см</span>
-                </div>
-                <button type="button" class="btn btn-accent" style="width:100%;padding:10px;font-size:0.85rem;" onclick="addOneStrip()">➕ Добавить полосу</button>
-                <div class="hint" style="margin-top:4px;">После добавления: тап по полосе → ↻ повернуть на 90°.</div>
-            </div>
-
-            <div style="margin-top:4px;padding:6px;background:#eef6ff;border-radius:8px;border:1px solid #b5d0f0;">
+            <div class="hint" style="margin:4px 0;">Тапните на чертёж — объект появится в точке тапа. Затем можно перетаскивать (видны отступы от стен).</div>
+            <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:4px;padding:6px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
+            <div style="margin-top:6px;padding:6px;background:#eef6ff;border-radius:8px;border:1px solid #b5d0f0;">
                 <div class="panel-title" style="font-size:0.8rem;margin-bottom:4px;">Ряд равномерно вдоль стены</div>
                 <div class="color-row" style="margin-bottom:3px;">
                     <label style="min-width:90px;">Кол-во:</label>
@@ -376,7 +369,6 @@
                 <button type="button" class="btn btn-accent" style="width:100%;padding:8px;font-size:0.8rem;margin-top:2px;" onclick="startEvenRowMode()">📏 Равномерно — тапните стену</button>
                 <div class="hint" id="even-row-hint" style="margin-top:4px;">5 шт, 60 см от стены, 50 см от углов → равный шаг.</div>
             </div>
-
             <button type="button" class="btn btn-outline" style="width:100%;margin-top:6px;padding:6px;font-size:0.8rem;" onclick="clearLightingFixtures()">Очистить всё освещение</button>
         </div>
 
@@ -421,13 +413,13 @@
         <button class="collapse-btn" onclick="togglePanel('results-panel')">✕</button>
         <div class="panel-title" id="results-title">Готовые потолки в заказе</div>
         <div id="ceilings-list" class="ceilings-list"></div>
-        <div id="edit-actions" style="display:none;margin-bottom:4px;">
+        <div id="edit-actions" style="display:block;margin-bottom:4px;">
             <div style="display:flex;flex-wrap:wrap;gap:4px;">
                 <button class="btn btn-accent" style="flex:1;min-width:80px;padding:6px;" onclick="editCurrentCeilingFull()">📏 Размеры</button>
                 <button class="btn btn-outline" style="flex:1;min-width:80px;padding:6px;" onclick="editMaterialOnly()">🧵 Материал</button>
                 <button class="btn btn-outline" style="flex:1;min-width:80px;padding:6px;" onclick="editInstallOnly()">💡 Монтаж</button>
             </div>
-            <div class="hint" style="margin-top:4px;">Сначала выберите потолок в списке, затем раздел для правки</div>
+            <div class="hint" style="margin-top:4px;">Выберите потолок 👁, затем раздел правки. Перед отправкой проверьте все.</div>
         </div>
         <button class="btn btn-accent" id="add-ceiling-btn" onclick="addCeiling()" style="width:100%; margin-bottom:4px;padding:6px;">➕ Добавить ещё потолок</button>
         <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
@@ -584,6 +576,24 @@
             }
         }
 
+        function lockScrollForDrag(on) {
+            try {
+                document.body.classList.toggle('dragging-fixture', !!on);
+                if (on) {
+                    // Telegram WebApp: не давать свайпу закрыть мини-приложение
+                    const wa = window.Telegram && window.Telegram.WebApp;
+                    if (wa && typeof wa.disableVerticalSwipes === 'function') {
+                        wa.disableVerticalSwipes();
+                    }
+                } else {
+                    const wa = window.Telegram && window.Telegram.WebApp;
+                    if (wa && typeof wa.enableVerticalSwipes === 'function') {
+                        // не включаем обратно насильно — безопаснее оставить выкл. на время монтажа
+                    }
+                }
+            } catch (err) {}
+        }
+
         canvas.addEventListener('pointerdown', e => {
             activePointers.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
             if (activePointers.length === 1) {
@@ -597,6 +607,7 @@
                     const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
                     const hit = hitTestFixture(worldPos);
                     if (hit) {
+                        e.preventDefault();
                         const f = fixtures[hit.idx];
                         selectedFixtureIdx = hit.idx;
                         updateLightDragBar();
@@ -620,6 +631,7 @@
                             };
                         }
                         isDragging = true;
+                        lockScrollForDrag(true);
                         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
                         applyFixtureDrag(worldPos);
                         draw();
@@ -628,6 +640,7 @@
             } else if (activePointers.length === 2) {
                 dragFixture = null;
                 dragLiveLabel = null;
+                lockScrollForDrag(false);
                 initialPinchDist = Math.hypot(activePointers[0].x - activePointers[1].x, activePointers[0].y - activePointers[1].y);
                 initialZoom = camera.zoom;
             }
@@ -637,6 +650,7 @@
             if (idx !== -1) { activePointers[idx].x = e.clientX; activePointers[idx].y = e.clientY; }
             if (activePointers.length === 1) {
                 if (dragFixture) {
+                    e.preventDefault();
                     isDragging = true;
                     const rect = canvas.getBoundingClientRect();
                     const worldPos = toWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -677,6 +691,7 @@
                     dragFixture = null;
                     dragLiveLabel = null;
                     snapGuides = [];
+                    lockScrollForDrag(false);
                     draw();
                 } else if (activePointers.length === 1 && !isDragging) {
                     let rect = canvas.getBoundingClientRect();
@@ -690,6 +705,22 @@
         };
         canvas.addEventListener('pointerup', handlePointerEnd);
         canvas.addEventListener('pointercancel', handlePointerEnd);
+
+        // Блокировка свайпа Telegram / overscroll при перетаскивании света
+        document.addEventListener('touchmove', function (e) {
+            if (dragFixture || document.body.classList.contains('dragging-fixture')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        try {
+            const wa0 = window.Telegram && window.Telegram.WebApp;
+            if (wa0) {
+                wa0.ready();
+                if (typeof wa0.disableVerticalSwipes === 'function') wa0.disableVerticalSwipes();
+                if (typeof wa0.expand === 'function') wa0.expand();
+            }
+        } catch (e) {}
         canvas.addEventListener('wheel', e => {
             e.preventDefault();
             let rect = canvas.getBoundingClientRect();
@@ -1445,7 +1476,34 @@
                     placeEvenRowOnWall(worldPos);
                     return;
                 }
-                showToast('Добавьте светильник/люстру/полосу кнопкой, затем перетащите', 2500);
+                if (lightingSub === 'strip') {
+                    stripDraft.push({ x: worldPos.x, y: worldPos.y });
+                    stripPreviewLen = polylineLength(stripDraft);
+                    updateStripMiniPanel();
+                    updateFinishStripBtn();
+                    draw();
+                    return;
+                }
+                // тап = поставить на место тапа
+                if (lightingSub === 'chandelier') {
+                    const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
+                    fixtures.push({ type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n });
+                    selectedFixtureIdx = fixtures.length - 1;
+                    updateFixtureList();
+                    showToast(`Люстра L${n} — можно перетащить`, 2000);
+                } else {
+                    const off = twoNearestEdgeOffsetsCm(worldPos);
+                    const n = fixtures.filter(f => f.type === 'spot').length + 1;
+                    fixtures.push({
+                        type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
+                        offset_wall_a_cm: off.offset_wall_a_cm,
+                        offset_wall_b_cm: off.offset_wall_b_cm
+                    });
+                    selectedFixtureIdx = fixtures.length - 1;
+                    updateFixtureList();
+                    showToast(`Светильник S${n}: ${off.offset_wall_a_cm}/${off.offset_wall_b_cm} см`, 2500);
+                }
+                draw();
             }
         }
 
@@ -1845,12 +1903,29 @@
             lightingSub = sub || 'spot';
             stripDraft = [];
             stripPreviewLen = 0;
+            ['spot', 'chandelier', 'strip'].forEach(s => {
+                const b = document.getElementById('lmode-' + s);
+                if (b) b.classList.toggle('active', s === sub);
+            });
             const hint = document.getElementById('install-hint');
+            const centerBtn = document.getElementById('chandelier-center-btn');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
-            if (miniPanel) miniPanel.style.display = 'none';
-            if (finishBtn) finishBtn.style.display = 'none';
-            if (hint) hint.innerText = 'Введите кол-во → «Разместить» → перетащите объекты на чертёж. Отступы от стен видны при перетаскивании.';
+            if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
+            if (sub === 'strip') {
+                if (miniPanel) miniPanel.style.display = 'flex';
+                updateStripMiniPanel();
+                updateFinishStripBtn();
+                if (hint) hint.innerText = 'Полоса: тапайте точки на чертеже, затем «Завершить полосу». Потом можно тянуть и поворачивать ↻.';
+            } else {
+                if (miniPanel) miniPanel.style.display = 'none';
+                if (finishBtn) finishBtn.style.display = 'none';
+                if (sub === 'spot') {
+                    if (hint) hint.innerText = 'Светильник: тапните место на чертеже. Потом можно перетащить (отступы от стен видны).';
+                } else if (sub === 'chandelier') {
+                    if (hint) hint.innerText = 'Люстра: тапните место или «по центру». Потом можно перетащить.';
+                }
+            }
             draw();
         }
 
@@ -3092,13 +3167,47 @@
             document.getElementById('finish-strip-btn').style.display = 'none';
             hidePanel('install-panel');
             state = 'DONE';
-            statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово';
+            statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
             showOnlyPanel('results-panel');
+            // сохранить текущий в список для просмотра/правки перед отправкой
             if (isEditMode && editCeilingIndex >= 0) {
                 saveEditorToCompleted();
                 showCeilingSwitcher();
                 renderSwitcherBtns();
                 showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
+            } else if (points.length >= 3) {
+                try {
+                    const current = getCurrentCeilingPayload();
+                    if (current.points && current.points.length >= 3) {
+                        // обновить последний, если это тот же контур, иначе добавить
+                        let replaced = false;
+                        if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
+                            completedCeilings[editCeilingIndex] = current;
+                            replaced = true;
+                        } else if (completedCeilings.length) {
+                            const last = completedCeilings[completedCeilings.length - 1];
+                            if (last && last.points && last.points.length === current.points.length) {
+                                let same = true;
+                                for (let i = 0; i < current.points.length; i++) {
+                                    if (Math.abs(Number(last.points[i].x) - Number(current.points[i].x)) > 0.02 ||
+                                        Math.abs(Number(last.points[i].y) - Number(current.points[i].y)) > 0.02) {
+                                        same = false; break;
+                                    }
+                                }
+                                if (same) {
+                                    completedCeilings[completedCeilings.length - 1] = current;
+                                    replaced = true;
+                                    editCeilingIndex = completedCeilings.length - 1;
+                                }
+                            }
+                        }
+                        if (!replaced) {
+                            completedCeilings.push(current);
+                            editCeilingIndex = completedCeilings.length - 1;
+                        }
+                    }
+                } catch (e) { console.warn(e); }
+                showToast('Проверьте потолки в списке. Можно открыть ✏️ и править, затем «Отправить».', 4000);
             }
             updateCeilingsList();
             updateSavedChip();
@@ -3666,19 +3775,51 @@
             const list = document.getElementById('ceilings-list');
             if (!list) return;
             if (completedCeilings.length === 0) {
-                list.innerHTML = '<div style="color:#888;font-size:0.8rem;">Пока нет добавленных потолков. Можно сразу отправить текущий или добавить ещё.</div>';
+                list.innerHTML = '<div style="color:#888;font-size:0.8rem;">Пока нет потолков. Завершите монтаж («Готово») — потолок появится здесь для проверки.</div>';
                 return;
             }
             list.innerHTML = completedCeilings.map((c, idx) => {
                 const area = calcAreaM2(c.points || []);
                 const perim = ((c.sides_cm || []).reduce((a, b) => a + Number(b || 0), 0) / 100).toFixed(2);
+                const nFx = (c.fixtures || []).length;
                 const cur = idx === editCeilingIndex ? ' style="outline:2px solid #1a73e8;"' : '';
                 return `<div class="ceiling-item"${cur}>
-                    <span onclick="switchCeiling(${idx})" style="cursor:pointer;flex:1;">#${idx + 1}: ${c.material || '—'}, ${c.color || '—'} · ${area.toFixed(2)} м² · ${perim} м</span>
-                    <button type="button" onclick="switchCeiling(${idx})" title="Открыть">✏️</button>
+                    <span onclick="previewCeiling(${idx})" style="cursor:pointer;flex:1;">
+                        <b>#${idx + 1}</b>: ${c.material || '—'}, ${c.color || '—'} · ${area.toFixed(2)} м² · ${perim} м
+                        ${nFx ? ` · монтаж: ${nFx}` : ''}
+                    </span>
+                    <button type="button" onclick="previewCeiling(${idx})" title="Смотреть">👁</button>
+                    <button type="button" onclick="editCeilingFromList(${idx})" title="Править">✏️</button>
                     ${isEditMode ? '' : `<button type="button" onclick="removeCeiling(${idx})">✕</button>`}
                 </div>`;
             }).join('');
+        }
+
+        function previewCeiling(idx) {
+            if (idx < 0 || idx >= completedCeilings.length) return;
+            // сохранить текущий черновик, если правили
+            if (state === 'DONE' || state === 'INSTALL' || state === 'SELECT_MATERIAL') {
+                try {
+                    if (points.length >= 3 && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
+                        completedCeilings[editCeilingIndex] = getCurrentCeilingPayload();
+                    }
+                } catch (e) {}
+            }
+            loadCeilingIntoEditor(idx);
+            state = 'DONE';
+            statusText.innerText = `Просмотр потолка №${idx + 1}`;
+            showOnlyPanel('results-panel');
+            autoFitCamera();
+            draw();
+            showToast(`Потолок №${idx + 1} на чертеже. ✏️ — править, 📤 — отправить все`, 3500);
+        }
+
+        function editCeilingFromList(idx) {
+            previewCeiling(idx);
+            // показать действия правки
+            const ea = document.getElementById('edit-actions');
+            if (ea) ea.style.display = 'block';
+            showToast('Выберите: Размеры / Материал / Монтаж', 3000);
         }
 
         function addCeiling() {
@@ -4261,6 +4402,22 @@
                         const s2 = toScreen(b.x + nx * off, b.y + ny * off);
                         ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
                         ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2.5; ctx.stroke();
+                        // название карниза параллельно линии
+                        const cname = (f.name || f.label || 'Карниз').toString();
+                        const midSx = (s1.x + s2.x) / 2;
+                        const midSy = (s1.y + s2.y) / 2;
+                        let ang = Math.atan2(s2.y - s1.y, s2.x - s1.x);
+                        // читаемость: не вверх ногами
+                        if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
+                        ctx.save();
+                        ctx.translate(midSx, midSy);
+                        ctx.rotate(ang);
+                        ctx.fillStyle = '#0e6655';
+                        ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText(cname, 0, -4);
+                        ctx.restore();
                         return;
                     }
                     const sp = toScreen(f.x, f.y);
