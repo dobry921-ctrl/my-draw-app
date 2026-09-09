@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260908m</title>
+    <title>ПРО Замер потолков v20260908n</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -337,32 +337,30 @@
 
         <div id="lighting-tools" style="display:none;">
             <div class="panel-title" style="font-size:0.85rem;margin-bottom:4px;">Освещение</div>
-            <div class="hint" style="margin-bottom:6px;">Укажите количество → «Разместить» — объекты появятся <b>под чертежом</b>. Перетащите на места. При перетаскивании видны отступы от стен (см).</div>
-            <div class="color-row" style="margin-bottom:3px;">
-                <label style="min-width:90px;">Светильники:</label>
-                <input type="number" id="place-spot-count" value="4" min="0" max="60" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+            <div class="hint" style="margin-bottom:6px;">Добавьте объекты — появятся <b>внизу чертежа</b>. Перетащите на место. При перетаскивании — отступы от стен (см).</div>
+
+            <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <button type="button" class="btn btn-success" style="flex:1;padding:10px;font-size:0.85rem;" onclick="addOneSpot()">💡 Добавить светильник</button>
             </div>
-            <div class="color-row" style="margin-bottom:3px;">
-                <label style="min-width:90px;">Люстры:</label>
-                <input type="number" id="place-ch-count" value="0" min="0" max="10" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+            <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <button type="button" class="btn btn-success" style="flex:1;padding:10px;font-size:0.85rem;background:#c0392b;" onclick="addOneChandelier()">💡 Добавить люстру</button>
             </div>
-            <div class="color-row" style="margin-bottom:3px;">
-                <label style="min-width:90px;">Полосы:</label>
-                <input type="number" id="place-strip-count" value="0" min="0" max="8" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+
+            <div style="padding:6px;background:#fff8e6;border-radius:8px;border:1px solid #e8c96a;margin-bottom:6px;">
+                <div class="panel-title" style="font-size:0.8rem;margin-bottom:4px;">Световая полоса</div>
+                <div class="color-row" style="margin-bottom:4px;">
+                    <label style="min-width:70px;">Длина:</label>
+                    <input type="number" id="place-strip-len" value="150" min="20" max="800" step="5" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+                    <span style="font-size:0.75rem;">см</span>
+                </div>
+                <button type="button" class="btn btn-accent" style="width:100%;padding:10px;font-size:0.85rem;" onclick="addOneStrip()">➕ Добавить полосу</button>
+                <div class="hint" style="margin-top:4px;">После добавления: тап по полосе → ↻ повернуть на 90°.</div>
             </div>
-            <div class="color-row" style="margin-bottom:6px;">
-                <label style="min-width:90px;">Дл. полосы:</label>
-                <input type="number" id="place-strip-len" value="150" min="20" max="800" step="5" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
-                <span style="font-size:0.75rem;">см</span>
-            </div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                <button type="button" class="btn btn-success" style="flex:2;min-width:120px;padding:8px;font-size:0.85rem;" onclick="placeLightingBatch()">📍 Разместить</button>
-                <button type="button" class="btn btn-outline" style="flex:1;min-width:80px;padding:8px;font-size:0.8rem;" onclick="clearLightingFixtures()">Очистить свет</button>
-            </div>
-            <div style="margin-top:8px;padding:6px;background:#eef6ff;border-radius:8px;border:1px solid #b5d0f0;">
+
+            <div style="margin-top:4px;padding:6px;background:#eef6ff;border-radius:8px;border:1px solid #b5d0f0;">
                 <div class="panel-title" style="font-size:0.8rem;margin-bottom:4px;">Ряд равномерно вдоль стены</div>
                 <div class="color-row" style="margin-bottom:3px;">
-                    <label style="min-width:90px;">Кол-во в ряду:</label>
+                    <label style="min-width:90px;">Кол-во:</label>
                     <input type="number" id="even-row-count" value="5" min="2" max="40" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
                 </div>
                 <div class="color-row" style="margin-bottom:3px;">
@@ -375,10 +373,11 @@
                     <input type="number" id="even-row-inset" value="50" min="0" max="300" step="1" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
                     <span style="font-size:0.75rem;">см</span>
                 </div>
-                <button type="button" class="btn btn-accent" style="width:100%;padding:8px;font-size:0.8rem;margin-top:2px;" onclick="startEvenRowMode()">📏 Равномерно — затем тапните стену</button>
-                <div class="hint" id="even-row-hint" style="margin-top:4px;">Пример: 5 шт, 60 см от стены, 50 см от углов → точки встанут с равным шагом.</div>
+                <button type="button" class="btn btn-accent" style="width:100%;padding:8px;font-size:0.8rem;margin-top:2px;" onclick="startEvenRowMode()">📏 Равномерно — тапните стену</button>
+                <div class="hint" id="even-row-hint" style="margin-top:4px;">5 шт, 60 см от стены, 50 см от углов → равный шаг.</div>
             </div>
-            <div class="hint" style="margin-top:6px;">«Разместить» — склад по бокам + перетаскивание. «Равномерно» — сразу ряд вдоль выбранной стены.</div>
+
+            <button type="button" class="btn btn-outline" style="width:100%;margin-top:6px;padding:6px;font-size:0.8rem;" onclick="clearLightingFixtures()">Очистить всё освещение</button>
         </div>
 
         <div id="cornice-tools" style="display:none;">
@@ -1446,7 +1445,7 @@
                     placeEvenRowOnWall(worldPos);
                     return;
                 }
-                showToast('«Разместить» + перетаскивание, или «Равномерно» + тап по стене', 2500);
+                showToast('Добавьте светильник/люстру/полосу кнопкой, затем перетащите', 2500);
             }
         }
 
@@ -1568,78 +1567,21 @@
             if (floatBtn) floatBtn.style.display = 'none';
         }
 
-        function placeLightingBatch() {
-            if (points.length < 3) {
-                showToast('Сначала постройте контур', 2500);
-                return;
-            }
-            const nSpot = Math.max(0, Math.min(60, parseInt((document.getElementById('place-spot-count') || {}).value, 10) || 0));
-            const nCh = Math.max(0, Math.min(10, parseInt((document.getElementById('place-ch-count') || {}).value, 10) || 0));
-            const nStrip = Math.max(0, Math.min(8, parseInt((document.getElementById('place-strip-count') || {}).value, 10) || 0));
-            const stripLen = Math.max(20, Math.min(800, parseFloat((document.getElementById('place-strip-len') || {}).value) || 150));
-            if (nSpot + nCh + nStrip === 0) {
-                showToast('Укажите хотя бы одно количество', 2500);
-                return;
-            }
-
+        function stagingY() {
             const bb = bboxOf(points);
-            const gap = 32;
-            const leftX = bb.minX - 45;
-            const rightX = bb.maxX + 45;
-            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
-            let ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
-            let pn = fixtures.filter(f => f.type === 'strip').length + 1;
-
-            // светильники — слева вертикально
-            const startY = bb.minY;
-            for (let i = 0; i < nSpot; i++) {
-                const x = leftX;
-                const y = startY + i * gap;
-                const off = twoNearestEdgeOffsetsCm({ x, y });
-                fixtures.push({
-                    type: 'spot', x, y, label: 'S' + (sn++),
-                    offset_wall_a_cm: off.offset_wall_a_cm,
-                    offset_wall_b_cm: off.offset_wall_b_cm,
-                    staged: true
-                });
-            }
-            // люстры — справа
-            for (let i = 0; i < nCh; i++) {
-                fixtures.push({
-                    type: 'chandelier',
-                    x: rightX,
-                    y: startY + i * (gap + 6),
-                    label: 'L' + (ln++),
-                    staged: true
-                });
-            }
-            // полосы — справа ниже / чередуем гориз. и вертик.
-            for (let i = 0; i < nStrip; i++) {
-                const vertical = (i % 2 === 1);
-                let pts;
-                if (vertical) {
-                    const x = rightX + 20 + Math.floor(i / 2) * 24;
-                    const y0 = bb.minY + (bb.h || 100) * 0.15;
-                    pts = [{ x, y: y0 }, { x, y: y0 + stripLen }];
-                } else {
-                    const y = bb.maxY + 30 + Math.floor(i / 2) * 24;
-                    // лучше сбоку: слева от контура горизонтально
-                    const x0 = leftX - stripLen - 10;
-                    const yy = bb.minY + (bb.h || 100) * 0.3 + Math.floor(i / 2) * 28;
-                    pts = [{ x: x0, y: yy }, { x: x0 + stripLen, y: yy }];
-                }
-                fixtures.push({
-                    type: 'strip',
-                    points: pts,
-                    length_cm: Math.round(stripLen * 10) / 10,
-                    label: 'P' + (pn++),
-                    wall_offsets: stripWallOffsets(pts),
-                    x: pts[0].x, y: pts[0].y,
-                    staged: true
-                });
-            }
-
-            updateFixtureList();
+            // ниже уже лежащих staged-объектов
+            let y = bb.maxY + 40;
+            fixtures.forEach(f => {
+                if (f.y != null && f.y > y - 5) y = Math.max(y, f.y + 28);
+                if (f.points) f.points.forEach(p => { if (p.y > y - 5) y = Math.max(y, p.y + 28); });
+            });
+            return y;
+        }
+        function stagingXCenter() {
+            const bb = bboxOf(points);
+            return (bb.minX + bb.maxX) / 2;
+        }
+        function fitCameraWithFixtures() {
             const allX = points.map(p => p.x);
             const allY = points.map(p => p.y);
             fixtures.forEach(f => {
@@ -1647,16 +1589,80 @@
                 if (f.y != null) allY.push(f.y);
                 if (f.points) f.points.forEach(p => { allX.push(p.x); allY.push(p.y); });
             });
+            if (!allX.length) return;
             const minX = Math.min(...allX), maxX = Math.max(...allX);
             const minY = Math.min(...allY), maxY = Math.max(...allY);
             const w = maxX - minX || 1, h = maxY - minY || 1;
-            const pad = 0.25;
+            const pad = 0.28;
             camera.zoom = Math.min(canvas.width / (w * (1 + pad)), canvas.height / (h * (1 + pad)), 8);
             camera.x = canvas.width / 2 - ((minX + maxX) / 2) * camera.zoom;
             camera.y = canvas.height / 2 - ((minY + maxY) / 2) * camera.zoom;
+        }
+
+        function addOneSpot() {
+            if (points.length < 3) { showToast('Сначала постройте контур', 2500); return; }
+            const sn = fixtures.filter(f => f.type === 'spot').length + 1;
+            const x = stagingXCenter() + (sn - 1) * 30;
+            const y = stagingY();
+            const off = twoNearestEdgeOffsetsCm({ x, y });
+            fixtures.push({
+                type: 'spot', x, y, label: 'S' + sn,
+                offset_wall_a_cm: off.offset_wall_a_cm,
+                offset_wall_b_cm: off.offset_wall_b_cm,
+                staged: true
+            });
+            selectedFixtureIdx = fixtures.length - 1;
+            updateFixtureList();
+            fitCameraWithFixtures();
             collapseAfterPlace();
             draw();
-            showToast(`Готово: ${nSpot} спот. · ${nCh} люстр · ${nStrip} полос. Тяните на чертёж`, 3500);
+            showToast('Светильник S' + sn + ' — перетащите на место', 2500);
+        }
+
+        function addOneChandelier() {
+            if (points.length < 3) { showToast('Сначала постройте контур', 2500); return; }
+            const ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
+            const x = stagingXCenter() + (ln - 1) * 36;
+            const y = stagingY();
+            fixtures.push({
+                type: 'chandelier', x, y, label: 'L' + ln, staged: true
+            });
+            selectedFixtureIdx = fixtures.length - 1;
+            updateFixtureList();
+            fitCameraWithFixtures();
+            collapseAfterPlace();
+            draw();
+            showToast('Люстра L' + ln + ' — перетащите на место', 2500);
+        }
+
+        function addOneStrip() {
+            if (points.length < 3) { showToast('Сначала постройте контур', 2500); return; }
+            const stripLen = Math.max(20, Math.min(800, parseFloat((document.getElementById('place-strip-len') || {}).value) || 150));
+            const pn = fixtures.filter(f => f.type === 'strip').length + 1;
+            const y = stagingY();
+            const x0 = stagingXCenter() - stripLen / 2;
+            const pts = [{ x: x0, y }, { x: x0 + stripLen, y }];
+            fixtures.push({
+                type: 'strip',
+                points: pts,
+                length_cm: Math.round(stripLen * 10) / 10,
+                label: 'P' + pn,
+                wall_offsets: stripWallOffsets(pts),
+                x: pts[0].x, y: pts[0].y,
+                staged: true
+            });
+            selectedFixtureIdx = fixtures.length - 1;
+            updateFixtureList();
+            fitCameraWithFixtures();
+            collapseAfterPlace();
+            updateLightDragBar();
+            draw();
+            showToast('Полоса P' + pn + ' (' + stripLen + ' см). Тап → ↻ поворот, тяните на место', 3500);
+        }
+
+        // совместимость, если где-то остался вызов
+        function placeLightingBatch() {
+            addOneSpot();
         }
 
         function clearLightingFixtures() {
