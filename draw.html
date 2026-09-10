@@ -1510,14 +1510,6 @@
             const bar = document.getElementById('light-drag-bar');
             if (bar) bar.style.display = 'none';
         }
-        function hideAiMiniBar() {
-            // панель AI/подсказок может отсутствовать — не роняем «Готово»
-            const ids = ['ai-mini-bar', 'ai-mini-panel', 'ai-hint-bar'];
-            for (let i = 0; i < ids.length; i++) {
-                const el = document.getElementById(ids[i]);
-                if (el) el.style.display = 'none';
-            }
-        }
         function updateLightDragBar() {
             const f = selectedFixtureIdx >= 0 ? fixtures[selectedFixtureIdx] : null;
             const isStrip = f && f.type === 'strip';
@@ -2159,12 +2151,10 @@
             stripDraft = [];
             selectedFixtureIdx = -1;
             snapGuides = [];
-            try { hideAiMiniBar(); } catch (e) {}
-            try { hideLightDragBar(); } catch (e) {}
-            var _smp = document.getElementById('strip-mini-panel');
-            if (_smp) _smp.style.display = 'none';
-            var _fsb = document.getElementById('finish-strip-btn');
-            if (_fsb) _fsb.style.display = 'none';
+            hideAiMiniBar();
+            hideLightDragBar();
+            document.getElementById('strip-mini-panel').style.display = 'none';
+            document.getElementById('finish-strip-btn').style.display = 'none';
             hidePanel('install-panel');
             state = 'DONE';
             statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
@@ -3013,10 +3003,28 @@
                     if (!a || !b || !a.points || !b.points) return false;
                     if (a.points.length !== b.points.length) return false;
                     for (var i = 0; i < a.points.length; i++) {
-                        if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
-                        if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
+                        if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.5) return false;
+                        if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.5) return false;
                     }
+                    // доп. сверка площади/периметра если есть
+                    if (a.area != null && b.area != null && Math.abs(Number(a.area) - Number(b.area)) > 0.05) return false;
                     return true;
+                }
+                function dedupeCeilingsList(list) {
+                    var out = [];
+                    for (var i = 0; i < list.length; i++) {
+                        var c = list[i];
+                        var found = false;
+                        for (var j = 0; j < out.length; j++) {
+                            if (sameCeilingGeom(out[j], c)) {
+                                out[j] = c; // более свежая версия
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) out.push(c);
+                    }
+                    return out;
                 }
                 if (points.length >= 3) {
                     try {
@@ -3029,12 +3037,22 @@
                                 if (last && sameCeilingGeom(last, current)) {
                                     completedCeilings[completedCeilings.length - 1] = current;
                                 } else {
-                                    completedCeilings.push(current);
+                                    // не дублировать, если такой контур уже есть в списке
+                                    var exists = false;
+                                    for (var ci = 0; ci < completedCeilings.length; ci++) {
+                                        if (sameCeilingGeom(completedCeilings[ci], current)) {
+                                            completedCeilings[ci] = current;
+                                            exists = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!exists) completedCeilings.push(current);
                                 }
                             }
                         }
                     } catch (e) { console.warn(e); }
                 }
+                completedCeilings = dedupeCeilingsList(completedCeilings);
                 if (!completedCeilings.length) {
                     note('Нет потолка для отправки.');
                     return;
@@ -3207,8 +3225,24 @@
 
         function copyData() {
             try {
-                const all = [...completedCeilings];
-                if (state === 'DONE' && points.length >= 3) all.push(getCurrentCeilingPayload());
+                let all = [...completedCeilings];
+                if (state === 'DONE' && points.length >= 3) {
+                    const cur = getCurrentCeilingPayload();
+                    let exists = false;
+                    for (let i = 0; i < all.length; i++) {
+                        if (all[i].points && cur.points && all[i].points.length === cur.points.length) {
+                            let same = true;
+                            for (let k = 0; k < cur.points.length; k++) {
+                                if (Math.abs(Number(all[i].points[k].x) - Number(cur.points[k].x)) > 0.5 ||
+                                    Math.abs(Number(all[i].points[k].y) - Number(cur.points[k].y)) > 0.5) {
+                                    same = false; break;
+                                }
+                            }
+                            if (same) { all[i] = cur; exists = true; break; }
+                        }
+                    }
+                    if (!exists) all.push(cur);
+                }
                 const data = { type: 'drawing_set', ceilings: all };
                 const str = JSON.stringify(data, null, 2);
                 navigator.clipboard.writeText(str).then(() => showToast('Скопировано.', 2000))
