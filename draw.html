@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20260909c</title>
+    <title>ПРО Замер потолков v20260909b</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -235,22 +235,6 @@
             border: 1px solid #c5d9f0;
         }
         #light-drag-bar .btn { padding: 6px 12px; font-size: 0.75rem; }
-        #ai-mini-bar {
-            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
-            background: rgba(255,255,255,0.96);
-            border-radius: 14px; padding: 8px 12px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.28);
-            z-index: 120; display: none;
-            align-items: center; gap: 8px; flex-wrap: wrap;
-            max-width: 96%; justify-content: center;
-            backdrop-filter: blur(6px);
-            border: 1px solid #c5d9f0;
-        }
-        #ai-mini-bar .ai-info {
-            font-size: 0.75rem; font-weight: 600; color: #1a73e8;
-            white-space: nowrap;
-        }
-        #ai-mini-bar .btn { padding: 6px 12px; font-size: 0.75rem; }
     </style>
 </head>
 <body>
@@ -462,11 +446,6 @@
             return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
         }
 
-        function requireTelegramWebApp() {
-            const webApp = getTelegramWebApp();
-            if (!webApp) throw new Error("Telegram WebApp API недоступен. Откройте Draw через кнопку Telegram.");
-            return webApp;
-        }
 
         function resizeCanvas() {
             canvas.width = container.clientWidth;
@@ -1472,10 +1451,6 @@
                 return;
             }
             if (installMode === 'lighting') {
-                if (evenRowMode) {
-                    placeEvenRowOnWall(worldPos);
-                    return;
-                }
                 if (lightingSub === 'strip') {
                     stripDraft.push({ x: worldPos.x, y: worldPos.y });
                     stripPreviewLen = polylineLength(stripDraft);
@@ -1521,82 +1496,6 @@
             }
         }
 
-        let evenRowMode = false;
-
-        function startEvenRowMode() {
-            if (points.length < 3) {
-                showToast('Сначала постройте контур', 2500);
-                return;
-            }
-            evenRowMode = true;
-            const hint = document.getElementById('even-row-hint');
-            if (hint) hint.innerText = 'Тапните стену на чертеже — ряд встанет равномерно';
-            // свернуть панель для удобства тапа
-            const panel = document.getElementById('install-panel');
-            if (panel) panel.classList.remove('active');
-            lastActivePanelId = 'install-panel';
-            showLightDragBar();
-            showToast('Тапните стену для ряда', 3000);
-            draw();
-        }
-
-        function placeEvenRowOnWall(worldPos) {
-            evenRowMode = false;
-            const ei = nearestEdgeIndex(worldPos);
-            if (ei < 0 || points.length < 2) {
-                showToast('Не удалось определить стену', 2000);
-                return;
-            }
-            const n = Math.max(2, Math.min(40, parseInt((document.getElementById('even-row-count') || {}).value, 10) || 5));
-            const offset = Math.max(1, parseFloat((document.getElementById('even-row-offset') || {}).value) || 60);
-            let inset = Math.max(0, parseFloat((document.getElementById('even-row-inset') || {}).value) || 0);
-
-            const a = points[ei], b = points[(ei + 1) % points.length];
-            const dx = b.x - a.x, dy = b.y - a.y;
-            const len = Math.hypot(dx, dy) || 1;
-            const ux = dx / len, uy = dy / len;
-            let nx = -uy, ny = ux;
-            // внутрь контура
-            let cx = 0, cy = 0;
-            points.forEach(p => { cx += p.x; cy += p.y; });
-            cx /= points.length; cy /= points.length;
-            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-            if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
-
-            // если отступы от углов слишком большие — уменьшить
-            if (inset * 2 >= len - 1) {
-                inset = Math.max(0, (len - 2) / 2);
-            }
-            const usable = Math.max(1, len - 2 * inset);
-            const step = n === 1 ? 0 : usable / (n - 1);
-
-            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
-            const lab = edges[ei] ? edges[ei].label : (getLetter(ei) + '-' + getLetter((ei + 1) % points.length));
-
-            for (let i = 0; i < n; i++) {
-                const along = inset + i * step;
-                const x = a.x + ux * along + nx * offset;
-                const y = a.y + uy * along + ny * offset;
-                const off = twoNearestEdgeOffsetsCm({ x, y });
-                fixtures.push({
-                    type: 'spot',
-                    x, y,
-                    label: 'S' + (sn++),
-                    offset_wall_a_cm: off.offset_wall_a_cm,
-                    offset_wall_b_cm: off.offset_wall_b_cm
-                });
-            }
-
-            // подсветка стены кратко через toast
-            updateFixtureList();
-            showLightDragBar();
-            autoFitCamera();
-            draw();
-            const realStep = n > 1 ? (usable / (n - 1)) : 0;
-            showToast(`${n} светильников вдоль ${lab}: отступ ${offset} см, шаг ${realStep.toFixed(1)} см`, 4000);
-            const hint = document.getElementById('even-row-hint');
-            if (hint) hint.innerText = `Готово: ${n} шт вдоль ${lab}. Можно править перетаскиванием.`;
-        }
 
         let selectedFixtureIdx = -1;
         let snapGuides = []; // [{x1,y1,x2,y2}] world
@@ -1691,51 +1590,8 @@
             showToast('Светильник S' + sn + ' — перетащите на место', 2500);
         }
 
-        function addOneChandelier() {
-            if (points.length < 3) { showToast('Сначала постройте контур', 2500); return; }
-            const ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
-            const x = stagingXCenter() + (ln - 1) * 36;
-            const y = stagingY();
-            fixtures.push({
-                type: 'chandelier', x, y, label: 'L' + ln, staged: true
-            });
-            selectedFixtureIdx = fixtures.length - 1;
-            updateFixtureList();
-            fitCameraWithFixtures();
-            collapseAfterPlace();
-            draw();
-            showToast('Люстра L' + ln + ' — перетащите на место', 2500);
-        }
-
-        function addOneStrip() {
-            if (points.length < 3) { showToast('Сначала постройте контур', 2500); return; }
-            const stripLen = Math.max(20, Math.min(800, parseFloat((document.getElementById('place-strip-len') || {}).value) || 150));
-            const pn = fixtures.filter(f => f.type === 'strip').length + 1;
-            const y = stagingY();
-            const x0 = stagingXCenter() - stripLen / 2;
-            const pts = [{ x: x0, y }, { x: x0 + stripLen, y }];
-            fixtures.push({
-                type: 'strip',
-                points: pts,
-                length_cm: Math.round(stripLen * 10) / 10,
-                label: 'P' + pn,
-                wall_offsets: stripWallOffsets(pts),
-                x: pts[0].x, y: pts[0].y,
-                staged: true
-            });
-            selectedFixtureIdx = fixtures.length - 1;
-            updateFixtureList();
-            fitCameraWithFixtures();
-            collapseAfterPlace();
-            updateLightDragBar();
-            draw();
-            showToast('Полоса P' + pn + ' (' + stripLen + ' см). Тап → ↻ поворот, тяните на место', 3500);
-        }
 
         // совместимость, если где-то остался вызов
-        function placeLightingBatch() {
-            addOneSpot();
-        }
 
         function clearLightingFixtures() {
             fixtures = fixtures.filter(f => f.type === 'cornice');
@@ -1978,7 +1834,6 @@
             lightingSub = sub || 'spot';
             stripDraft = [];
             stripPreviewLen = 0;
-            evenRowMode = false;
             ['spot', 'chandelier', 'strip'].forEach(s => {
                 const b = document.getElementById('lmode-' + s);
                 if (b) b.classList.toggle('active', s === sub);
@@ -2012,7 +1867,6 @@
         //  Точная расстановка по размерам клиента
         // =====================================================================
         let exactEdgeIndex = 0;
-        let exactPreview = null; // { spots, strips }
 
         function refreshExactEdgeSelect() {
             const sel = document.getElementById('exact-edge-select');
@@ -2033,53 +1887,6 @@
             };
         }
 
-        function selectExactEdge(ei) {
-            exactEdgeIndex = ei;
-            const sel = document.getElementById('exact-edge-select');
-            if (sel) sel.value = String(ei);
-            const lab = edges[ei] ? edges[ei].label : ei;
-            const h = document.getElementById('exact-edge-hint');
-            if (h) h.innerText = 'Выбрана стена: ' + lab + ' (тапните другую при необходимости)';
-            showToast('Стена-ориентир: ' + lab, 2000);
-            draw();
-        }
-
-        function updateExactForm() {
-            const what = (document.getElementById('exact-what') || {}).value || 'row';
-            const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
-            show('exact-count-row', what === 'row' || what === 'grid');
-            show('exact-step-row', what === 'row' || what === 'grid');
-            show('exact-len-row', what === 'strip');
-            show('exact-rows-row', what === 'grid');
-            show('exact-rowstep-row', what === 'grid');
-            const hint = document.getElementById('exact-hint');
-            if (!hint) return;
-            if (what === 'row') hint.innerText = 'Ряд вдоль стены: отступ от стены, отступ первого от начала стены, кол-во, шаг между.';
-            else if (what === 'one') hint.innerText = 'Один светильник: отступ от выбранной стены + отступ от начала этой стены.';
-            else if (what === 'strip') hint.innerText = 'Полоса параллельно стене: отступ от стены, от начала, длина полосы.';
-            else if (what === 'grid') hint.innerText = 'Сетка: отступ от стены, от начала, в ряду, шаг в ряду, число рядов, шаг между рядами.';
-        }
-
-        function edgeFrame(ei) {
-            // локальная система: origin = points[ei], axis along edge, inward normal
-            const a = points[ei], b = points[(ei + 1) % points.length];
-            const dx = b.x - a.x, dy = b.y - a.y;
-            const len = Math.hypot(dx, dy) || 1;
-            const ux = dx / len, uy = dy / len;
-            let nx = -uy, ny = ux;
-            const cen = polygonCentroid(points);
-            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-            if ((cen.x - mx) * nx + (cen.y - my) * ny < 0) { nx = -nx; ny = -ny; }
-            return { a, b, len, ux, uy, nx, ny };
-        }
-
-        function pointFromEdgeMeasures(ei, alongCm, offsetCm) {
-            const f = edgeFrame(ei);
-            return {
-                x: f.a.x + f.ux * alongCm + f.nx * offsetCm,
-                y: f.a.y + f.uy * alongCm + f.ny * offsetCm
-            };
-        }
 
         function readExactParams() {
             const what = (document.getElementById('exact-what') || {}).value || 'row';
@@ -2099,100 +1906,6 @@
             };
         }
 
-        function computeExactLayout(p) {
-            const spots = [];
-            const strips = [];
-            const f = edgeFrame(p.ei);
-
-            if (p.what === 'one') {
-                const pt = pointFromEdgeMeasures(p.ei, p.start, p.offset);
-                if (pointInPolygon(pt, points)) spots.push(pt);
-            } else if (p.what === 'row') {
-                for (let i = 0; i < p.count; i++) {
-                    const along = p.start + i * p.step;
-                    if (along < -1 || along > f.len + 1) continue;
-                    const pt = pointFromEdgeMeasures(p.ei, along, p.offset);
-                    if (pointInPolygon(pt, points)) spots.push(pt);
-                }
-            } else if (p.what === 'grid') {
-                for (let r = 0; r < p.rows; r++) {
-                    for (let i = 0; i < p.count; i++) {
-                        const along = p.start + i * p.step;
-                        const off = p.offset + r * p.rowStep;
-                        const pt = pointFromEdgeMeasures(p.ei, along, off);
-                        if (pointInPolygon(pt, points)) spots.push(pt);
-                    }
-                }
-            } else if (p.what === 'strip') {
-                const p0 = pointFromEdgeMeasures(p.ei, p.start, p.offset);
-                const p1 = pointFromEdgeMeasures(p.ei, p.start + p.len, p.offset);
-                // подрезать если вылезли за длину стены — всё равно ставим по числам клиента
-                if (pointInPolygon(p0, points) || pointInPolygon(p1, points)) {
-                    strips.push({
-                        points: [p0, p1],
-                        length_cm: Math.round(Math.hypot(p1.x - p0.x, p1.y - p0.y) * 10) / 10
-                    });
-                }
-            }
-            return { spots, strips };
-        }
-
-        function exactPreviewMeasures() {
-            if (points.length < 3) {
-                showToast('Нет контура', 2000);
-                return;
-            }
-            refreshExactEdgeSelect();
-            const p = readExactParams();
-            exactPreview = computeExactLayout(p);
-            const ns = exactPreview.spots.length, np = exactPreview.strips.length;
-            if (!ns && !np) {
-                showToast('Точки вне контура — проверьте стену, отступы и шаг', 3500);
-                exactPreview = null;
-                draw();
-                return;
-            }
-            showToast(`Превью: ${ns} точ., ${np} полос. «Поставить» — зафиксировать`, 3000);
-            draw();
-        }
-
-        function exactPlaceByMeasures() {
-            if (points.length < 3) {
-                showToast('Нет контура', 2000);
-                return;
-            }
-            refreshExactEdgeSelect();
-            const p = readExactParams();
-            const layout = computeExactLayout(p);
-            if (!layout.spots.length && !layout.strips.length) {
-                showToast('Нечего ставить — точки вне контура. Проверьте размеры.', 3500);
-                return;
-            }
-            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
-            let pn = fixtures.filter(f => f.type === 'strip').length + 1;
-            layout.spots.forEach(pt => {
-                const off = twoNearestEdgeOffsetsCm(pt);
-                fixtures.push({
-                    type: 'spot', x: pt.x, y: pt.y, label: 'S' + (sn++),
-                    offset_wall_a_cm: off.offset_wall_a_cm,
-                    offset_wall_b_cm: off.offset_wall_b_cm
-                });
-            });
-            layout.strips.forEach(st => {
-                fixtures.push({
-                    type: 'strip',
-                    points: st.points.map(q => ({ x: q.x, y: q.y })),
-                    length_cm: st.length_cm,
-                    label: 'P' + (pn++),
-                    wall_offsets: stripWallOffsets(st.points),
-                    x: st.points[0].x, y: st.points[0].y
-                });
-            });
-            exactPreview = null;
-            updateFixtureList();
-            showToast(`Добавлено: ${layout.spots.length} светильников, ${layout.strips.length} полос`, 3000);
-            draw();
-        }
 
         function placeChandelierCenter() {
             if (points.length < 3) return;
@@ -2211,10 +1924,6 @@
         // =====================================================================
         //  ИИ-план освещения (споты + люстры + полосы)
         // =====================================================================
-        let aiSpotPreview = null;    // { spots, chandeliers, strips } или null
-        let aiSpotVariants = [];     // массив планов
-        let aiSpotVariantIdx = 0;
-        let aiSpotSeed = 1;
 
         function polygonCentroid(pts) {
             let cx = 0, cy = 0, a = 0;
@@ -2243,11 +1952,6 @@
             return d;
         }
 
-        function pointInPolygonStrict(pt, poly, marginCm) {
-            if (!pointInPolygon(pt, poly)) return false;
-            if (!marginCm || marginCm <= 0) return true;
-            return minDistToBoundary(pt, poly) >= marginCm - 0.01;
-        }
 
         function bboxOf(pts) {
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -2258,806 +1962,6 @@
             return { minX, maxX, minY, maxY, w: maxX - minX, h: maxY - minY };
         }
 
-        function effectiveMargin(requested) {
-            const bb = bboxOf(points);
-            const roomMin = Math.min(bb.w, bb.h);
-            // не больше 22% меньшей стороны и не меньше 15 см (если комната позволяет)
-            const maxM = Math.max(12, roomMin * 0.22);
-            let m = Math.min(requested, maxM);
-            if (m < 15 && roomMin > 80) m = 15;
-            return m;
-        }
-
-        function mulberry32(a) {
-            return function () {
-                let t = a += 0x6D2B79F5;
-                t = Math.imul(t ^ t >>> 15, t | 1);
-                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-                return ((t ^ t >>> 14) >>> 0) / 4294967296;
-            };
-        }
-
-        // Плотный набор кандидатов строго внутри контура с полным отступом
-        function collectInteriorCandidates(margin, stepCm) {
-            const bb = bboxOf(points);
-            const step = Math.max(6, stepCm || Math.max(10, Math.min(bb.w, bb.h) / 22));
-            const cand = [];
-            for (let y = bb.minY + margin; y <= bb.maxY - margin + 0.01; y += step) {
-                for (let x = bb.minX + margin; x <= bb.maxX - margin + 0.01; x += step) {
-                    const p = { x, y };
-                    if (pointInPolygonStrict(p, points, margin)) cand.push(p);
-                }
-            }
-            if (cand.length < Math.max(8, 4)) {
-                const m2 = Math.max(8, margin * 0.65);
-                const step2 = step * 0.55;
-                for (let y = bb.minY + m2; y <= bb.maxY - m2 + 0.01; y += step2) {
-                    for (let x = bb.minX + m2; x <= bb.maxX - m2 + 0.01; x += step2) {
-                        const p = { x, y };
-                        if (pointInPolygonStrict(p, points, m2)) cand.push(p);
-                    }
-                }
-            }
-            return cand;
-        }
-
-        // Затянуть точку внутрь, если она слишком близко к стене
-        function pullInside(pt, margin) {
-            let p = { x: pt.x, y: pt.y };
-            const cen = polygonCentroid(points);
-            for (let iter = 0; iter < 14; iter++) {
-                if (pointInPolygonStrict(p, points, margin)) return p;
-                // к центру
-                p.x = p.x * 0.72 + cen.x * 0.28;
-                p.y = p.y * 0.72 + cen.y * 0.28;
-            }
-            // последнее: если всё ещё плохо — взять ближайший валидный кандидат
-            if (!pointInPolygonStrict(p, points, margin * 0.7)) {
-                const dens = collectInteriorCandidates(margin * 0.8, 12);
-                if (dens.length) {
-                    dens.sort((a, b) => Math.hypot(a.x - pt.x, a.y - pt.y) - Math.hypot(b.x - pt.x, b.y - pt.y));
-                    return dens[0];
-                }
-            }
-            return pointInPolygon(p, points) ? p : null;
-        }
-
-        function enforceMarginAll(arr, margin) {
-            const out = [];
-            for (const p of arr) {
-                const q = pullInside(p, margin);
-                if (q) out.push(q);
-            }
-            // убрать дубликаты слишком близкие
-            const clean = [];
-            for (const p of out) {
-                if (clean.some(c => Math.hypot(c.x - p.x, c.y - p.y) < 8)) continue;
-                clean.push(p);
-            }
-            return clean;
-        }
-
-        // Жадный farthest-point
-        function pickFarthestPoints(candidates, n, seed, existing) {
-            if (!candidates.length || n <= 0) return [];
-            const rng = mulberry32(seed);
-            const pool = candidates.slice();
-            for (let i = pool.length - 1; i > 0; i--) {
-                const j = Math.floor(rng() * (i + 1));
-                const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
-            }
-            const chosen = (existing || []).map(p => ({ x: p.x, y: p.y }));
-            if (!chosen.length) {
-                const cen = polygonCentroid(points);
-                // сортировка: сначала по dist to boundary (дальше от стен), потом ближе к центру
-                pool.sort((a, b) => {
-                    const wa = minDistToBoundary(a, points), wb = minDistToBoundary(b, points);
-                    if (Math.abs(wa - wb) > 5) return wb - wa;
-                    return Math.hypot(a.x - cen.x, a.y - cen.y) - Math.hypot(b.x - cen.x, b.y - cen.y);
-                });
-                const startIdx = Math.min(pool.length - 1, Math.floor(rng() * Math.min(4, pool.length)));
-                chosen.push({ x: pool[startIdx].x, y: pool[startIdx].y });
-            }
-            while (chosen.length < n && pool.length) {
-                let best = -1, bestScore = -1;
-                for (let i = 0; i < pool.length; i++) {
-                    const p = pool[i];
-                    let minD = Infinity;
-                    for (const c of chosen) {
-                        const d = Math.hypot(p.x - c.x, p.y - c.y);
-                        if (d < minD) minD = d;
-                    }
-                    const wallBonus = minDistToBoundary(p, points) * 0.35;
-                    const score = minD + wallBonus;
-                    if (score > bestScore) { bestScore = score; best = i; }
-                }
-                if (best < 0) break;
-                chosen.push({ x: pool[best].x, y: pool[best].y });
-                pool.splice(best, 1);
-            }
-            return (existing && existing.length) ? chosen.slice(existing.length) : chosen;
-        }
-
-        // Lloyd relaxation — «размазывает» точки равномерно внутри области
-        function lloydRelax(pts, margin, iterations) {
-            if (!pts.length) return pts;
-            const dens = collectInteriorCandidates(margin, Math.max(8, Math.min(bboxOf(points).w, bboxOf(points).h) / 25));
-            if (dens.length < 3) return enforceMarginAll(pts, margin);
-            let cur = pts.map(p => ({ x: p.x, y: p.y }));
-            const iters = iterations || 8;
-            for (let it = 0; it < iters; it++) {
-                const cells = cur.map(() => ({ sx: 0, sy: 0, n: 0 }));
-                for (const d of dens) {
-                    let bi = 0, bd = Infinity;
-                    for (let i = 0; i < cur.length; i++) {
-                        const dd = (d.x - cur[i].x) * (d.x - cur[i].x) + (d.y - cur[i].y) * (d.y - cur[i].y);
-                        if (dd < bd) { bd = dd; bi = i; }
-                    }
-                    cells[bi].sx += d.x; cells[bi].sy += d.y; cells[bi].n++;
-                }
-                for (let i = 0; i < cur.length; i++) {
-                    if (cells[i].n > 0) {
-                        cur[i].x = cells[i].sx / cells[i].n;
-                        cur[i].y = cells[i].sy / cells[i].n;
-                    }
-                    const fixed = pullInside(cur[i], margin);
-                    if (fixed) cur[i] = fixed;
-                }
-            }
-            return enforceMarginAll(cur, margin);
-        }
-
-        function placeSpotsSmart(n, margin, seed, style) {
-            if (n <= 0) return [];
-            margin = effectiveMargin(margin);
-            const dens = collectInteriorCandidates(margin, 10);
-            if (!dens.length) {
-                // совсем туго — уменьшаем margin
-                margin = effectiveMargin(margin * 0.6);
-                const dens2 = collectInteriorCandidates(margin, 8);
-                if (!dens2.length) return [];
-                let pts = pickFarthestPoints(dens2, n, seed, []);
-                return lloydRelax(pts, margin, 6);
-            }
-
-            let initial;
-            if (style === 'perimeter') {
-                // кандидаты ближе к стенам, но всё равно ≥ margin
-                const periCand = dens.filter(p => {
-                    const d = minDistToBoundary(p, points);
-                    return d >= margin && d < margin * 2.2;
-                });
-                initial = pickFarthestPoints(periCand.length >= n ? periCand : dens, n, seed, []);
-            } else if (style === 'center') {
-                const cen = polygonCentroid(points);
-                dens.sort((a, b) => Math.hypot(a.x - cen.x, a.y - cen.y) - Math.hypot(b.x - cen.x, b.y - cen.y));
-                initial = dens.slice(0, Math.min(n * 3, dens.length));
-                initial = pickFarthestPoints(initial, n, seed, []);
-            } else if (style === 'rows') {
-                // начальная сетка рядов из dens
-                initial = pickFarthestPoints(dens, n, seed, []);
-            } else {
-                // grid / mixed / random — farthest по всей области
-                initial = pickFarthestPoints(dens, n, seed + (style === 'random' ? 33 : 0), []);
-            }
-
-            // релаксация для равномерности
-            let result = lloydRelax(initial, margin, style === 'perimeter' ? 4 : 10);
-            // если недобор — добрать
-            if (result.length < n) {
-                const extra = pickFarthestPoints(dens, n - result.length, seed + 9, result);
-                result = enforceMarginAll(result.concat(extra), margin);
-            }
-            // финальная проверка margin
-            result = result.filter(p => pointInPolygonStrict(p, points, margin * 0.92));
-            return result.slice(0, n);
-        }
-
-        function generateGridSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'grid'); }
-        function generateRowsSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'rows'); }
-        function generatePerimeterSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'perimeter'); }
-        function generateCenterSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'center'); }
-        function generateRandomSpots(n, margin, seed) { return placeSpotsSmart(n, margin, seed, 'random'); }
-
-        // Явная сетка rows×cols внутри отступа (сильно отличается от farthest)
-        function placeRectGrid(n, margin, seed, forceRows, forceCols, alongLong) {
-            margin = effectiveMargin(margin);
-            const bb = bboxOf(points);
-            const alongX = alongLong == null ? (bb.w >= bb.h) : !!alongLong;
-            let cols, rows;
-            if (forceRows && forceCols) {
-                rows = forceRows; cols = forceCols;
-            } else {
-                const aspect = (bb.w - 2 * margin) / Math.max(1, bb.h - 2 * margin);
-                cols = Math.max(1, Math.round(Math.sqrt(n * aspect)));
-                rows = Math.max(1, Math.ceil(n / cols));
-                while (cols * rows < n) { if (aspect >= 1) cols++; else rows++; }
-                if (forceRows) { rows = forceRows; cols = Math.ceil(n / rows); }
-                if (forceCols) { cols = forceCols; rows = Math.ceil(n / cols); }
-            }
-            // для cols-стиля меняем ориентацию
-            if (alongLong === false) {
-                const t = rows; rows = cols; cols = t;
-            }
-            const rng = mulberry32(seed);
-            const usableW = Math.max(1, bb.w - 2 * margin);
-            const usableH = Math.max(1, bb.h - 2 * margin);
-            const stepX = cols > 1 ? usableW / (cols - 1) : 0;
-            const stepY = rows > 1 ? usableH / (rows - 1) : 0;
-            const ox = (rng() - 0.5) * Math.min(stepX, 8) * 0.3;
-            const oy = (rng() - 0.5) * Math.min(stepY, 8) * 0.3;
-            const cand = [];
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    if (cand.length >= n) break;
-                    const x = bb.minX + margin + (cols === 1 ? usableW / 2 : c * stepX) + ox;
-                    const y = bb.minY + margin + (rows === 1 ? usableH / 2 : r * stepY) + oy;
-                    const p = pullInside({ x, y }, margin);
-                    if (p && pointInPolygonStrict(p, points, margin * 0.9)) cand.push(p);
-                }
-            }
-            if (cand.length < n) {
-                const extra = placeSpotsSmart(n - cand.length, margin, seed + 3, 'grid');
-                extra.forEach(p => {
-                    if (cand.length >= n) return;
-                    if (!cand.some(c => Math.hypot(c.x - p.x, c.y - p.y) < 10)) cand.push(p);
-                });
-            }
-            return cand.slice(0, n);
-        }
-
-        // Симметрия: зеркало по осям через центроид
-        function placeSymmetric(n, margin, seed, mode) {
-            // mode: 'mirrorX' | 'mirrorY' | 'quad' | 'rotate180'
-            margin = effectiveMargin(margin);
-            const cen = polygonCentroid(points);
-            const half = Math.ceil(n / (mode === 'quad' ? 4 : 2));
-            // генерим половину (четверть) в одной зоне
-            const dens = collectInteriorCandidates(margin, 10);
-            let zone;
-            if (mode === 'mirrorX' || mode === 'quad') {
-                // правая половина
-                zone = dens.filter(p => p.x >= cen.x - 2);
-            } else if (mode === 'mirrorY') {
-                zone = dens.filter(p => p.y >= cen.y - 2);
-            } else {
-                zone = dens.filter(p => p.x >= cen.x - 2 || p.y >= cen.y - 2);
-            }
-            if (zone.length < half) zone = dens;
-            let seeds = pickFarthestPoints(zone, half, seed, []);
-            seeds = lloydRelax(seeds, margin, 5);
-
-            const out = [];
-            const add = (p) => {
-                const q = pullInside(p, margin);
-                if (!q) return;
-                if (out.some(o => Math.hypot(o.x - q.x, o.y - q.y) < 10)) return;
-                if (pointInPolygonStrict(q, points, margin * 0.85)) out.push(q);
-            };
-
-            seeds.forEach(p => {
-                add(p);
-                if (mode === 'mirrorX' || mode === 'quad' || mode === 'rotate180') {
-                    add({ x: 2 * cen.x - p.x, y: p.y });
-                }
-                if (mode === 'mirrorY' || mode === 'quad') {
-                    add({ x: p.x, y: 2 * cen.y - p.y });
-                }
-                if (mode === 'quad') {
-                    add({ x: 2 * cen.x - p.x, y: 2 * cen.y - p.y });
-                }
-                if (mode === 'rotate180') {
-                    add({ x: 2 * cen.x - p.x, y: 2 * cen.y - p.y });
-                }
-            });
-
-            // если недобор — добрать симметрично
-            if (out.length < n) {
-                const extra = placeSpotsSmart(n - out.length, margin, seed + 11, 'grid');
-                extra.forEach(p => {
-                    add(p);
-                    add({ x: 2 * cen.x - p.x, y: 2 * cen.y - p.y });
-                });
-            }
-            return out.slice(0, n);
-        }
-
-        // Крест / ромб от центра
-        function placeCross(n, margin, seed) {
-            margin = effectiveMargin(margin);
-            const cen = polygonCentroid(points);
-            const bb = bboxOf(points);
-            const out = [];
-            if (pointInPolygonStrict(cen, points, margin * 0.5)) out.push({ x: cen.x, y: cen.y });
-            const arms = Math.max(1, Math.ceil((n - 1) / 4));
-            const maxR = Math.min(bb.w, bb.h) / 2 - margin;
-            for (let a = 1; a <= arms && out.length < n; a++) {
-                const t = a / (arms + 0.5);
-                const r = maxR * t;
-                const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-                // чуть повернуть по seed
-                const ang0 = ((seed % 5) * Math.PI) / 10;
-                dirs.forEach(([dx, dy]) => {
-                    if (out.length >= n) return;
-                    const ca = Math.cos(ang0), sa = Math.sin(ang0);
-                    const rx = dx * ca - dy * sa, ry = dx * sa + dy * ca;
-                    const p = pullInside({ x: cen.x + rx * r, y: cen.y + ry * r }, margin);
-                    if (p && pointInPolygonStrict(p, points, margin * 0.9)) out.push(p);
-                });
-            }
-            if (out.length < n) {
-                const extra = placeSpotsSmart(n - out.length, margin, seed, 'center');
-                extra.forEach(p => { if (out.length < n) out.push(p); });
-            }
-            return out.slice(0, n);
-        }
-
-        // Две/три параллельные линии
-        function placeParallelRows(n, margin, seed, numRows) {
-            margin = effectiveMargin(margin);
-            const bb = bboxOf(points);
-            const alongX = bb.w >= bb.h;
-            const rows = Math.max(1, numRows || 2);
-            const perRow = Math.ceil(n / rows);
-            const cand = [];
-            for (let r = 0; r < rows; r++) {
-                const t = (r + 1) / (rows + 1);
-                for (let c = 0; c < perRow && cand.length < n; c++) {
-                    const u = perRow === 1 ? 0.5 : c / (perRow - 1);
-                    let x, y;
-                    if (alongX) {
-                        x = bb.minX + margin + u * (bb.w - 2 * margin);
-                        y = bb.minY + margin + t * (bb.h - 2 * margin);
-                    } else {
-                        x = bb.minX + margin + t * (bb.w - 2 * margin);
-                        y = bb.minY + margin + u * (bb.h - 2 * margin);
-                    }
-                    const p = pullInside({ x, y }, margin);
-                    if (p && pointInPolygonStrict(p, points, margin * 0.9)) cand.push(p);
-                }
-            }
-            return lloydRelax(cand, margin, 4).slice(0, n);
-        }
-
-        function generateSpotVariant(pattern, n, margin, seed) {
-            if (n <= 0) return [];
-            switch (pattern) {
-                case 'rows': return placeRectGrid(n, margin, seed, null, null, true);
-                case 'cols': return placeRectGrid(n, margin, seed, null, null, false);
-                case 'perimeter': return generatePerimeterSpots(n, margin, seed);
-                case 'center': return generateCenterSpots(n, margin, seed);
-                case 'random': return generateRandomSpots(n, margin, seed);
-                case 'symmetry':
-                case 'sym_quad': return placeSymmetric(n, margin, seed, 'quad');
-                case 'sym_x': return placeSymmetric(n, margin, seed, 'mirrorX');
-                case 'sym_y': return placeSymmetric(n, margin, seed, 'mirrorY');
-                case 'sym_180': return placeSymmetric(n, margin, seed, 'rotate180');
-                case 'cross': return placeCross(n, margin, seed);
-                case 'rows2': return placeParallelRows(n, margin, seed, 2);
-                case 'rows3': return placeParallelRows(n, margin, seed, 3);
-                case 'grid2x2': return placeRectGrid(n, margin, seed, 2, 2, true);
-                case 'grid2x3': return placeRectGrid(n, margin, seed, 2, 3, true);
-                case 'grid3x3': return placeRectGrid(n, margin, seed, 3, 3, true);
-                case 'grid3x4': return placeRectGrid(n, margin, seed, 3, 4, true);
-                case 'grid4x4': return placeRectGrid(n, margin, seed, 4, 4, true);
-                case 'mixed': {
-                    const a = Math.ceil(n * 0.6);
-                    const g = placeRectGrid(a, margin, seed, null, null, true);
-                    const p = generatePerimeterSpots(n - a, margin, seed + 9);
-                    return lloydRelax(g.concat(p), effectiveMargin(margin), 4).slice(0, n);
-                }
-                case 'grid':
-                default: return placeRectGrid(n, margin, seed, null, null, true);
-            }
-        }
-
-        // Каталог стратегий для генерации 15–20 разных вариантов
-        function listLightingStrategies(preferred) {
-            const all = [
-                { id: 'grid', name: 'Сетка' },
-                { id: 'grid2x2', name: 'Сетка 2×2' },
-                { id: 'grid2x3', name: 'Сетка 2×3' },
-                { id: 'grid3x3', name: 'Сетка 3×3' },
-                { id: 'grid3x4', name: 'Сетка 3×4' },
-                { id: 'grid4x4', name: 'Сетка 4×4' },
-                { id: 'rows', name: 'Ряды вдоль длинной' },
-                { id: 'cols', name: 'Ряды вдоль короткой' },
-                { id: 'rows2', name: '2 параллельных ряда' },
-                { id: 'rows3', name: '3 параллельных ряда' },
-                { id: 'perimeter', name: 'По периметру' },
-                { id: 'center', name: 'К центру' },
-                { id: 'cross', name: 'Крест от центра' },
-                { id: 'sym_quad', name: 'Симметрия 4 оси' },
-                { id: 'sym_x', name: 'Симметрия лево-право' },
-                { id: 'sym_y', name: 'Симметрия верх-низ' },
-                { id: 'sym_180', name: 'Симметрия 180°' },
-                { id: 'mixed', name: 'Сетка + периметр' },
-                { id: 'random', name: 'Случайный A' },
-                { id: 'random', name: 'Случайный B', seedOff: 77 },
-            ];
-            if (!preferred || preferred === 'all') return all;
-            if (preferred === 'symmetry') {
-                return all.filter(s => s.id.startsWith('sym') || s.id === 'cross' || s.id === 'grid3x3' || s.id === 'grid2x2');
-            }
-            if (preferred === 'grid') {
-                return all.filter(s => s.id.startsWith('grid'));
-            }
-            if (preferred === 'rows' || preferred === 'cols') {
-                return all.filter(s => s.id === 'rows' || s.id === 'cols' || s.id === 'rows2' || s.id === 'rows3');
-            }
-            // один стиль — несколько seed-вариантов этого стиля + соседние
-            const base = all.filter(s => s.id === preferred);
-            const extra = all.filter(s => s.id !== preferred).slice(0, 8);
-            return base.concat(base).concat(base).concat(extra); // несколько seed одного стиля
-        }
-
-        function generateChandelierPositions(n, margin, seed, avoidPts) {
-            if (n <= 0) return [];
-            margin = effectiveMargin(margin);
-            const chMargin = Math.max(margin + 15, margin * 1.4);
-            const cen = polygonCentroid(points);
-            const avoid = avoidPts || [];
-            const minAway = 40;
-
-            let dens = collectInteriorCandidates(chMargin, 12)
-                .filter(p => !avoid.some(a => Math.hypot(a.x - p.x, a.y - p.y) < minAway));
-            if (dens.length < n) {
-                dens = collectInteriorCandidates(margin + 5, 10)
-                    .filter(p => !avoid.some(a => Math.hypot(a.x - p.x, a.y - p.y) < minAway * 0.75));
-            }
-            if (n === 1) {
-                if (pointInPolygonStrict(cen, points, chMargin * 0.5) &&
-                    !avoid.some(a => Math.hypot(a.x - cen.x, a.y - cen.y) < minAway)) {
-                    return [{ x: cen.x, y: cen.y }];
-                }
-                const one = pickFarthestPoints(dens, 1, seed, []);
-                return enforceMarginAll(one, margin + 5);
-            }
-            if (pointInPolygonStrict(cen, points, chMargin * 0.4)) {
-                dens = [{ x: cen.x, y: cen.y }].concat(dens);
-            }
-            let res = pickFarthestPoints(dens, n, seed, []);
-            res = lloydRelax(res, margin + 5, 6);
-            return enforceMarginAll(res, margin + 5).slice(0, n);
-        }
-
-        function generateStripLayouts(n, targetLen, margin, seed, style) {
-            if (n <= 0) return [];
-            margin = effectiveMargin(margin);
-            const bb = bboxOf(points);
-            const cen = polygonCentroid(points);
-            const alongX = bb.w >= bb.h;
-            const strips = [];
-            const rng = mulberry32(seed);
-            const stripMargin = Math.max(margin, 20);
-
-            // сортируем рёбра по длине — длинные стены приоритетнее для полос
-            const edges = [];
-            for (let i = 0; i < points.length; i++) {
-                const a = points[i], b = points[(i + 1) % points.length];
-                edges.push({ i, a, b, len: dist(a, b) });
-            }
-            edges.sort((u, v) => v.len - u.len);
-
-            for (let i = 0; i < n; i++) {
-                let pts = null;
-                const variant = (style === 'perimeter') ? 0
-                    : (style === 'rows') ? 1
-                    : (style === 'random') ? Math.floor(rng() * 3)
-                    : (i + seed) % 3;
-
-                if (variant === 0 && edges.length) {
-                    // вдоль длинной стены, строго с отступом внутрь
-                    const e = edges[i % edges.length];
-                    const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
-                    const elen = e.len || 1;
-                    let nx = -dy / elen, ny = dx / elen;
-                    if ((cen.x - (e.a.x + e.b.x) / 2) * nx + (cen.y - (e.a.y + e.b.y) / 2) * ny < 0) {
-                        nx = -nx; ny = -ny;
-                    }
-                    const off = stripMargin;
-                    const maxLen = Math.max(40, elen - 2 * stripMargin);
-                    const len = Math.min(targetLen, maxLen);
-                    const t0 = (elen - len) / 2 / elen;
-                    const t1 = t0 + len / elen;
-                    const p0 = { x: e.a.x + dx * t0 + nx * off, y: e.a.y + dy * t0 + ny * off };
-                    const p1 = { x: e.a.x + dx * t1 + nx * off, y: e.a.y + dy * t1 + ny * off };
-                    if (pointInPolygonStrict(p0, points, stripMargin * 0.85) &&
-                        pointInPolygonStrict(p1, points, stripMargin * 0.85)) {
-                        pts = [p0, p1];
-                    }
-                }
-
-                if (!pts && (variant === 1 || variant === 0)) {
-                    // параллельно длинной стороне через внутреннюю зону
-                    const half = Math.min(targetLen / 2, (alongX ? bb.w : bb.h) / 2 - stripMargin);
-                    const t = (i + 1) / (n + 1);
-                    if (alongX) {
-                        const y = bb.minY + stripMargin + (bb.h - 2 * stripMargin) * t;
-                        const p0 = { x: cen.x - half, y };
-                        const p1 = { x: cen.x + half, y };
-                        if (pointInPolygonStrict(p0, points, stripMargin * 0.7) &&
-                            pointInPolygonStrict(p1, points, stripMargin * 0.7)) {
-                            pts = [p0, p1];
-                        }
-                    } else {
-                        const x = bb.minX + stripMargin + (bb.w - 2 * stripMargin) * t;
-                        const p0 = { x, y: cen.y - half };
-                        const p1 = { x, y: cen.y + half };
-                        if (pointInPolygonStrict(p0, points, stripMargin * 0.7) &&
-                            pointInPolygonStrict(p1, points, stripMargin * 0.7)) {
-                            pts = [p0, p1];
-                        }
-                    }
-                }
-
-                if (!pts) {
-                    // короткая полоса около центра, строго внутри
-                    const ang = (rng() * Math.PI * 0.5) + (alongX ? 0 : Math.PI / 2);
-                    const half = Math.min(targetLen / 2, Math.min(bb.w, bb.h) * 0.35);
-                    let p0 = { x: cen.x - Math.cos(ang) * half, y: cen.y - Math.sin(ang) * half };
-                    let p1 = { x: cen.x + Math.cos(ang) * half, y: cen.y + Math.sin(ang) * half };
-                    // если концы вылезли — укорачиваем к центру
-                    for (let iter = 0; iter < 8; iter++) {
-                        const ok0 = pointInPolygonStrict(p0, points, stripMargin * 0.7);
-                        const ok1 = pointInPolygonStrict(p1, points, stripMargin * 0.7);
-                        if (ok0 && ok1) break;
-                        p0 = { x: (p0.x + cen.x) / 2, y: (p0.y + cen.y) / 2 };
-                        p1 = { x: (p1.x + cen.x) / 2, y: (p1.y + cen.y) / 2 };
-                    }
-                    if (pointInPolygon(p0, points) && pointInPolygon(p1, points) &&
-                        Math.hypot(p0.x - p1.x, p0.y - p1.y) > 25) {
-                        pts = [p0, p1];
-                    }
-                }
-
-                if (pts) {
-                    const len = polylineLength(pts);
-                    strips.push({ points: pts, length_cm: Math.round(len * 10) / 10 });
-                }
-            }
-            return strips;
-        }
-
-        function buildLightingVariant(cfg, seed, strategyId) {
-            const pattern = strategyId || cfg.pattern || 'grid';
-            const spots = generateSpotVariant(pattern, cfg.spots, cfg.margin, seed);
-            const chandeliers = generateChandelierPositions(cfg.chandeliers, cfg.margin, seed + 41, spots);
-            const stripStyle = (pattern === 'perimeter' || pattern.indexOf('sym') === 0) ? 'perimeter'
-                : (pattern === 'rows' || pattern === 'cols' || pattern.indexOf('rows') === 0) ? 'rows'
-                : (pattern === 'random') ? 'random' : 'grid';
-            const strips = generateStripLayouts(cfg.strips, cfg.stripLen, cfg.margin, seed + 77, stripStyle);
-            return { spots, chandeliers, strips, strategy: pattern };
-        }
-
-        function readAiLightingConfig() {
-            const spots = Math.max(0, Math.min(60, parseInt((document.getElementById('ai-spot-count') || {}).value, 10) || 0));
-            const chandeliers = Math.max(0, Math.min(10, parseInt((document.getElementById('ai-ch-count') || {}).value, 10) || 0));
-            const strips = Math.max(0, Math.min(8, parseInt((document.getElementById('ai-strip-count') || {}).value, 10) || 0));
-            const stripLen = Math.max(30, Math.min(800, parseFloat((document.getElementById('ai-strip-len') || {}).value) || 150));
-            const margin = Math.max(5, Math.min(80, parseFloat((document.getElementById('ai-spot-margin') || {}).value) || 30));
-            const pattern = ((document.getElementById('ai-spot-pattern') || {}).value) || 'grid';
-            return { spots, chandeliers, strips, stripLen, margin, pattern };
-        }
-
-        // aiSpotPreview теперь объект { spots, chandeliers, strips } или null
-        // aiSpotVariants — массив таких объектов
-
-        function showAiMiniBar() {
-            const bar = document.getElementById('ai-mini-bar');
-            if (bar) bar.style.display = 'flex';
-            // свернуть большую панель — больше места чертежу
-            const panel = document.getElementById('install-panel');
-            if (panel) panel.classList.remove('active');
-            const floatBtn = document.getElementById('float-menu-btn');
-            if (floatBtn) floatBtn.style.display = 'none';
-            updateAiMiniInfo();
-            autoFitCamera();
-            // чуть отступить снизу под мини-бар
-            if (points.length) {
-                camera.y -= 20;
-            }
-            draw();
-        }
-
-        function hideAiMiniBar() {
-            const bar = document.getElementById('ai-mini-bar');
-            if (bar) bar.style.display = 'none';
-        }
-
-        function aiShowFullPanel() {
-            hideAiMiniBar();
-            showOnlyPanel('install-panel');
-            setInstallMode('lighting');
-            updateAiHint();
-        }
-
-        function updateAiMiniInfo() {
-            const el = document.getElementById('ai-mini-info');
-            if (!el || !aiSpotPreview) return;
-            const s = (aiSpotPreview.spots || []).length;
-            const c = (aiSpotPreview.chandeliers || []).length;
-            const p = (aiSpotPreview.strips || []).length;
-            const name = aiSpotPreview.strategyName || '';
-            el.textContent = `${aiSpotVariantIdx + 1}/${aiSpotVariants.length || 1} ${name}: ${s}S · ${c}L · ${p}P`;
-        }
-
-        function aiProposeLighting() {
-            if (points.length < 3 || !isClosed) {
-                showToast('Сначала замкните контур и введите размеры', 2500);
-                return;
-            }
-            const cfg = readAiLightingConfig();
-            if (cfg.spots + cfg.chandeliers + cfg.strips === 0) {
-                showToast('Укажите хотя бы что-то: светильники, люстры или полосы', 3000);
-                return;
-            }
-
-            const strategies = listLightingStrategies(cfg.pattern);
-            aiSpotVariants = [];
-            const baseSeed = aiSpotSeed + cfg.spots * 7 + cfg.chandeliers * 17 + cfg.strips * 23 + (Date.now() % 997);
-
-            strategies.forEach((st, v) => {
-                const seed = baseSeed + v * 173 + (st.seedOff || 0) * 19;
-                const plan = buildLightingVariant(cfg, seed, st.id);
-                plan.strategyName = st.name;
-                const total = (plan.spots || []).length + (plan.chandeliers || []).length + (plan.strips || []).length;
-                if (total > 0) aiSpotVariants.push(plan);
-            });
-
-            let extra = 0;
-            while (aiSpotVariants.length < 15 && extra < 12) {
-                const st = strategies[extra % strategies.length];
-                const seed = baseSeed + 900 + extra * 211;
-                const plan = buildLightingVariant(cfg, seed, st.id);
-                plan.strategyName = st.name + ' · alt';
-                const total = (plan.spots || []).length + (plan.chandeliers || []).length + (plan.strips || []).length;
-                if (total > 0) aiSpotVariants.push(plan);
-                extra++;
-            }
-
-            // убрать почти одинаковые
-            const unique = [];
-            aiSpotVariants.forEach(plan => {
-                const pts = plan.spots || [];
-                if (!pts.length) { unique.push(plan); return; }
-                const ax = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-                const ay = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-                const spread = pts.reduce((s, p) => s + Math.hypot(p.x - ax, p.y - ay), 0) / pts.length;
-                const same = unique.some(u => {
-                    const up = u.spots || [];
-                    if (up.length !== pts.length) return false;
-                    const ux = up.reduce((s, p) => s + p.x, 0) / up.length;
-                    const uy = up.reduce((s, p) => s + p.y, 0) / up.length;
-                    const us = up.reduce((s, p) => s + Math.hypot(p.x - ux, p.y - uy), 0) / up.length;
-                    return Math.hypot(ax - ux, ay - uy) < 12 && Math.abs(spread - us) < 15;
-                });
-                if (!same) unique.push(plan);
-            });
-            aiSpotVariants = unique.slice(0, 20);
-
-            if (!aiSpotVariants.length) {
-                showToast('Не удалось разместить. Уменьшите отступ или количество.', 3500);
-                return;
-            }
-            aiSpotVariantIdx = 0;
-            aiSpotPreview = aiSpotVariants[0];
-            updateAiHint();
-            const s = aiSpotPreview.spots.length, c = aiSpotPreview.chandeliers.length, p = aiSpotPreview.strips.length;
-            const name = aiSpotPreview.strategyName || '';
-            showToast(`1/${aiSpotVariants.length}: ${name} · ${s} спот. ${c} люстр ${p} полос`, 2800);
-            showAiMiniBar();
-            draw();
-        }
-
-        function updateAiHint() {
-            const hint = document.getElementById('ai-spot-hint');
-            if (!hint || !aiSpotPreview) return;
-            const s = aiSpotPreview.spots ? aiSpotPreview.spots.length : 0;
-            const c = aiSpotPreview.chandeliers ? aiSpotPreview.chandeliers.length : 0;
-            const p = aiSpotPreview.strips ? aiSpotPreview.strips.length : 0;
-            const name = aiSpotPreview.strategyName || aiSpotPreview.strategy || '';
-            hint.innerText = `Вариант ${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: «${name}» · ${s} спот. · ${c} люстр · ${p} полос`;
-            updateAiMiniInfo();
-        }
-
-        function aiPrevVariant() {
-            if (!aiSpotVariants.length) {
-                aiProposeLighting();
-                return;
-            }
-            aiSpotVariantIdx = (aiSpotVariantIdx - 1 + aiSpotVariants.length) % aiSpotVariants.length;
-            aiSpotPreview = aiSpotVariants[aiSpotVariantIdx];
-            updateAiHint();
-            const nm = aiSpotPreview.strategyName || '';
-            showToast(`${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${nm}`, 1400);
-            draw();
-        }
-
-        function aiNextVariant() {
-            if (!aiSpotVariants.length) {
-                aiProposeLighting();
-                return;
-            }
-            aiSpotVariantIdx = (aiSpotVariantIdx + 1) % aiSpotVariants.length;
-            aiSpotPreview = aiSpotVariants[aiSpotVariantIdx];
-            updateAiHint();
-            const nm = aiSpotPreview.strategyName || '';
-            showToast(`${aiSpotVariantIdx + 1}/${aiSpotVariants.length}: ${nm}`, 1400);
-            draw();
-        }
-
-        function aiAcceptLighting() {
-            if (!aiSpotPreview || (
-                !(aiSpotPreview.spots && aiSpotPreview.spots.length) &&
-                !(aiSpotPreview.chandeliers && aiSpotPreview.chandeliers.length) &&
-                !(aiSpotPreview.strips && aiSpotPreview.strips.length)
-            )) {
-                showToast('Сначала нажмите «Предложить»', 2000);
-                return;
-            }
-            let sn = fixtures.filter(f => f.type === 'spot').length + 1;
-            let ln = fixtures.filter(f => f.type === 'chandelier').length + 1;
-            let pn = fixtures.filter(f => f.type === 'strip').length + 1;
-            let addedS = 0, addedC = 0, addedP = 0;
-
-            (aiSpotPreview.spots || []).forEach(p => {
-                const off = twoNearestEdgeOffsetsCm(p);
-                fixtures.push({
-                    type: 'spot', x: p.x, y: p.y, label: 'S' + (sn++),
-                    offset_wall_a_cm: off.offset_wall_a_cm,
-                    offset_wall_b_cm: off.offset_wall_b_cm
-                });
-                addedS++;
-            });
-            (aiSpotPreview.chandeliers || []).forEach(p => {
-                fixtures.push({ type: 'chandelier', x: p.x, y: p.y, label: 'L' + (ln++) });
-                addedC++;
-            });
-            (aiSpotPreview.strips || []).forEach(st => {
-                const offsets = stripWallOffsets(st.points);
-                fixtures.push({
-                    type: 'strip',
-                    points: st.points.map(p => ({ x: p.x, y: p.y })),
-                    length_cm: st.length_cm,
-                    label: 'P' + (pn++),
-                    wall_offsets: offsets,
-                    x: st.points[0].x,
-                    y: st.points[0].y
-                });
-                addedP++;
-            });
-
-            aiSpotPreview = null;
-            aiSpotVariants = [];
-            aiSpotVariantIdx = 0;
-            aiSpotSeed = (aiSpotSeed + 53) % 100000;
-            hideAiMiniBar();
-            showOnlyPanel('install-panel');
-            setInstallMode('lighting');
-            updateFixtureList();
-            const hint = document.getElementById('ai-spot-hint');
-            if (hint) hint.innerText = 'План принят. Можно править вручную или предложить ещё.';
-            showToast(`Добавлено: ${addedS} спот., ${addedC} люстр, ${addedP} полос`, 3000);
-            draw();
-        }
-
-        // совместимость со старыми onclick, если остались
-        function aiProposeSpots() { aiProposeLighting(); }
-        function aiAcceptSpots() { aiAcceptLighting(); }
-
-        function aiClearPreview() {
-            aiSpotPreview = null;
-            aiSpotVariants = [];
-            aiSpotVariantIdx = 0;
-            hideAiMiniBar();
-            showOnlyPanel('install-panel');
-            setInstallMode('lighting');
-            const hint = document.getElementById('ai-spot-hint');
-            if (hint) hint.innerText = 'Превью сброшено. Заполните план и нажмите «Предложить».';
-            draw();
-            showToast('Превью сброшено', 1500);
-        }
 
         function undoStripPoint() {
             if (stripDraft.length) stripDraft.pop();
@@ -3245,8 +2149,6 @@
                 sideProfiles = points.map(() => selectedProfileName);
             }
             stripDraft = [];
-            aiSpotPreview = null;
-            aiSpotVariants = [];
             selectedFixtureIdx = -1;
             snapGuides = [];
             hideAiMiniBar();
@@ -3976,9 +2878,6 @@
             profileEdgesPainted = false;
             stripDraft = [];
             stripPreviewLen = 0;
-            aiSpotPreview = null;
-            aiSpotVariants = [];
-            aiSpotVariantIdx = 0;
             editCeilingIndex = -1;
 
             state = 'DRAWING';
@@ -4059,10 +2958,6 @@
             camera.y = canvas.height / 2 - ((minY + maxY) / 2) * camera.zoom;
         }
 
-        function roundN(v, n) {
-            const p = Math.pow(10, n);
-            return Math.round(Number(v) * p) / p;
-        }
 
         // ---- Отправка (без изменений) ----
         async function sendToBot() {
@@ -4148,6 +3043,34 @@
                     return r(x, 3);
                 }
 
+                
+                // Полная дедупликация потолков перед отправкой
+                (function dedupeCeilingsBeforeSend() {
+                    function geomKey(c) {
+                        if (!c || !c.points || !c.points.length) return '';
+                        return c.points.map(function (p) {
+                            return (Math.round(Number(p.x) * 100) / 100) + ',' + (Math.round(Number(p.y) * 100) / 100);
+                        }).join('|') + '#' + (c.sides_cm || []).map(function (s) { return Math.round(Number(s) * 10) / 10; }).join(',');
+                    }
+                    var seen = {};
+                    var uniq = [];
+                    for (var i = 0; i < completedCeilings.length; i++) {
+                        var c = completedCeilings[i];
+                        var k = geomKey(c);
+                        if (!k) continue;
+                        if (seen[k] !== undefined) {
+                            uniq[seen[k]] = c; // заменить более новой
+                        } else {
+                            seen[k] = uniq.length;
+                            uniq.push(c);
+                        }
+                    }
+                    if (uniq.length !== completedCeilings.length) {
+                        console.warn('dedupe ceilings', completedCeilings.length, '->', uniq.length);
+                        completedCeilings = uniq;
+                    }
+                })();
+
                 function buildLevel(level) {
                     return completedCeilings.map(function (c) {
                         var pts = (c.points || []).map(function (p) {
@@ -4198,12 +3121,6 @@
                                 }
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
-                                }
-                                if (f.type === 'light_point') {
-                                    var tp = { t: 't', x: asM(f.x), y: asM(f.y) };
-                                    if (level < 1 && f.offset_wall_a_cm != null) tp.a = r(f.offset_wall_a_cm, 0);
-                                    if (level < 1 && f.offset_wall_b_cm != null) tp.b = r(f.offset_wall_b_cm, 0);
-                                    return tp;
                                 }
                                 var s = { t: 's', x: asM(f.x), y: asM(f.y) };
                                 if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
@@ -4309,7 +3226,21 @@
         function copyData() {
             try {
                 const all = [...completedCeilings];
-                if (state === 'DONE' && points.length >= 3) all.push(getCurrentCeilingPayload());
+                if (state === 'DONE' && points.length >= 3) {
+                    const cur = getCurrentCeilingPayload();
+                    let dup = false;
+                    for (let i = 0; i < all.length; i++) {
+                        if (all[i].points && cur.points && all[i].points.length === cur.points.length) {
+                            let same = true;
+                            for (let j = 0; j < cur.points.length; j++) {
+                                if (Math.abs(all[i].points[j].x - cur.points[j].x) > 0.02 ||
+                                    Math.abs(all[i].points[j].y - cur.points[j].y) > 0.02) { same = false; break; }
+                            }
+                            if (same) { all[i] = cur; dup = true; break; }
+                        }
+                    }
+                    if (!dup) all.push(cur);
+                }
                 const data = { type: 'drawing_set', ceilings: all };
                 const str = JSON.stringify(data, null, 2);
                 navigator.clipboard.writeText(str).then(() => showToast('Скопировано.', 2000))
@@ -4653,77 +3584,6 @@
                     ctx.fillText(ln, bx + 8, by + 6 + i * 18);
                 });
                 ctx.restore();
-            }
-
-            if (false && state === 'INSTALL' && aiSpotPreview && typeof aiSpotPreview === 'object') {
-                // полосы (жёлтые пунктир)
-                (aiSpotPreview.strips || []).forEach((st, idx) => {
-                    if (!st.points || st.points.length < 2) return;
-                    ctx.beginPath();
-                    const s0 = toScreen(st.points[0].x, st.points[0].y);
-                    ctx.moveTo(s0.x, s0.y);
-                    for (let k = 1; k < st.points.length; k++) {
-                        const sk = toScreen(st.points[k].x, st.points[k].y);
-                        ctx.lineTo(sk.x, sk.y);
-                    }
-                    ctx.strokeStyle = '#f1c40f';
-                    ctx.lineWidth = 4;
-                    ctx.setLineDash([8, 5]);
-                    ctx.lineCap = 'round';
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                    const mid = st.points[Math.floor(st.points.length / 2)];
-                    const sm = toScreen(mid.x, mid.y);
-                    ctx.fillStyle = '#b7950b';
-                    ctx.font = 'bold 11px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText('P' + (idx + 1) + ' ~' + (st.length_cm || '') + 'см', sm.x, sm.y - 6);
-                });
-                // споты (синие)
-                (aiSpotPreview.spots || []).forEach((p, idx) => {
-                    const sp = toScreen(p.x, p.y);
-                    ctx.beginPath();
-                    ctx.fillStyle = 'rgba(26, 115, 232, 0.28)';
-                    ctx.strokeStyle = '#1a73e8';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([4, 3]);
-                    ctx.arc(sp.x, sp.y, 10, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                    ctx.strokeStyle = '#1a73e8';
-                    ctx.lineWidth = 1.5;
-                    ctx.beginPath(); ctx.moveTo(sp.x - 5, sp.y); ctx.lineTo(sp.x + 5, sp.y); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(sp.x, sp.y - 5); ctx.lineTo(sp.x, sp.y + 5); ctx.stroke();
-                    ctx.fillStyle = '#1a73e8';
-                    ctx.font = 'bold 10px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText('S' + (idx + 1), sp.x, sp.y - 12);
-                });
-                // люстры (красные)
-                (aiSpotPreview.chandeliers || []).forEach((p, idx) => {
-                    const sp = toScreen(p.x, p.y);
-                    ctx.beginPath();
-                    ctx.fillStyle = 'rgba(192, 57, 43, 0.3)';
-                    ctx.strokeStyle = '#c0392b';
-                    ctx.lineWidth = 2.5;
-                    ctx.setLineDash([5, 3]);
-                    ctx.arc(sp.x, sp.y, 13, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                    ctx.strokeStyle = '#c0392b';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.moveTo(sp.x - 6, sp.y - 6); ctx.lineTo(sp.x + 6, sp.y + 6); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(sp.x + 6, sp.y - 6); ctx.lineTo(sp.x - 6, sp.y + 6); ctx.stroke();
-                    ctx.fillStyle = '#c0392b';
-                    ctx.font = 'bold 11px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText('L' + (idx + 1), sp.x, sp.y - 15);
-                });
             }
 
             points.forEach((p, idx) => {
