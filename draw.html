@@ -294,7 +294,7 @@
     <div id="material-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('material-panel')">✕</button>
         <div class="panel-title">Параметры потолка:</div>
-        <div class="mat-selector">
+        <div class="mat-selector" id="mat-selector">
             <div class="mat-btn selected" onclick="selectMat('Мат', this)">Мат</div>
             <div class="mat-btn" onclick="selectMat('Глянец', this)">Глянец</div>
             <div class="mat-btn" onclick="selectMat('Сатин', this)">Сатин</div>
@@ -3043,34 +3043,6 @@
                     return r(x, 3);
                 }
 
-                
-                // Полная дедупликация потолков перед отправкой
-                (function dedupeCeilingsBeforeSend() {
-                    function geomKey(c) {
-                        if (!c || !c.points || !c.points.length) return '';
-                        return c.points.map(function (p) {
-                            return (Math.round(Number(p.x) * 100) / 100) + ',' + (Math.round(Number(p.y) * 100) / 100);
-                        }).join('|') + '#' + (c.sides_cm || []).map(function (s) { return Math.round(Number(s) * 10) / 10; }).join(',');
-                    }
-                    var seen = {};
-                    var uniq = [];
-                    for (var i = 0; i < completedCeilings.length; i++) {
-                        var c = completedCeilings[i];
-                        var k = geomKey(c);
-                        if (!k) continue;
-                        if (seen[k] !== undefined) {
-                            uniq[seen[k]] = c; // заменить более новой
-                        } else {
-                            seen[k] = uniq.length;
-                            uniq.push(c);
-                        }
-                    }
-                    if (uniq.length !== completedCeilings.length) {
-                        console.warn('dedupe ceilings', completedCeilings.length, '->', uniq.length);
-                        completedCeilings = uniq;
-                    }
-                })();
-
                 function buildLevel(level) {
                     return completedCeilings.map(function (c) {
                         var pts = (c.points || []).map(function (p) {
@@ -3226,21 +3198,7 @@
         function copyData() {
             try {
                 const all = [...completedCeilings];
-                if (state === 'DONE' && points.length >= 3) {
-                    const cur = getCurrentCeilingPayload();
-                    let dup = false;
-                    for (let i = 0; i < all.length; i++) {
-                        if (all[i].points && cur.points && all[i].points.length === cur.points.length) {
-                            let same = true;
-                            for (let j = 0; j < cur.points.length; j++) {
-                                if (Math.abs(all[i].points[j].x - cur.points[j].x) > 0.02 ||
-                                    Math.abs(all[i].points[j].y - cur.points[j].y) > 0.02) { same = false; break; }
-                            }
-                            if (same) { all[i] = cur; dup = true; break; }
-                        }
-                    }
-                    if (!dup) all.push(cur);
-                }
+                if (state === 'DONE' && points.length >= 3) all.push(getCurrentCeilingPayload());
                 const data = { type: 'drawing_set', ceilings: all };
                 const str = JSON.stringify(data, null, 2);
                 navigator.clipboard.writeText(str).then(() => showToast('Скопировано.', 2000))
@@ -3603,24 +3561,64 @@
         }
 
         // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
-        function loadCorniceCatalogFromUrl() {
+        function loadCatalogFromUrl() {
             try {
                 const params = new URLSearchParams(window.location.search || '');
-                let raw = params.get('cornices') || '';
-                if (!raw) return;
-                const names = decodeURIComponent(raw).split('|').map(s => s.trim()).filter(Boolean);
-                if (!names.length) return;
-                const sel = document.getElementById('cornice-type-select');
-                if (!sel) return;
-                sel.innerHTML = '';
-                names.forEach(function (n) {
-                    const opt = document.createElement('option');
-                    opt.value = n; opt.textContent = n;
-                    sel.appendChild(opt);
-                });
-            } catch (e) { console.warn('cornices url', e); }
+                function splitParam(key) {
+                    let raw = params.get(key) || '';
+                    if (!raw) return [];
+                    try { raw = decodeURIComponent(raw); } catch (e) {}
+                    return raw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
+                }
+                // Карнизы
+                const cornices = splitParam('cornices');
+                if (cornices.length) {
+                    const sel = document.getElementById('cornice-type-select');
+                    if (sel) {
+                        sel.innerHTML = '';
+                        cornices.forEach(function (n) {
+                            const opt = document.createElement('option');
+                            opt.value = n; opt.textContent = n;
+                            sel.appendChild(opt);
+                        });
+                    }
+                }
+                // Плёнки
+                const films = splitParam('films');
+                if (films.length) {
+                    const box = document.getElementById('mat-selector');
+                    if (box) {
+                        box.innerHTML = '';
+                        films.forEach(function (n, i) {
+                            const d = document.createElement('div');
+                            d.className = 'mat-btn' + (i === 0 ? ' selected' : '');
+                            d.textContent = n;
+                            d.setAttribute('onclick', "selectMat('" + n.replace(/'/g, "\\'") + "', this)");
+                            box.appendChild(d);
+                        });
+                        if (films[0]) selectedMaterial = films[0];
+                    }
+                }
+                // Профили
+                const profiles = splitParam('profiles');
+                if (profiles.length) {
+                    const box = document.getElementById('profile-pick');
+                    if (box) {
+                        box.innerHTML = '';
+                        profiles.forEach(function (n, i) {
+                            const b = document.createElement('button');
+                            b.type = 'button';
+                            if (i === 0) b.className = 'selected';
+                            b.textContent = n;
+                            b.setAttribute('onclick', "selectProfileBrush('" + n.replace(/'/g, "\\'") + "', this)");
+                            box.appendChild(b);
+                        });
+                        if (profiles[0]) selectedProfileName = profiles[0];
+                    }
+                }
+            } catch (e) { console.warn('catalog url', e); }
         }
-        loadCorniceCatalogFromUrl();
+        loadCatalogFromUrl();
 
         // ---- Инициализация ----
         const webApp = getTelegramWebApp();
