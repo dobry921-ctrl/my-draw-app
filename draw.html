@@ -294,7 +294,7 @@
     <div id="material-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('material-panel')">✕</button>
         <div class="panel-title">Параметры потолка:</div>
-        <div class="mat-selector" id="mat-selector">
+        <div class="mat-selector">
             <div class="mat-btn selected" onclick="selectMat('Мат', this)">Мат</div>
             <div class="mat-btn" onclick="selectMat('Глянец', this)">Глянец</div>
             <div class="mat-btn" onclick="selectMat('Сатин', this)">Сатин</div>
@@ -1510,6 +1510,14 @@
             const bar = document.getElementById('light-drag-bar');
             if (bar) bar.style.display = 'none';
         }
+        function hideAiMiniBar() {
+            // панель AI/подсказок может отсутствовать — не роняем «Готово»
+            const ids = ['ai-mini-bar', 'ai-mini-panel', 'ai-hint-bar'];
+            for (let i = 0; i < ids.length; i++) {
+                const el = document.getElementById(ids[i]);
+                if (el) el.style.display = 'none';
+            }
+        }
         function updateLightDragBar() {
             const f = selectedFixtureIdx >= 0 ? fixtures[selectedFixtureIdx] : null;
             const isStrip = f && f.type === 'strip';
@@ -2151,10 +2159,12 @@
             stripDraft = [];
             selectedFixtureIdx = -1;
             snapGuides = [];
-            hideAiMiniBar();
-            hideLightDragBar();
-            document.getElementById('strip-mini-panel').style.display = 'none';
-            document.getElementById('finish-strip-btn').style.display = 'none';
+            try { hideAiMiniBar(); } catch (e) {}
+            try { hideLightDragBar(); } catch (e) {}
+            var _smp = document.getElementById('strip-mini-panel');
+            if (_smp) _smp.style.display = 'none';
+            var _fsb = document.getElementById('finish-strip-btn');
+            if (_fsb) _fsb.style.display = 'none';
             hidePanel('install-panel');
             state = 'DONE';
             statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
@@ -3561,64 +3571,24 @@
         }
 
         // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
-        function loadCatalogFromUrl() {
+        function loadCorniceCatalogFromUrl() {
             try {
                 const params = new URLSearchParams(window.location.search || '');
-                function splitParam(key) {
-                    let raw = params.get(key) || '';
-                    if (!raw) return [];
-                    try { raw = decodeURIComponent(raw); } catch (e) {}
-                    return raw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
-                }
-                // Карнизы
-                const cornices = splitParam('cornices');
-                if (cornices.length) {
-                    const sel = document.getElementById('cornice-type-select');
-                    if (sel) {
-                        sel.innerHTML = '';
-                        cornices.forEach(function (n) {
-                            const opt = document.createElement('option');
-                            opt.value = n; opt.textContent = n;
-                            sel.appendChild(opt);
-                        });
-                    }
-                }
-                // Плёнки
-                const films = splitParam('films');
-                if (films.length) {
-                    const box = document.getElementById('mat-selector');
-                    if (box) {
-                        box.innerHTML = '';
-                        films.forEach(function (n, i) {
-                            const d = document.createElement('div');
-                            d.className = 'mat-btn' + (i === 0 ? ' selected' : '');
-                            d.textContent = n;
-                            d.setAttribute('onclick', "selectMat('" + n.replace(/'/g, "\\'") + "', this)");
-                            box.appendChild(d);
-                        });
-                        if (films[0]) selectedMaterial = films[0];
-                    }
-                }
-                // Профили
-                const profiles = splitParam('profiles');
-                if (profiles.length) {
-                    const box = document.getElementById('profile-pick');
-                    if (box) {
-                        box.innerHTML = '';
-                        profiles.forEach(function (n, i) {
-                            const b = document.createElement('button');
-                            b.type = 'button';
-                            if (i === 0) b.className = 'selected';
-                            b.textContent = n;
-                            b.setAttribute('onclick', "selectProfileBrush('" + n.replace(/'/g, "\\'") + "', this)");
-                            box.appendChild(b);
-                        });
-                        if (profiles[0]) selectedProfileName = profiles[0];
-                    }
-                }
-            } catch (e) { console.warn('catalog url', e); }
+                let raw = params.get('cornices') || '';
+                if (!raw) return;
+                const names = decodeURIComponent(raw).split('|').map(s => s.trim()).filter(Boolean);
+                if (!names.length) return;
+                const sel = document.getElementById('cornice-type-select');
+                if (!sel) return;
+                sel.innerHTML = '';
+                names.forEach(function (n) {
+                    const opt = document.createElement('option');
+                    opt.value = n; opt.textContent = n;
+                    sel.appendChild(opt);
+                });
+            } catch (e) { console.warn('cornices url', e); }
         }
-        loadCatalogFromUrl();
+        loadCorniceCatalogFromUrl();
 
         // ---- Инициализация ----
         const webApp = getTelegramWebApp();
