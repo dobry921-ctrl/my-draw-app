@@ -98,52 +98,7 @@
             color: #888; cursor: pointer; padding: 0 4px;
             line-height: 1;
         }
-        #install-panel.active { z-index: 160; max-height: 42vh; }
-        #install-panel.collapsed {
-            max-height: none !important;
-            overflow: visible !important;
-        }
-        #install-panel.collapsed .install-body { display: none !important; }
-        #install-panel .install-mini-bar {
-            display: none;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 0 2px;
-        }
-        #install-panel.collapsed .install-mini-bar { display: flex; }
-        #install-panel .install-mini-bar .mini-title {
-            font-weight: 700; font-size: 0.82rem; color: #1a73e8; flex: 1;
-        }
-        #install-panel .install-mini-bar .mini-chip {
-            font-size: 0.7rem; padding: 3px 8px; border-radius: 12px;
-            background: #e8f0fe; color: #1a73e8; border: none; cursor: pointer;
-        }
-        .catalog-select {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #c5cdd8;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            background: #fff;
-            color: #202124;
-            margin-bottom: 6px;
-        }
-        .catalog-select:focus {
-            outline: none;
-            border-color: #1a73e8;
-            box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
-        }
-        .field-label {
-            font-size: 0.75rem;
-            color: #5f6368;
-            margin: 2px 0 3px;
-            font-weight: 600;
-        }
-        .panel-collapse-toggle {
-            border: none; background: #e8f0fe; color: #1a73e8;
-            border-radius: 8px; padding: 5px 10px; font-size: 0.78rem;
-            font-weight: 600; cursor: pointer;
-        }
+        #install-panel.active { z-index: 160; min-height: 30vh; }
         #bottom-input-bar.active { z-index: 180; }
         #saved-chip {
             position: absolute; top: 12px; right: 12px; z-index: 45;
@@ -338,15 +293,12 @@
 
     <div id="material-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('material-panel')">✕</button>
-        <div class="panel-title">Параметры потолка</div>
-        <div class="field-label">Плёнка / материал (из справочника бота)</div>
-        <select id="mat-select" class="catalog-select" onchange="selectMatFromSelect()">
-            <option value="Мат">Мат</option>
-            <option value="Глянец">Глянец</option>
-            <option value="Сатин">Сатин</option>
-        </select>
-        <!-- legacy container, hidden; catalog fills select above -->
-        <div class="mat-selector" id="mat-selector" style="display:none;"></div>
+        <div class="panel-title">Параметры потолка:</div>
+        <div class="mat-selector" id="mat-selector">
+            <div class="mat-btn selected" onclick="selectMat('Мат', this)">Мат</div>
+            <div class="mat-btn" onclick="selectMat('Глянец', this)">Глянец</div>
+            <div class="mat-btn" onclick="selectMat('Сатин', this)">Сатин</div>
+        </div>
         <div class="color-row">
             <label>Цвет:</label>
             <input type="text" id="color-input" value="Белый" placeholder="Например: Белый, 001">
@@ -355,23 +307,9 @@
     </div>
 
     <div id="install-panel" class="bottom-panel">
-        <button class="collapse-btn" onclick="togglePanel('install-panel')" title="Закрыть">✕</button>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
-            <div class="panel-title" style="margin:0;flex:1;">Монтажные элементы</div>
-            <button type="button" class="panel-collapse-toggle" id="install-collapse-btn" onclick="toggleInstallCollapsed()">Свернуть ▾</button>
-        </div>
-
-        <!-- Компактная полоска, когда панель свёрнута -->
-        <div class="install-mini-bar" id="install-mini-bar">
-            <span class="mini-title" id="install-mini-title">Монтаж · Профиль</span>
-            <button type="button" class="mini-chip" onclick="setInstallMode('profile'); expandInstallPanel();">Профиль</button>
-            <button type="button" class="mini-chip" onclick="setInstallMode('lighting'); expandInstallPanel();">Свет</button>
-            <button type="button" class="mini-chip" onclick="setInstallMode('cornice'); expandInstallPanel();">Карниз</button>
-            <button type="button" class="panel-collapse-toggle" onclick="expandInstallPanel()">Развернуть ▴</button>
-        </div>
-
-        <div class="install-body" id="install-body">
-        <div class="hint" style="margin:2px 0 4px;">Из справочника бота. Сверните панель, чтобы видеть чертёж.</div>
+        <button class="collapse-btn" onclick="togglePanel('install-panel')">✕</button>
+        <div class="panel-title">Монтажные элементы</div>
+        <div class="hint">Необязательно. На PNG для монтажников — всё видно; в PDF для производства — нет.</div>
         <div class="install-modes">
             <button type="button" class="install-mode-btn active" id="imode-profile" onclick="setInstallMode('profile')">Профиль</button>
             <button type="button" class="install-mode-btn" id="imode-lighting" onclick="setInstallMode('lighting')">Освещение</button>
@@ -380,14 +318,12 @@
         <div id="install-hint" class="hint">Выберите профиль, затем тапните стороны. Если стороны не указаны — профиль на все.</div>
 
         <div id="profile-tools" style="display:block;">
-            <div class="field-label">Тип профиля (справочник)</div>
-            <select id="profile-select" class="catalog-select" onchange="selectProfileFromSelect()">
-                <option value="Стандартный">Стандартный</option>
-                <option value="Теневой">Теневой</option>
-                <option value="Парящий">Парящий</option>
-            </select>
-            <div class="profile-pick" id="profile-pick" style="display:none;"></div>
-            <button class="btn btn-outline" style="width:100%;margin-top:2px;padding:6px;" onclick="applyProfileToAll()">Применить ко всем сторонам</button>
+            <div class="profile-pick" id="profile-pick">
+                <button type="button" class="selected" onclick="selectProfileBrush('Стандартный', this)">Стандартный</button>
+                <button type="button" onclick="selectProfileBrush('Теневой', this)">Теневой</button>
+                <button type="button" onclick="selectProfileBrush('Парящий', this)">Парящий</button>
+            </div>
+            <button class="btn btn-outline" style="width:100%;margin-top:4px;padding:6px;" onclick="applyProfileToAll()">Применить ко всем</button>
         </div>
 
         <div id="lighting-tools" style="display:none;">
@@ -430,11 +366,9 @@
         <!-- Кнопка завершения полосы в основной панели -->
         <button class="btn btn-success" id="finish-strip-btn" onclick="finishStrip()" style="display:none; width:100%; margin-top:4px; padding:6px;">✅ Завершить полосу</button>
         <div style="display:flex;gap:4px;margin-top:4px;">
-            <button class="btn btn-outline" style="flex:1;padding:6px;"         <div style="display:flex; gap:6px; margin-top:6px;">
             <button class="btn btn-outline" style="flex:1;padding:6px;" onclick="skipInstall()">Пропустить</button>
             <button class="btn btn-success" style="flex:1;padding:6px;" onclick="finishInstall()">Готово</button>
         </div>
-        </div><!-- /.install-body -->
     </div>
 
     <div id="ceiling-switcher" class="bottom-panel">
@@ -1576,6 +1510,13 @@
             const bar = document.getElementById('light-drag-bar');
             if (bar) bar.style.display = 'none';
         }
+
+        function hideAiMiniBar() {
+            try {
+                const el = document.getElementById('ai-mini-bar') || document.getElementById('ai-mini-panel');
+                if (el) el.style.display = 'none';
+            } catch (e) {}
+        }
         function updateLightDragBar() {
             const f = selectedFixtureIdx >= 0 ? fixtures[selectedFixtureIdx] : null;
             const isStrip = f && f.type === 'strip';
@@ -1793,26 +1734,7 @@
             profileEdgesPainted = false;
             document.querySelectorAll('#profile-pick button').forEach(b => b.classList.remove('selected'));
             if (el) el.classList.add('selected');
-            const sel = document.getElementById('profile-select');
-            if (sel) {
-                let found = false;
-                for (let i = 0; i < sel.options.length; i++) {
-                    if (sel.options[i].value === name) { found = true; break; }
-                }
-                if (!found) {
-                    const opt = document.createElement('option');
-                    opt.value = name; opt.textContent = name;
-                    sel.appendChild(opt);
-                }
-                sel.value = name;
-            }
             showToast(`Профиль «${name}»: тапните стороны или «Применить ко всем»`, 3000);
-        }
-        function selectProfileFromSelect() {
-            const sel = document.getElementById('profile-select');
-            if (sel && sel.value) {
-                selectProfileBrush(sel.value, null);
-            }
         }
 
         function applyProfileToAll() {
@@ -2132,7 +2054,7 @@
             state = 'INSTALL';
             statusText.innerText = 'Профиль / Освещение / Карниз';
             if (!sideProfiles.length || sideProfiles.length !== points.length) {
-                sideProfiles = points.map(() => selectedProfileName || 'Стандартный');
+                sideProfiles = points.map(() => 'Стандартный');
             }
             profileEdgesPainted = false;
             stripDraft = [];
@@ -2142,30 +2064,14 @@
             setInstallMode('profile');
             updateFixtureList();
             showOnlyPanel('install-panel');
-            expandInstallPanel();
-            // синхронизация select профиля
-            try {
-                const sel = document.getElementById('profile-select');
-                if (sel && selectedProfileName) {
-                    let found = false;
-                    for (let i = 0; i < sel.options.length; i++) {
-                        if (sel.options[i].value === selectedProfileName) { found = true; break; }
-                    }
-                    if (!found) {
-                        const opt = document.createElement('option');
-                        opt.value = selectedProfileName;
-                        opt.textContent = selectedProfileName;
-                        sel.appendChild(opt);
-                    }
-                    sel.value = selectedProfileName;
-                }
-            } catch (e) {}
             var panel = document.getElementById('install-panel');
             if (panel) {
-                try { panel.scrollTop = 0; } catch (e) {}
+                panel.scrollTop = 0;
+                try { panel.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) {}
             }
             autoFitCamera();
             draw();
+            showToast('Выберите: Профиль → Освещение → Карниз, затем «Готово»', 4000);
         }
 
         function skipInstall() {
@@ -2246,64 +2152,58 @@
         }
 
         function finishInstall() {
-            if (installMode === 'profile' && !profileEdgesPainted) {
-                sideProfiles = points.map(() => selectedProfileName);
-            }
+            try {
+                if (installMode === 'profile' && !profileEdgesPainted) {
+                    sideProfiles = points.map(() => selectedProfileName);
+                }
+            } catch (e) { console.warn(e); }
             stripDraft = [];
             selectedFixtureIdx = -1;
             snapGuides = [];
-            hideAiMiniBar();
-            hideLightDragBar();
-            document.getElementById('strip-mini-panel').style.display = 'none';
-            document.getElementById('finish-strip-btn').style.display = 'none';
-            hidePanel('install-panel');
+            try { hideAiMiniBar(); } catch (e) {}
+            try { hideLightDragBar(); } catch (e) {}
+            try {
+                const sm = document.getElementById('strip-mini-panel');
+                if (sm) sm.style.display = 'none';
+                const fb = document.getElementById('finish-strip-btn');
+                if (fb) fb.style.display = 'none';
+            } catch (e) {}
+            try { hidePanel('install-panel'); } catch (e) {}
+
             state = 'DONE';
-            statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
-            showOnlyPanel('results-panel');
-            // сохранить текущий в список для просмотра/правки перед отправкой
-            if (isEditMode && editCeilingIndex >= 0) {
-                saveEditorToCompleted();
-                showCeilingSwitcher();
-                renderSwitcherBtns();
-                showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
-            } else if (points.length >= 3) {
-                try {
-                    const current = getCurrentCeilingPayload();
-                    if (current.points && current.points.length >= 3) {
-                        // обновить последний, если это тот же контур, иначе добавить
-                        let replaced = false;
-                        if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
-                            completedCeilings[editCeilingIndex] = current;
-                            replaced = true;
-                        } else if (completedCeilings.length) {
-                            const last = completedCeilings[completedCeilings.length - 1];
-                            if (last && last.points && last.points.length === current.points.length) {
-                                let same = true;
-                                for (let i = 0; i < current.points.length; i++) {
-                                    if (Math.abs(Number(last.points[i].x) - Number(current.points[i].x)) > 0.02 ||
-                                        Math.abs(Number(last.points[i].y) - Number(current.points[i].y)) > 0.02) {
-                                        same = false; break;
-                                    }
-                                }
-                                if (same) {
-                                    completedCeilings[completedCeilings.length - 1] = current;
-                                    replaced = true;
-                                    editCeilingIndex = completedCeilings.length - 1;
-                                }
-                            }
-                        }
-                        if (!replaced) {
-                            completedCeilings.push(current);
-                            editCeilingIndex = completedCeilings.length - 1;
-                        }
-                    }
-                } catch (e) { console.warn(e); }
-                showToast('Проверьте потолки в списке. Можно открыть ✏️ и править, затем «Отправить».', 4000);
+            if (statusText) {
+                statusText.innerText = isEditMode
+                    ? ('Правка потолка №' + (editCeilingIndex + 1))
+                    : 'Готово — проверьте потолки';
             }
-            updateCeilingsList();
-            updateSavedChip();
-            autoFitCamera();
-            draw();
+
+            // Сохранение БЕЗ дублей
+            try {
+                if (isEditMode && editCeilingIndex >= 0) {
+                    try { saveEditorToCompleted(); } catch (e) { ensureCurrentCeilingSaved(); }
+                    try { showCeilingSwitcher(); renderSwitcherBtns(); } catch (e) {}
+                    showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
+                } else if (points.length >= 3) {
+                    ensureCurrentCeilingSaved();
+                    showToast('Проверьте потолки в списке, затем «Отправить весь замер».', 4000);
+                }
+            } catch (e) {
+                console.error('finishInstall save', e);
+            }
+
+            try { showOnlyPanel('results-panel'); } catch (e) {
+                try {
+                    const rp = document.getElementById('results-panel');
+                    if (rp) {
+                        rp.classList.add('active');
+                        rp.style.removeProperty('display');
+                    }
+                } catch (e2) {}
+            }
+            try { updateCeilingsList(); } catch (e) {}
+            try { updateSavedChip(); } catch (e) {}
+            try { autoFitCamera(); } catch (e) {}
+            try { draw(); } catch (e) {}
         }
 
         // ---- Геометрические функции (без изменений) ----
@@ -2491,26 +2391,8 @@
 
         function selectMat(matName, btnEl) {
             selectedMaterial = matName;
-            const sel = document.getElementById('mat-select');
-            if (sel) {
-                // ensure option exists
-                let found = false;
-                for (let i = 0; i < sel.options.length; i++) {
-                    if (sel.options[i].value === matName) { found = true; break; }
-                }
-                if (!found) {
-                    const opt = document.createElement('option');
-                    opt.value = matName; opt.textContent = matName;
-                    sel.appendChild(opt);
-                }
-                sel.value = matName;
-            }
             document.querySelectorAll('.mat-btn').forEach(b => b.classList.remove('selected'));
-            if (btnEl) btnEl.classList.add('selected');
-        }
-        function selectMatFromSelect() {
-            const sel = document.getElementById('mat-select');
-            if (sel && sel.value) selectedMaterial = sel.value;
+            btnEl.classList.add('selected');
         }
 
         function finishMaterialSelection() {
@@ -2791,7 +2673,6 @@
             saveEditorToCompleted();
             state = 'SELECT_MATERIAL';
             statusText.innerText = 'Материал и цвет';
-            try { selectMat(selectedMaterial || 'Мат', null); } catch (e) {}
             document.getElementById('results-panel').classList.remove('active');
             hideCeilingSwitcher();
             document.getElementById('bottom-input-bar').classList.remove('active');
@@ -2821,7 +2702,44 @@
             showToast('Профиль, освещение, карнизы — затем «Готово»', 3000);
         }
 
-        function getCurrentCeilingPayload() {
+        
+        function sameCeilingGeom(a, b) {
+            if (!a || !b || !a.points || !b.points) return false;
+            if (a.points.length !== b.points.length) return false;
+            for (let i = 0; i < a.points.length; i++) {
+                if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
+                if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
+            }
+            return true;
+        }
+
+        /** Сохранить текущий потолок без дублей */
+        function ensureCurrentCeilingSaved() {
+            if (!points || points.length < 3) return false;
+            let current;
+            try { current = getCurrentCeilingPayload(); }
+            catch (e) { console.warn(e); return false; }
+            if (!current || !current.points || current.points.length < 3) return false;
+
+            if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 &&
+                editCeilingIndex < completedCeilings.length) {
+                completedCeilings[editCeilingIndex] = current;
+                return true;
+            }
+            if (completedCeilings.length) {
+                const last = completedCeilings[completedCeilings.length - 1];
+                if (sameCeilingGeom(last, current)) {
+                    completedCeilings[completedCeilings.length - 1] = current;
+                    editCeilingIndex = completedCeilings.length - 1;
+                    return true;
+                }
+            }
+            completedCeilings.push(current);
+            editCeilingIndex = completedCeilings.length - 1;
+            return true;
+        }
+
+function getCurrentCeilingPayload() {
             const ptsMeters = points.map(p => ({
                 x: p.x / 100,
                 y: p.y / 100,
@@ -2941,16 +2859,8 @@
                 showToast('Сначала завершите текущий потолок.', 2500);
                 return;
             }
-            try {
-                const payload = getCurrentCeilingPayload();
-                if (!payload.points || payload.points.length < 3) {
-                    showToast('Нет готового потолка.', 2000);
-                    return;
-                }
-                completedCeilings.push(payload);
-            } catch (e) {
-                console.error(e);
-                showToast('Не удалось сохранить потолок.', 2500);
+            if (!ensureCurrentCeilingSaved()) {
+                showToast('Нет готового потолка.', 2000);
                 return;
             }
             startNextCeilingDrawing();
@@ -3131,20 +3041,27 @@
                 if (points.length >= 3) {
                     try {
                         if (isEditMode && editCeilingIndex >= 0) {
-                            saveEditorToCompleted();
+                            try { saveEditorToCompleted(); } catch (e) { ensureCurrentCeilingSaved(); }
                         } else {
-                            var current = getCurrentCeilingPayload();
-                            if (current.points && current.points.length >= 3) {
-                                var last = completedCeilings[completedCeilings.length - 1];
-                                if (last && sameCeilingGeom(last, current)) {
-                                    completedCeilings[completedCeilings.length - 1] = current;
-                                } else {
-                                    completedCeilings.push(current);
-                                }
-                            }
+                            ensureCurrentCeilingSaved();
                         }
                     } catch (e) { console.warn(e); }
                 }
+                // финальный анти-дубль по геометрии
+                (function () {
+                    var out = [];
+                    completedCeilings.forEach(function (c) {
+                        var dup = false;
+                        for (var i = 0; i < out.length; i++) {
+                            if (typeof sameCeilingGeom === 'function' && sameCeilingGeom(out[i], c)) { dup = true; break; }
+                        }
+                        if (!dup) out.push(c);
+                    });
+                    if (out.length !== completedCeilings.length) {
+                        console.warn('[sendToBot] dedupe', completedCeilings.length, '->', out.length);
+                        completedCeilings = out;
+                    }
+                })();
                 if (!completedCeilings.length) {
                     note('Нет потолка для отправки.');
                     return;
@@ -3690,34 +3607,22 @@
                     try { raw = decodeURIComponent(raw); } catch (e) {}
                     return raw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
                 }
-                function fillSelect(selId, names, selected) {
-                    const sel = document.getElementById(selId);
-                    if (!sel || !names.length) return;
-                    const prev = selected || sel.value;
-                    sel.innerHTML = '';
-                    names.forEach(function (n) {
-                        const opt = document.createElement('option');
-                        opt.value = n;
-                        opt.textContent = n;
-                        sel.appendChild(opt);
-                    });
-                    if (prev && names.indexOf(prev) >= 0) sel.value = prev;
-                    else sel.value = names[0];
-                    return sel.value;
-                }
-
-                // Карнизы → select
+                // Карнизы
                 const cornices = splitParam('cornices');
                 if (cornices.length) {
-                    fillSelect('cornice-type-select', cornices);
+                    const sel = document.getElementById('cornice-type-select');
+                    if (sel) {
+                        sel.innerHTML = '';
+                        cornices.forEach(function (n) {
+                            const opt = document.createElement('option');
+                            opt.value = n; opt.textContent = n;
+                            sel.appendChild(opt);
+                        });
+                    }
                 }
-
-                // Плёнки → select материала
+                // Плёнки
                 const films = splitParam('films');
                 if (films.length) {
-                    const v = fillSelect('mat-select', films, selectedMaterial);
-                    if (v) selectedMaterial = v;
-                    // legacy mat-selector (скрыт)
                     const box = document.getElementById('mat-selector');
                     if (box) {
                         box.innerHTML = '';
@@ -3728,14 +3633,12 @@
                             d.setAttribute('onclick', "selectMat('" + n.replace(/'/g, "\\'") + "', this)");
                             box.appendChild(d);
                         });
+                        if (films[0]) selectedMaterial = films[0];
                     }
                 }
-
-                // Профили → select
+                // Профили
                 const profiles = splitParam('profiles');
                 if (profiles.length) {
-                    const v = fillSelect('profile-select', profiles, selectedProfileName);
-                    if (v) selectedProfileName = v;
                     const box = document.getElementById('profile-pick');
                     if (box) {
                         box.innerHTML = '';
@@ -3747,51 +3650,10 @@
                             b.setAttribute('onclick', "selectProfileBrush('" + n.replace(/'/g, "\\'") + "', this)");
                             box.appendChild(b);
                         });
+                        if (profiles[0]) selectedProfileName = profiles[0];
                     }
                 }
-            } catch (e) {
-                console.warn('loadCatalogFromUrl', e);
-            }
-        }
-
-        // ---- Сворачивание панели монтажа ----
-        let installCollapsed = false;
-        function toggleInstallCollapsed() {
-            const panel = document.getElementById('install-panel');
-            if (!panel) return;
-            installCollapsed = !installCollapsed;
-            panel.classList.toggle('collapsed', installCollapsed);
-            const btn = document.getElementById('install-collapse-btn');
-            if (btn) btn.textContent = installCollapsed ? 'Развернуть ▴' : 'Свернуть ▾';
-            updateInstallMiniTitle();
-        }
-        function expandInstallPanel() {
-            const panel = document.getElementById('install-panel');
-            if (!panel) return;
-            installCollapsed = false;
-            panel.classList.remove('collapsed');
-            const btn = document.getElementById('install-collapse-btn');
-            if (btn) btn.textContent = 'Свернуть ▾';
-            updateInstallMiniTitle();
-        }
-        function collapseInstallPanel() {
-            const panel = document.getElementById('install-panel');
-            if (!panel) return;
-            installCollapsed = true;
-            panel.classList.add('collapsed');
-            const btn = document.getElementById('install-collapse-btn');
-            if (btn) btn.textContent = 'Развернуть ▴';
-            updateInstallMiniTitle();
-        }
-        function updateInstallMiniTitle() {
-            const el = document.getElementById('install-mini-title');
-            if (!el) return;
-            const modeLabel = {
-                profile: 'Профиль: ' + (selectedProfileName || '—'),
-                lighting: 'Освещение',
-                cornice: 'Карниз'
-            };
-            el.textContent = 'Монтаж · ' + (modeLabel[installMode] || installMode || '—');
+            } catch (e) { console.warn('catalog url', e); }
         }
         loadCatalogFromUrl();
 
