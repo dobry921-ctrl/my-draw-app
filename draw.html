@@ -98,7 +98,37 @@
             color: #888; cursor: pointer; padding: 0 4px;
             line-height: 1;
         }
-        #install-panel.active { z-index: 160; min-height: 30vh; }
+        #install-panel.active { z-index: 160; max-height: 42vh; }
+        #install-panel.collapsed { max-height: none !important; overflow: visible !important; }
+        #install-panel.collapsed .install-body { display: none !important; }
+        #install-panel .install-mini-bar {
+            display: none; align-items: center; gap: 6px; padding: 4px 0 2px;
+        }
+        #install-panel.collapsed .install-mini-bar { display: flex; }
+        #install-panel .install-mini-bar .mini-title {
+            font-weight: 700; font-size: 0.82rem; color: #1a73e8; flex: 1;
+        }
+        #install-panel .install-mini-bar .mini-chip {
+            font-size: 0.7rem; padding: 3px 8px; border-radius: 12px;
+            background: #e8f0fe; color: #1a73e8; border: none; cursor: pointer;
+        }
+        .catalog-select {
+            width: 100%; padding: 8px 10px; border: 1px solid #c5cdd8;
+            border-radius: 8px; font-size: 0.9rem; background: #fff; color: #202124;
+            margin-bottom: 6px;
+        }
+        .catalog-select:focus {
+            outline: none; border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
+        }
+        .field-label {
+            font-size: 0.75rem; color: #5f6368; margin: 2px 0 3px; font-weight: 600;
+        }
+        .panel-collapse-toggle {
+            border: none; background: #e8f0fe; color: #1a73e8;
+            border-radius: 8px; padding: 5px 10px; font-size: 0.78rem;
+            font-weight: 600; cursor: pointer;
+        }
         #bottom-input-bar.active { z-index: 180; }
         #saved-chip {
             position: absolute; top: 12px; right: 12px; z-index: 45;
@@ -293,12 +323,14 @@
 
     <div id="material-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('material-panel')">✕</button>
-        <div class="panel-title">Параметры потолка:</div>
-        <div class="mat-selector" id="mat-selector">
-            <div class="mat-btn selected" onclick="selectMat('Мат', this)">Мат</div>
-            <div class="mat-btn" onclick="selectMat('Глянец', this)">Глянец</div>
-            <div class="mat-btn" onclick="selectMat('Сатин', this)">Сатин</div>
-        </div>
+        <div class="panel-title">Параметры потолка</div>
+        <div class="field-label">Плёнка / материал (справочник бота)</div>
+        <select id="mat-select" class="catalog-select" onchange="selectMatFromSelect()">
+            <option value="Мат">Мат</option>
+            <option value="Глянец">Глянец</option>
+            <option value="Сатин">Сатин</option>
+        </select>
+        <div class="mat-selector" id="mat-selector" style="display:none;"></div>
         <div class="color-row">
             <label>Цвет:</label>
             <input type="text" id="color-input" value="Белый" placeholder="Например: Белый, 001">
@@ -308,8 +340,19 @@
 
     <div id="install-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('install-panel')">✕</button>
-        <div class="panel-title">Монтажные элементы</div>
-        <div class="hint">Необязательно. На PNG для монтажников — всё видно; в PDF для производства — нет.</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+            <div class="panel-title" style="margin:0;flex:1;">Монтажные элементы</div>
+            <button type="button" class="panel-collapse-toggle" id="install-collapse-btn" onclick="toggleInstallCollapsed()">Свернуть ▾</button>
+        </div>
+        <div class="install-mini-bar" id="install-mini-bar">
+            <span class="mini-title" id="install-mini-title">Монтаж · Профиль</span>
+            <button type="button" class="mini-chip" onclick="setInstallMode('profile'); expandInstallPanel();">Профиль</button>
+            <button type="button" class="mini-chip" onclick="setInstallMode('lighting'); expandInstallPanel();">Свет</button>
+            <button type="button" class="mini-chip" onclick="setInstallMode('cornice'); expandInstallPanel();">Карниз</button>
+            <button type="button" class="panel-collapse-toggle" onclick="expandInstallPanel()">Развернуть ▴</button>
+        </div>
+        <div class="install-body" id="install-body">
+        <div class="hint" style="margin:2px 0 4px;">Материалы из справочника бота. Сверните панель, чтобы видеть чертёж.</div>
         <div class="install-modes">
             <button type="button" class="install-mode-btn active" id="imode-profile" onclick="setInstallMode('profile')">Профиль</button>
             <button type="button" class="install-mode-btn" id="imode-lighting" onclick="setInstallMode('lighting')">Освещение</button>
@@ -318,12 +361,14 @@
         <div id="install-hint" class="hint">Выберите профиль, затем тапните стороны. Если стороны не указаны — профиль на все.</div>
 
         <div id="profile-tools" style="display:block;">
-            <div class="profile-pick" id="profile-pick">
-                <button type="button" class="selected" onclick="selectProfileBrush('Стандартный', this)">Стандартный</button>
-                <button type="button" onclick="selectProfileBrush('Теневой', this)">Теневой</button>
-                <button type="button" onclick="selectProfileBrush('Парящий', this)">Парящий</button>
-            </div>
-            <button class="btn btn-outline" style="width:100%;margin-top:4px;padding:6px;" onclick="applyProfileToAll()">Применить ко всем</button>
+            <div class="field-label">Тип профиля (справочник)</div>
+            <select id="profile-select" class="catalog-select" onchange="selectProfileFromSelect()">
+                <option value="Стандартный">Стандартный</option>
+                <option value="Теневой">Теневой</option>
+                <option value="Парящий">Парящий</option>
+            </select>
+            <div class="profile-pick" id="profile-pick" style="display:none;"></div>
+            <button class="btn btn-outline" style="width:100%;margin-top:2px;padding:6px;" onclick="applyProfileToAll()">Применить ко всем сторонам</button>
         </div>
 
         <div id="lighting-tools" style="display:none;">
@@ -369,6 +414,7 @@
             <button class="btn btn-outline" style="flex:1;padding:6px;" onclick="skipInstall()">Пропустить</button>
             <button class="btn btn-success" style="flex:1;padding:6px;" onclick="finishInstall()">Готово</button>
         </div>
+        </div><!-- /.install-body -->
     </div>
 
     <div id="ceiling-switcher" class="bottom-panel">
@@ -1734,7 +1780,24 @@
             profileEdgesPainted = false;
             document.querySelectorAll('#profile-pick button').forEach(b => b.classList.remove('selected'));
             if (el) el.classList.add('selected');
+            const sel = document.getElementById('profile-select');
+            if (sel) {
+                let found = false;
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === name) { found = true; break; }
+                }
+                if (!found) {
+                    const opt = document.createElement('option');
+                    opt.value = name; opt.textContent = name;
+                    sel.appendChild(opt);
+                }
+                sel.value = name;
+            }
             showToast(`Профиль «${name}»: тапните стороны или «Применить ко всем»`, 3000);
+        }
+        function selectProfileFromSelect() {
+            const sel = document.getElementById('profile-select');
+            if (sel && sel.value) selectProfileBrush(sel.value, null);
         }
 
         function applyProfileToAll() {
@@ -2391,8 +2454,25 @@
 
         function selectMat(matName, btnEl) {
             selectedMaterial = matName;
+            const sel = document.getElementById('mat-select');
+            if (sel) {
+                let found = false;
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === matName) { found = true; break; }
+                }
+                if (!found) {
+                    const opt = document.createElement('option');
+                    opt.value = matName; opt.textContent = matName;
+                    sel.appendChild(opt);
+                }
+                sel.value = matName;
+            }
             document.querySelectorAll('.mat-btn').forEach(b => b.classList.remove('selected'));
-            btnEl.classList.add('selected');
+            if (btnEl) btnEl.classList.add('selected');
+        }
+        function selectMatFromSelect() {
+            const sel = document.getElementById('mat-select');
+            if (sel && sel.value) selectedMaterial = sel.value;
         }
 
         function finishMaterialSelection() {
@@ -3607,53 +3687,67 @@ function getCurrentCeilingPayload() {
                     try { raw = decodeURIComponent(raw); } catch (e) {}
                     return raw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
                 }
-                // Карнизы
-                const cornices = splitParam('cornices');
-                if (cornices.length) {
-                    const sel = document.getElementById('cornice-type-select');
-                    if (sel) {
-                        sel.innerHTML = '';
-                        cornices.forEach(function (n) {
-                            const opt = document.createElement('option');
-                            opt.value = n; opt.textContent = n;
-                            sel.appendChild(opt);
-                        });
-                    }
+                function fillSelect(selId, names, selected) {
+                    const sel = document.getElementById(selId);
+                    if (!sel || !names.length) return null;
+                    const prev = selected || sel.value;
+                    sel.innerHTML = '';
+                    names.forEach(function (n) {
+                        const opt = document.createElement('option');
+                        opt.value = n; opt.textContent = n;
+                        sel.appendChild(opt);
+                    });
+                    if (prev && names.indexOf(prev) >= 0) sel.value = prev;
+                    else sel.value = names[0];
+                    return sel.value;
                 }
-                // Плёнки
+                const cornices = splitParam('cornices');
+                if (cornices.length) fillSelect('cornice-type-select', cornices);
+
                 const films = splitParam('films');
                 if (films.length) {
-                    const box = document.getElementById('mat-selector');
-                    if (box) {
-                        box.innerHTML = '';
-                        films.forEach(function (n, i) {
-                            const d = document.createElement('div');
-                            d.className = 'mat-btn' + (i === 0 ? ' selected' : '');
-                            d.textContent = n;
-                            d.setAttribute('onclick', "selectMat('" + n.replace(/'/g, "\\'") + "', this)");
-                            box.appendChild(d);
-                        });
-                        if (films[0]) selectedMaterial = films[0];
-                    }
+                    const v = fillSelect('mat-select', films, selectedMaterial);
+                    if (v) selectedMaterial = v;
                 }
-                // Профили
                 const profiles = splitParam('profiles');
                 if (profiles.length) {
-                    const box = document.getElementById('profile-pick');
-                    if (box) {
-                        box.innerHTML = '';
-                        profiles.forEach(function (n, i) {
-                            const b = document.createElement('button');
-                            b.type = 'button';
-                            if (i === 0) b.className = 'selected';
-                            b.textContent = n;
-                            b.setAttribute('onclick', "selectProfileBrush('" + n.replace(/'/g, "\\'") + "', this)");
-                            box.appendChild(b);
-                        });
-                        if (profiles[0]) selectedProfileName = profiles[0];
-                    }
+                    const v = fillSelect('profile-select', profiles, selectedProfileName);
+                    if (v) selectedProfileName = v;
                 }
-            } catch (e) { console.warn('catalog url', e); }
+            } catch (e) { console.warn('loadCatalogFromUrl', e); }
+        }
+
+        let installCollapsed = false;
+        function toggleInstallCollapsed() {
+            const panel = document.getElementById('install-panel');
+            if (!panel) return;
+            installCollapsed = !installCollapsed;
+            panel.classList.toggle('collapsed', installCollapsed);
+            const btn = document.getElementById('install-collapse-btn');
+            if (btn) btn.textContent = installCollapsed ? 'Развернуть ▴' : 'Свернуть ▾';
+            try { updateInstallMiniTitle(); } catch (e) {}
+        }
+        function expandInstallPanel() {
+            const panel = document.getElementById('install-panel');
+            if (!panel) return;
+            installCollapsed = false;
+            panel.classList.remove('collapsed');
+            const btn = document.getElementById('install-collapse-btn');
+            if (btn) btn.textContent = 'Свернуть ▾';
+        }
+        function collapseInstallPanel() {
+            const panel = document.getElementById('install-panel');
+            if (!panel) return;
+            installCollapsed = true;
+            panel.classList.add('collapsed');
+            const btn = document.getElementById('install-collapse-btn');
+            if (btn) btn.textContent = 'Развернуть ▴';
+        }
+        function updateInstallMiniTitle() {
+            const el = document.getElementById('install-mini-title');
+            if (!el) return;
+            const map = { profile: 'Профиль: ' + (selectedProfileName || '—'), lighting: 'Освещение', cornice: 'Карниз' };
+            el.textContent = 'Монтаж · ' + (map[installMode] || '—');
         }
         loadCatalogFromUrl();
 
