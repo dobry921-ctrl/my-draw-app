@@ -1510,7 +1510,6 @@
             const bar = document.getElementById('light-drag-bar');
             if (bar) bar.style.display = 'none';
         }
-        // stub: старая мини-панель AI удалена, но вызовы остались — не ломаем finishInstall/reset
         function hideAiMiniBar() {
             try {
                 const el = document.getElementById('ai-mini-bar') || document.getElementById('ai-mini-panel');
@@ -2152,71 +2151,28 @@
         }
 
         function finishInstall() {
-            try {
-                if (installMode === 'profile' && !profileEdgesPainted) {
-                    sideProfiles = points.map(() => selectedProfileName);
-                }
-            } catch (e) { console.warn(e); }
+            if (installMode === 'profile' && !profileEdgesPainted) {
+                sideProfiles = points.map(() => selectedProfileName);
+            }
             stripDraft = [];
             selectedFixtureIdx = -1;
             snapGuides = [];
-            try { hideAiMiniBar(); } catch (e) {}
-            try { hideLightDragBar(); } catch (e) {}
-            try {
-                const sm = document.getElementById('strip-mini-panel');
-                if (sm) sm.style.display = 'none';
-                const fb = document.getElementById('finish-strip-btn');
-                if (fb) fb.style.display = 'none';
-            } catch (e) {}
-            try { hidePanel('install-panel'); } catch (e) {}
+            hideAiMiniBar();
+            hideLightDragBar();
+            document.getElementById('strip-mini-panel').style.display = 'none';
+            document.getElementById('finish-strip-btn').style.display = 'none';
+            hidePanel('install-panel');
             state = 'DONE';
-            if (statusText) {
-                statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
-            }
-            try { showOnlyPanel('results-panel'); } catch (e) {
-                try {
-                    const rp = document.getElementById('results-panel');
-                    if (rp) { rp.classList.add('active'); rp.style.removeProperty('display'); }
-                } catch (e2) {}
-            }
-            // сохранить текущий в список для просмотра/правки перед отправкой
+            statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
+            showOnlyPanel('results-panel');
+            // сохранить текущий в список (без дублей)
             if (isEditMode && editCeilingIndex >= 0) {
-                saveEditorToCompleted();
+                try { saveEditorToCompleted(); } catch (e) { ensureCurrentCeilingSaved(); }
                 showCeilingSwitcher();
                 renderSwitcherBtns();
                 showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
             } else if (points.length >= 3) {
-                try {
-                    const current = getCurrentCeilingPayload();
-                    if (current.points && current.points.length >= 3) {
-                        // обновить последний, если это тот же контур, иначе добавить
-                        let replaced = false;
-                        if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
-                            completedCeilings[editCeilingIndex] = current;
-                            replaced = true;
-                        } else if (completedCeilings.length) {
-                            const last = completedCeilings[completedCeilings.length - 1];
-                            if (last && last.points && last.points.length === current.points.length) {
-                                let same = true;
-                                for (let i = 0; i < current.points.length; i++) {
-                                    if (Math.abs(Number(last.points[i].x) - Number(current.points[i].x)) > 0.02 ||
-                                        Math.abs(Number(last.points[i].y) - Number(current.points[i].y)) > 0.02) {
-                                        same = false; break;
-                                    }
-                                }
-                                if (same) {
-                                    completedCeilings[completedCeilings.length - 1] = current;
-                                    replaced = true;
-                                    editCeilingIndex = completedCeilings.length - 1;
-                                }
-                            }
-                        }
-                        if (!replaced) {
-                            completedCeilings.push(current);
-                            editCeilingIndex = completedCeilings.length - 1;
-                        }
-                    }
-                } catch (e) { console.warn(e); }
+                ensureCurrentCeilingSaved();
                 showToast('Проверьте потолки в списке. Можно открыть ✏️ и править, затем «Отправить».', 4000);
             }
             updateCeilingsList();
@@ -2721,6 +2677,51 @@
             showToast('Профиль, освещение, карнизы — затем «Готово»', 3000);
         }
 
+
+        /** Геометрия двух payload-потолков совпадает? */
+        function sameCeilingGeom(a, b) {
+            if (!a || !b || !a.points || !b.points) return false;
+            if (a.points.length !== b.points.length) return false;
+            for (let i = 0; i < a.points.length; i++) {
+                if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
+                if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
+            }
+            return true;
+        }
+
+        /**
+         * Единая точка сохранения текущего потолка в completedCeilings.
+         * Не создаёт дубли: обновляет текущий editCeilingIndex или последний с той же геометрией.
+         */
+        function ensureCurrentCeilingSaved() {
+            if (!points || points.length < 3) return false;
+            let current;
+            try {
+                current = getCurrentCeilingPayload();
+            } catch (e) {
+                console.warn('ensureCurrentCeilingSaved', e);
+                return false;
+            }
+            if (!current || !current.points || current.points.length < 3) return false;
+
+            if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 &&
+                editCeilingIndex < completedCeilings.length) {
+                completedCeilings[editCeilingIndex] = current;
+                return true;
+            }
+            if (completedCeilings.length) {
+                const last = completedCeilings[completedCeilings.length - 1];
+                if (sameCeilingGeom(last, current)) {
+                    completedCeilings[completedCeilings.length - 1] = current;
+                    editCeilingIndex = completedCeilings.length - 1;
+                    return true;
+                }
+            }
+            completedCeilings.push(current);
+            editCeilingIndex = completedCeilings.length - 1;
+            return true;
+        }
+
         function getCurrentCeilingPayload() {
             const ptsMeters = points.map(p => ({
                 x: p.x / 100,
@@ -2841,18 +2842,11 @@
                 showToast('Сначала завершите текущий потолок.', 2500);
                 return;
             }
-            try {
-                const payload = getCurrentCeilingPayload();
-                if (!payload.points || payload.points.length < 3) {
-                    showToast('Нет готового потолка.', 2000);
-                    return;
-                }
-                completedCeilings.push(payload);
-            } catch (e) {
-                console.error(e);
-                showToast('Не удалось сохранить потолок.', 2500);
+            if (!ensureCurrentCeilingSaved()) {
+                showToast('Нет готового потолка.', 2000);
                 return;
             }
+            // не дублируем: ensure уже сохранил/обновил текущий
             startNextCeilingDrawing();
         }
 
@@ -3019,32 +3013,31 @@
                     return;
                 }
 
-                function sameCeilingGeom(a, b) {
-                    if (!a || !b || !a.points || !b.points) return false;
-                    if (a.points.length !== b.points.length) return false;
-                    for (var i = 0; i < a.points.length; i++) {
-                        if (Math.abs(Number(a.points[i].x) - Number(b.points[i].x)) > 0.02) return false;
-                        if (Math.abs(Number(a.points[i].y) - Number(b.points[i].y)) > 0.02) return false;
-                    }
-                    return true;
-                }
                 if (points.length >= 3) {
                     try {
                         if (isEditMode && editCeilingIndex >= 0) {
-                            saveEditorToCompleted();
+                            try { saveEditorToCompleted(); } catch (e) { ensureCurrentCeilingSaved(); }
                         } else {
-                            var current = getCurrentCeilingPayload();
-                            if (current.points && current.points.length >= 3) {
-                                var last = completedCeilings[completedCeilings.length - 1];
-                                if (last && sameCeilingGeom(last, current)) {
-                                    completedCeilings[completedCeilings.length - 1] = current;
-                                } else {
-                                    completedCeilings.push(current);
-                                }
-                            }
+                            ensureCurrentCeilingSaved();
                         }
                     } catch (e) { console.warn(e); }
                 }
+                // финальный анти-дубль по геометрии
+                (function dedupeCeilings() {
+                    var seen = [];
+                    var out = [];
+                    completedCeilings.forEach(function (c) {
+                        var dup = false;
+                        for (var i = 0; i < out.length; i++) {
+                            if (sameCeilingGeom(out[i], c)) { dup = true; break; }
+                        }
+                        if (!dup) out.push(c);
+                    });
+                    if (out.length !== completedCeilings.length) {
+                        console.warn('[sendToBot] removed ceiling duplicates', completedCeilings.length, '->', out.length);
+                        completedCeilings = out;
+                    }
+                })();
                 if (!completedCeilings.length) {
                     note('Нет потолка для отправки.');
                     return;
@@ -3057,14 +3050,54 @@
                     return Math.round(x * p) / p;
                 }
                 function asM(v) {
+                    // В completedCeilings координаты УЖЕ в метрах (getCurrentCeilingPayload).
+                    // Делим только явные «см» (> 50), чтобы не раздувать 42см → 42м.
                     var x = Number(v);
                     if (!Number.isFinite(x)) return 0;
                     if (Math.abs(x) > 50) x = x / 100;
                     return r(x, 3);
                 }
+                function normalizeCeilingUnits(c) {
+                    // Если точки выглядят как см (max > 50) — переводим всё в метры.
+                    var pts = c.points || [];
+                    var maxAbs = 0;
+                    pts.forEach(function (p) {
+                        maxAbs = Math.max(maxAbs, Math.abs(Number(p.x) || 0), Math.abs(Number(p.y) || 0));
+                    });
+                    (c.fixtures || []).forEach(function (f) {
+                        maxAbs = Math.max(maxAbs, Math.abs(Number(f.x) || 0), Math.abs(Number(f.y) || 0));
+                        (f.points || []).forEach(function (p) {
+                            maxAbs = Math.max(maxAbs, Math.abs(Number(p.x) || 0), Math.abs(Number(p.y) || 0));
+                        });
+                    });
+                    if (maxAbs <= 50) return c; // уже метры
+                    function div(v) {
+                        var x = Number(v);
+                        if (!Number.isFinite(x)) return 0;
+                        return r(x / 100, 3);
+                    }
+                    return Object.assign({}, c, {
+                        unit: 'm',
+                        points: pts.map(function (p) {
+                            return { x: div(p.x), y: div(p.y), letter: p.letter };
+                        }),
+                        fixtures: (c.fixtures || []).map(function (f) {
+                            var o = Object.assign({}, f);
+                            if (o.x != null) o.x = div(o.x);
+                            if (o.y != null) o.y = div(o.y);
+                            if (o.points) {
+                                o.points = o.points.map(function (p) {
+                                    return { x: div(p.x), y: div(p.y) };
+                                });
+                            }
+                            return o;
+                        })
+                    });
+                }
 
                 function buildLevel(level) {
                     return completedCeilings.map(function (c) {
+                        c = normalizeCeilingUnits(c);
                         var pts = (c.points || []).map(function (p) {
                             return [asM(p.x), asM(p.y)];
                         });
