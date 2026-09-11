@@ -2174,7 +2174,6 @@
                 statusText.innerText = isEditMode ? (`Правка потолка №${editCeilingIndex + 1}`) : 'Готово — проверьте потолки';
             }
             try { showOnlyPanel('results-panel'); } catch (e) {
-                // fallback: вручную показать results
                 try {
                     const rp = document.getElementById('results-panel');
                     if (rp) { rp.classList.add('active'); rp.style.removeProperty('display'); }
