@@ -344,6 +344,16 @@
                 <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полоса</button>
             </div>
 
+            <div class="color-row" style="margin-top:6px;margin-bottom:4px;">
+                <label>Материал:</label>
+                <select id="lighting-select" class="catalog-select" onchange="selectLightingFromSelect()" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                    <option value="Спот (установка)">Спот (установка)</option>
+                    <option value="Световая точка (установка)">Световая точка (установка)</option>
+                    <option value="Люстра (установка)">Люстра (установка)</option>
+                    <option value="Световая полоса">Световая полоса</option>
+                </select>
+            </div>
+
             <div id="spot-kind-row" style="display:flex;gap:6px;margin-top:6px;">
                 <button type="button" class="btn btn-success" id="btn-kind-spot" style="flex:1;padding:10px;" onclick="setSpotKind('spot')">Спот</button>
                 <button type="button" class="btn btn-outline" id="btn-kind-point" style="flex:1;padding:10px;" onclick="setSpotKind('light_point')">Свет. точка</button>
@@ -441,6 +451,7 @@
         let fixtures = [];
         let installMode = 'profile';
         let lightingSub = 'spot';
+        let selectedLightingName = 'Спот (установка)';
         let selectedProfileName = 'Стандартный';
         let profileEdgesPainted = false;
         let stripDraft = [];
@@ -1473,7 +1484,10 @@
                 pushLightingUndo(snapshotFixtures());
                 if (lightingSub === 'chandelier') {
                     const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
-                    fixtures.push({ type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n });
+                    fixtures.push({
+                        type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n,
+                        material: selectedLightingName || 'Люстра (установка)'
+                    });
                     selectedFixtureIdx = fixtures.length - 1;
                     updateFixtureList();
                     showToast(`Люстра L${n}`, 1800);
@@ -1486,7 +1500,8 @@
                         fixtures.push({
                             type: 'light_point', x: worldPos.x, y: worldPos.y, label: 'T' + n,
                             offset_wall_a_cm: off.offset_wall_a_cm,
-                            offset_wall_b_cm: off.offset_wall_b_cm
+                            offset_wall_b_cm: off.offset_wall_b_cm,
+                            material: selectedLightingName || 'Световая точка (установка)'
                         });
                         selectedFixtureIdx = fixtures.length - 1;
                         updateFixtureList();
@@ -1496,7 +1511,8 @@
                         fixtures.push({
                             type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
                             offset_wall_a_cm: off.offset_wall_a_cm,
-                            offset_wall_b_cm: off.offset_wall_b_cm
+                            offset_wall_b_cm: off.offset_wall_b_cm,
+                            material: selectedLightingName || 'Спот (установка)'
                         });
                         selectedFixtureIdx = fixtures.length - 1;
                         updateFixtureList();
@@ -1598,7 +1614,8 @@
                 type: 'spot', x, y, label: 'S' + sn,
                 offset_wall_a_cm: off.offset_wall_a_cm,
                 offset_wall_b_cm: off.offset_wall_b_cm,
-                staged: true
+                staged: true,
+                material: selectedLightingName || 'Спот (установка)'
             });
             selectedFixtureIdx = fixtures.length - 1;
             updateFixtureList();
@@ -1949,7 +1966,10 @@
             points.forEach(p => { cx += p.x; cy += p.y; });
             cx /= points.length; cy /= points.length;
             const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
-            fixtures.push({ type: 'chandelier', x: cx, y: cy, label: 'L' + n });
+            fixtures.push({
+                type: 'chandelier', x: cx, y: cy, label: 'L' + n,
+                material: selectedLightingName || 'Люстра (установка)'
+            });
             selectedFixtureIdx = fixtures.length - 1;
             updateFixtureList();
             draw();
@@ -2027,7 +2047,8 @@
                 label: 'P' + n,
                 wall_offsets: offsets,
                 x: stripDraft[0].x,
-                y: stripDraft[0].y
+                y: stripDraft[0].y,
+                material: selectedLightingName || 'Световая полоса'
             });
             stripDraft = [];
             stripPreviewLen = 0;
@@ -3661,11 +3682,23 @@ function getCurrentCeilingPayload() {
                     var v2 = fillSelect('profile-select', profiles, typeof selectedProfileName !== 'undefined' ? selectedProfileName : null);
                     if (v2) selectedProfileName = v2;
                 }
+                var lightings = splitParam('lightings');
+                if (lightings.length) {
+                    var v3 = fillSelect('lighting-select', lightings, typeof selectedLightingName !== 'undefined' ? selectedLightingName : null);
+                    if (v3) selectedLightingName = v3;
+                }
                 var cornices = splitParam('cornices');
                 if (cornices.length) fillSelect('cornice-type-select', cornices);
             } catch (e) { console.warn('loadCatalogFromUrl', e); }
         }
         loadCatalogFromUrl();
+
+        function selectLightingFromSelect() {
+            var sel = document.getElementById('lighting-select');
+            if (sel && sel.value) {
+                selectedLightingName = sel.value;
+            }
+        }
 
         // ---- Инициализация ----
         const webApp = getTelegramWebApp();
