@@ -339,26 +339,39 @@
 
         <div id="lighting-tools" style="display:none;">
             <div class="install-modes" style="margin-top:2px;">
-                <button type="button" class="install-mode-btn active" id="lmode-spot" onclick="setLightingSub('spot')">Светильники</button>
-                <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстра</button>
-                <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полоса</button>
+                <button type="button" class="install-mode-btn active" id="lmode-spot" onclick="setLightingSub('spot')">Точечные</button>
+                <button type="button" class="install-mode-btn" id="lmode-chandelier" onclick="setLightingSub('chandelier')">Люстры</button>
+                <button type="button" class="install-mode-btn" id="lmode-strip" onclick="setLightingSub('strip')">Полосы</button>
             </div>
 
-            <div class="color-row" style="margin-top:6px;margin-bottom:4px;">
-                <label>Материал:</label>
-                <select id="lighting-select" class="catalog-select" onchange="selectLightingFromSelect()" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
-                    <option value="Спот (установка)">Спот (установка)</option>
-                    <option value="Световая точка (установка)">Световая точка (установка)</option>
-                    <option value="Люстра (установка)">Люстра (установка)</option>
-                    <option value="Световая полоса">Световая полоса</option>
+            <!-- Точечные: Спот / Светильник -->
+            <div id="spot-kind-row" class="color-row" style="margin-top:6px;margin-bottom:4px;">
+                <label>Тип:</label>
+                <select id="point-type-select" class="catalog-select" onchange="selectPointTypeFromSelect()" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                    <option value="spot">Спот</option>
+                    <option value="light_point">Светильник</option>
                 </select>
             </div>
 
-            <div id="spot-kind-row" style="display:flex;gap:6px;margin-top:6px;">
-                <button type="button" class="btn btn-success" id="btn-kind-spot" style="flex:1;padding:10px;" onclick="setSpotKind('spot')">Спот</button>
-                <button type="button" class="btn btn-outline" id="btn-kind-point" style="flex:1;padding:10px;" onclick="setSpotKind('light_point')">Свет. точка</button>
+            <!-- Люстры: материал + по центру -->
+            <div id="chandelier-tools-row" style="display:none;margin-top:6px;">
+                <div class="color-row" style="margin-bottom:4px;">
+                    <label>Материал:</label>
+                    <select id="chandelier-select" class="catalog-select" onchange="selectChandelierFromSelect()" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                        <option value="Люстра (установка)">Люстра (установка)</option>
+                    </select>
+                </div>
+                <button class="btn btn-outline" id="chandelier-center-btn" style="width:100%;padding:8px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
             </div>
-            <button class="btn btn-outline" id="chandelier-center-btn" style="display:none;width:100%;margin-top:6px;padding:8px;" onclick="placeChandelierCenter()">📍 Люстра по центру</button>
+
+            <!-- Полосы: материал из каталога -->
+            <div id="strip-material-row" class="color-row" style="display:none;margin-top:6px;margin-bottom:4px;">
+                <label>Тип:</label>
+                <select id="strip-material-select" class="catalog-select" onchange="selectStripMaterialFromSelect()" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#fff;">
+                    <option value="Световая полоса">Световая полоса</option>
+                    <option value="Трековая система">Трековая система</option>
+                </select>
+            </div>
 
             <div class="hint" id="lighting-mode-hint" style="margin:6px 0;">Тапните на чертёж — объект в точке тапа. Перетащите за контур — удалится. В заказ только объекты внутри.</div>
             <div style="display:flex;gap:6px;margin-top:4px;">
@@ -452,7 +465,10 @@
         let installMode = 'profile';
         let lightingSub = 'spot';
         let selectedLightingName = 'Спот (установка)';
+        let selectedChandelierName = 'Люстра (установка)';
+        let selectedStripMaterial = 'Световая полоса';
         let selectedProfileName = 'Стандартный';
+        let spotKind = 'spot'; // 'spot' | 'light_point'
         let profileEdgesPainted = false;
         let stripDraft = [];
         let stripPreviewLen = 0;
@@ -535,6 +551,21 @@
             return `${a.lab}: ${a.d.toFixed(1)} см\n${b.lab}: ${b.d.toFixed(1)} см`;
         }
 
+        /** Расстояние до ближайшего точечного светильника (spot / light_point / chandelier). */
+        function formatNearestLightDist(worldPos, skipIdx) {
+            let best = null, bestD = Infinity;
+            fixtures.forEach((f, i) => {
+                if (i === skipIdx) return;
+                if (f.type !== 'spot' && f.type !== 'light_point' && f.type !== 'chandelier') return;
+                if (f.x == null || f.y == null) return;
+                const d = Math.hypot(worldPos.x - f.x, worldPos.y - f.y);
+                if (d < bestD) { bestD = d; best = f; }
+            });
+            if (!best || !Number.isFinite(bestD)) return '';
+            const lab = best.label || best.type || 'свет';
+            return `до ${lab}: ${bestD.toFixed(1)} см`;
+        }
+
         function applyFixtureDrag(worldPos) {
             if (!dragFixture) return;
             const f = fixtures[dragFixture.idx];
@@ -549,6 +580,8 @@
                 f.offset_wall_a_cm = off.offset_wall_a_cm;
                 f.offset_wall_b_cm = off.offset_wall_b_cm;
                 let text = formatWallOffsets({ x: f.x, y: f.y });
+                const nearL = formatNearestLightDist({ x: f.x, y: f.y }, dragFixture.idx);
+                if (nearL) text += '\n' + nearL;
                 if (snapGuides.length) text += '\n∥ выравнивание';
                 dragLiveLabel = { wx: f.x, wy: f.y, text };
             } else if (dragFixture.mode === 'strip' && f.points && dragFixture.basePoints) {
@@ -1486,13 +1519,13 @@
                     const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
                     fixtures.push({
                         type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n,
-                        material: selectedLightingName || 'Люстра (установка)'
+                        material: selectedChandelierName || 'Люстра (установка)'
                     });
                     selectedFixtureIdx = fixtures.length - 1;
                     updateFixtureList();
                     showToast(`Люстра L${n}`, 1800);
                 } else {
-                    // Спот или свет. точка
+                    // Точечные: Спот или Светильник
                     const kind = spotKind === 'light_point' ? 'light_point' : 'spot';
                     const off = twoNearestEdgeOffsetsCm(worldPos);
                     if (kind === 'light_point') {
@@ -1501,11 +1534,11 @@
                             type: 'light_point', x: worldPos.x, y: worldPos.y, label: 'T' + n,
                             offset_wall_a_cm: off.offset_wall_a_cm,
                             offset_wall_b_cm: off.offset_wall_b_cm,
-                            material: selectedLightingName || 'Световая точка (установка)'
+                            material: selectedLightingName || 'Светильник (установка)'
                         });
                         selectedFixtureIdx = fixtures.length - 1;
                         updateFixtureList();
-                        showToast(`Свет. точка T${n}`, 1800);
+                        showToast(`Светильник T${n}`, 1800);
                     } else {
                         const n = fixtures.filter(f => f.type === 'spot').length + 1;
                         fixtures.push({
@@ -1661,6 +1694,26 @@
             showToast(`Полоса ${f.label}: поворот ${deg > 0 ? '+' : ''}${deg}°`, 1500);
         }
 
+        /** Габарит чертежа (+запас) для длинных направляющих на весь план. */
+        function guideExtent() {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            (points || []).forEach(p => {
+                if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+            });
+            fixtures.forEach(f => {
+                if (f.x != null) { if (f.x < minX) minX = f.x; if (f.x > maxX) maxX = f.x; }
+                if (f.y != null) { if (f.y < minY) minY = f.y; if (f.y > maxY) maxY = f.y; }
+                if (f.points) f.points.forEach(p => {
+                    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+                });
+            });
+            if (!Number.isFinite(minX)) { minX = -200; maxX = 200; minY = -200; maxY = 200; }
+            const pad = Math.max(80, (maxX - minX) * 0.15, (maxY - minY) * 0.15);
+            return { minX: minX - pad, maxX: maxX + pad, minY: minY - pad, maxY: maxY + pad };
+        }
+
         function snapPointToGuides(x, y, skipIdx) {
             snapGuides = [];
             let sx = x, sy = y;
@@ -1672,14 +1725,12 @@
                 }
                 if (f.type === 'strip' && f.points) {
                     f.points.forEach(p => others.push({ x: p.x, y: p.y }));
-                    // середина
                     if (f.points.length >= 2) {
                         const m = f.points[Math.floor(f.points.length / 2)];
                         others.push({ x: m.x, y: m.y });
                     }
                 }
             });
-            // оси через точки
             let bestDx = SNAP_CM + 1, bestDy = SNAP_CM + 1, gx = null, gy = null;
             others.forEach(o => {
                 const dx = Math.abs(x - o.x);
@@ -1687,16 +1738,15 @@
                 if (dx < bestDx) { bestDx = dx; gx = o.x; }
                 if (dy < bestDy) { bestDy = dy; gy = o.y; }
             });
-            // также snap к горизонтали/вертикали стен (bbox center lines optional)
+            const ext = guideExtent();
+            // Направляющие на весь чертёж (длинные линии)
             if (gx != null && bestDx <= SNAP_CM) {
                 sx = gx;
-                const ext = 80;
-                snapGuides.push({ x1: gx, y1: y - ext, x2: gx, y2: y + ext, kind: 'v' });
+                snapGuides.push({ x1: gx, y1: ext.minY, x2: gx, y2: ext.maxY, kind: 'v' });
             }
             if (gy != null && bestDy <= SNAP_CM) {
                 sy = gy;
-                const ext = 80;
-                snapGuides.push({ x1: x - ext, y1: gy, x2: x + ext, y2: gy, kind: 'h' });
+                snapGuides.push({ x1: ext.minX, y1: gy, x2: ext.maxX, y2: gy, kind: 'h' });
             }
             return { x: sx, y: sy };
         }
@@ -1728,11 +1778,13 @@
                     y: f.points.reduce((s, p) => s + p.y, 0) / f.points.length
                 };
                 const distN = (midX - fmid.x) * nx + (midY - fmid.y) * ny;
+                const ext = guideExtent();
+                const span = Math.max(ext.maxX - ext.minX, ext.maxY - ext.minY, 400);
                 snapGuides.push({
-                    x1: fmid.x + nx * distN - ux * 120,
-                    y1: fmid.y + ny * distN - uy * 120,
-                    x2: fmid.x + nx * distN + ux * 120,
-                    y2: fmid.y + ny * distN + uy * 120,
+                    x1: fmid.x + nx * distN - ux * span,
+                    y1: fmid.y + ny * distN - uy * span,
+                    x2: fmid.x + nx * distN + ux * span,
+                    y2: fmid.y + ny * distN + uy * span,
                     kind: 'p'
                 });
             });
@@ -1821,27 +1873,37 @@
             draw();
         }
 
-        let spotKind = 'spot'; // 'spot' | 'light_point'
         let lightingUndoStack = [];
 
-        function setSpotKind(kind) {
-            spotKind = kind === 'light_point' ? 'light_point' : 'spot';
-            const b1 = document.getElementById('btn-kind-spot');
-            const b2 = document.getElementById('btn-kind-point');
-            if (b1) {
-                b1.className = 'btn ' + (spotKind === 'spot' ? 'btn-success' : 'btn-outline');
-                b1.style.flex = '1'; b1.style.padding = '10px';
-            }
-            if (b2) {
-                b2.className = 'btn ' + (spotKind === 'light_point' ? 'btn-success' : 'btn-outline');
-                b2.style.flex = '1'; b2.style.padding = '10px';
-            }
+        function selectPointTypeFromSelect() {
+            const sel = document.getElementById('point-type-select');
+            if (!sel) return;
+            spotKind = sel.value === 'light_point' ? 'light_point' : 'spot';
+            selectedLightingName = spotKind === 'light_point' ? 'Светильник (установка)' : 'Спот (установка)';
             const mh = document.getElementById('lighting-mode-hint');
             if (mh) {
                 mh.innerText = spotKind === 'light_point'
-                    ? 'Свет. точка: тапните на чертёж. За контур — удаление. В заказ только внутри.'
-                    : 'Спот: тапните на чертёж. За контур — удаление. В заказ только внутри.';
+                    ? 'Светильник: тапните на чертёж. Отступ от стен + расстояние до соседнего света. За контур — удаление.'
+                    : 'Спот: тапните на чертёж. Отступ от стен + расстояние до соседнего света. За контур — удаление.';
             }
+        }
+
+        function selectChandelierFromSelect() {
+            const sel = document.getElementById('chandelier-select');
+            if (sel && sel.value) selectedChandelierName = sel.value;
+        }
+
+        function selectStripMaterialFromSelect() {
+            const sel = document.getElementById('strip-material-select');
+            if (sel && sel.value) selectedStripMaterial = sel.value;
+        }
+
+        function setSpotKind(kind) {
+            // совместимость со старыми вызовами
+            spotKind = kind === 'light_point' ? 'light_point' : 'spot';
+            const sel = document.getElementById('point-type-select');
+            if (sel) sel.value = spotKind;
+            selectPointTypeFromSelect();
         }
 
         function pushLightingUndo(snapshot) {
@@ -1891,25 +1953,32 @@
                 if (b) b.classList.toggle('active', s === sub);
             });
             const hint = document.getElementById('install-hint');
-            const centerBtn = document.getElementById('chandelier-center-btn');
+            const modeHint = document.getElementById('lighting-mode-hint');
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
             const kindRow = document.getElementById('spot-kind-row');
+            const chRow = document.getElementById('chandelier-tools-row');
+            const stripRow = document.getElementById('strip-material-row');
+
             if (kindRow) kindRow.style.display = sub === 'spot' ? 'flex' : 'none';
-            if (centerBtn) centerBtn.style.display = sub === 'chandelier' ? 'block' : 'none';
+            if (chRow) chRow.style.display = sub === 'chandelier' ? 'block' : 'none';
+            if (stripRow) stripRow.style.display = sub === 'strip' ? 'flex' : 'none';
+
             if (sub === 'strip') {
                 if (miniPanel) miniPanel.style.display = 'flex';
                 updateStripMiniPanel();
                 updateFinishStripBtn();
-                if (hint) hint.innerText = 'Полоса: тапайте точки, «Завершить полосу». За контур — удалится. ↻ поворот.';
+                if (hint) hint.innerText = 'Полосы: выберите тип, тапайте точки, «Завершить полосу». ↻ поворот.';
+                if (modeHint) modeHint.innerText = 'Полоса / трек: тапайте точки трассы. За контур — удалится.';
             } else {
                 if (miniPanel) miniPanel.style.display = 'none';
                 if (finishBtn) finishBtn.style.display = 'none';
                 if (sub === 'spot') {
-                    setSpotKind(spotKind);
-                    if (hint) hint.innerText = 'Светильники: выберите Спот или Свет. точку, тапните на чертёж.';
+                    selectPointTypeFromSelect();
+                    if (hint) hint.innerText = 'Точечные: выберите Спот или Светильник, тапните на чертёж.';
                 } else if (sub === 'chandelier') {
-                    if (hint) hint.innerText = 'Люстра: тапните место или «по центру». За контур — удаление.';
+                    if (hint) hint.innerText = 'Люстры: тапните место или «по центру». За контур — удаление.';
+                    if (modeHint) modeHint.innerText = 'Люстра: тапните на чертёж или «по центру».';
                 }
             }
             draw();
@@ -1968,7 +2037,7 @@
             const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
             fixtures.push({
                 type: 'chandelier', x: cx, y: cy, label: 'L' + n,
-                material: selectedLightingName || 'Люстра (установка)'
+                material: selectedChandelierName || 'Люстра (установка)'
             });
             selectedFixtureIdx = fixtures.length - 1;
             updateFixtureList();
@@ -2048,7 +2117,7 @@
                 wall_offsets: offsets,
                 x: stripDraft[0].x,
                 y: stripDraft[0].y,
-                material: selectedLightingName || 'Световая полоса'
+                material: selectedStripMaterial || 'Световая полоса'
             });
             stripDraft = [];
             stripPreviewLen = 0;
@@ -2057,7 +2126,7 @@
             updateFinishStripBtn();
             updateFixtureList();
             draw();
-            showToast(`Полоса P${n}: ${len.toFixed(1)} см`, 2500);
+            showToast(`${selectedStripMaterial || 'Полоса'} P${n}: ${len.toFixed(1)} см`, 2500);
         }
 
         function updateFixtureList() {
@@ -2074,10 +2143,10 @@
                 let t = f.label || f.type;
                 const outside = (f.type !== 'cornice' && !isFixtureInsideContour(f));
                 if (f.type === 'spot') t = `💡 Спот ${f.label}`;
-                if (f.type === 'light_point') t = `✦ Точка ${f.label}`;
+                if (f.type === 'light_point') t = `✦ Светильник ${f.label}`;
                 if (f.type === 'cornice') t = `🪟 ${f.name || f.label} ${f.length_cm ? (f.length_cm + 'см') : ''} вынос ${f.offset_cm || 0}`;
                 if (f.type === 'chandelier') t = `💡 Люстра ${f.label}`;
-                if (f.type === 'strip') t = `💡 Полоса ${f.label}: ${f.length_cm} см`;
+                if (f.type === 'strip') t = `💡 ${f.material || 'Полоса'} ${f.label}: ${f.length_cm || '?'} см`;
                 if (outside) t += ' ⚠ вне контура';
                 lines.push(`<div class="fixture-row"><span>${t}</span><button type="button" onclick="removeFixture(${idx})">✕</button></div>`);
             });
@@ -3683,22 +3752,34 @@ function getCurrentCeilingPayload() {
                     if (v2) selectedProfileName = v2;
                 }
                 var lightings = splitParam('lightings');
-                if (lightings.length) {
-                    var v3 = fillSelect('lighting-select', lightings, typeof selectedLightingName !== 'undefined' ? selectedLightingName : null);
-                    if (v3) selectedLightingName = v3;
+                var stripsParam = splitParam('strips');
+                // Люстры — из lighting, имена с «люстр» + дефолт
+                var chNames = (lightings || []).filter(function (n) {
+                    return /люстр/i.test(n);
+                });
+                if (!chNames.length) chNames = ['Люстра (установка)'];
+                else if (chNames.indexOf('Люстра (установка)') < 0) chNames.unshift('Люстра (установка)');
+                var vc = fillSelect('chandelier-select', chNames, typeof selectedChandelierName !== 'undefined' ? selectedChandelierName : null);
+                if (vc) selectedChandelierName = vc;
+
+                // Полосы: явный strips= или из lighting (полос/трек/track/strip) + дефолты
+                var stripNames = stripsParam && stripsParam.length ? stripsParam.slice() : [];
+                if (!stripNames.length && lightings && lightings.length) {
+                    stripNames = lightings.filter(function (n) {
+                        return /полос|трек|track|strip/i.test(n);
+                    });
                 }
+                ['Световая полоса', 'Трековая система'].forEach(function (d) {
+                    if (stripNames.indexOf(d) < 0) stripNames.push(d);
+                });
+                var vs = fillSelect('strip-material-select', stripNames, typeof selectedStripMaterial !== 'undefined' ? selectedStripMaterial : null);
+                if (vs) selectedStripMaterial = vs;
+
                 var cornices = splitParam('cornices');
                 if (cornices.length) fillSelect('cornice-type-select', cornices);
             } catch (e) { console.warn('loadCatalogFromUrl', e); }
         }
         loadCatalogFromUrl();
-
-        function selectLightingFromSelect() {
-            var sel = document.getElementById('lighting-select');
-            if (sel && sel.value) {
-                selectedLightingName = sel.value;
-            }
-        }
 
         // ---- Инициализация ----
         const webApp = getTelegramWebApp();
