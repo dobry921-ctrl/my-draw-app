@@ -2912,6 +2912,10 @@ function getCurrentCeilingPayload() {
                     o.points = (f.points || []).map(p => ({ x: p.x / 100, y: p.y / 100 }));
                     o.length_cm = f.length_cm;
                     o.wall_offsets = f.wall_offsets || [];
+                    // ОБЯЗАТЕЛЬНО: имя материала (Световая полоса / Трековая система / …)
+                    o.material = (f.material || f.name || selectedStripMaterial || 'Световая полоса').toString();
+                    o.name = o.material;
+                    if (/трек|track/i.test(o.material)) o.type = 'track';
                 }
                 return o;
             });
@@ -3246,8 +3250,14 @@ function getCurrentCeilingPayload() {
                                 list = rest.concat(spots);
                             }
                             fx = list.map(function (f) {
-                                if (f.type === 'strip') {
-                                    var o = { t: 'p', len: r(f.length_cm || 0, 1) };
+                                if (f.type === 'strip' || f.type === 'track') {
+                                    var mat = (f.material || f.name || 'Световая полоса').toString();
+                                    var isTrack = /трек|track/i.test(mat) || f.type === 'track';
+                                    var o = {
+                                        t: isTrack ? 'tr' : 'p',
+                                        len: r(f.length_cm || 0, 1),
+                                        n: mat  // имя материала — обязательно для бота
+                                    };
                                     if (level < 2) {
                                         o.pts = (f.points || []).map(function (p) {
                                             return [asM(p.x), asM(p.y)];
