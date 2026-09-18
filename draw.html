@@ -419,7 +419,7 @@
             <button type="button" class="btn btn-outline" id="btn-clear-room-photo" style="flex:0.55;padding:8px;display:none;" onclick="clearRoomPhoto()">✕ Фото</button>
         </div>
         <input type="file" id="room-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="onRoomPhotoSelected(event)">
-        <div class="hint" style="margin-top:2px;">Фото комнаты → в 3D пол и обои как на снимке. Потом «3D клиенту».</div>
+        <div class="hint" style="margin-top:2px;">Фото: цвет/рисунок обоев, цвет пола, где окно. Не подменяет 3D-комнату целиком.</div>
         <div style="display:flex;gap:4px;margin-top:4px;">
             <button class="btn btn-outline" style="flex:1;padding:6px;" onclick="skipInstall()">Пропустить</button>
             <button class="btn btn-success" style="flex:1;padding:6px;" onclick="finishInstall()">Готово</button>
@@ -4026,7 +4026,7 @@ function getCurrentCeilingPayload() {
                 roomPhotoImg = img;
                 const btn = document.getElementById('btn-clear-room-photo');
                 if (btn) btn.style.display = 'block';
-                showToast('Фото загружено — откройте 3D', 2500);
+                showToast('Цвет обоев и пола с фото применены — откройте 3D', 2800);
                 // если 3D уже открыт — пересобрать сцену
                 const d3 = document.getElementById('client-preview-3d');
                 if (d3 && d3.style.display !== 'none' && _clientPreviewMode === '3d') {
@@ -4040,32 +4040,122 @@ function getCurrentCeilingPayload() {
             try { ev.target.value = ''; } catch (e) {}
         }
 
-        /** Нарезать фото: пол (низ кадра) и стены (середина). */
-        function makeTexturesFromRoomPhoto(THREE) {
+        /**
+         * Фото комнаты → только цвет/фактура обоев, цвет пола, намёк где окно.
+         * Целиком фото на стены не клеим.
+         */
+        function analyzeRoomPhoto() {
             if (!roomPhotoImg || !roomPhotoImg.width) return null;
             const iw = roomPhotoImg.width, ih = roomPhotoImg.height;
+            const c = document.createElement('canvas');
+            const maxW = 160;
+            const sc = maxW / iw;
+            c.width = maxW;
+            c.height = Math.max(1, Math.round(ih * sc));
+            const g = c.getContext('2d');
+            g.drawImage(roomPhotoImg, 0, 0, c.width, c.height);
+            const w = c.width, h = c.height;
+            const data = g.getImageData(0, 0, w, h).data;
 
-            function sliceToTexture(sx, sy, sw, sh, repeatX, repeatY, blur) {
-                const c = document.createElement('canvas');
-                const outW = Math.min(1024, Math.max(256, sw));
-                const outH = Math.min(1024, Math.max(256, sh));
-                c.width = outW; c.height = outH;
-                const g = c.getContext('2d');
-                if (blur) g.filter = 'blur(0.5px)';
-                g.drawImage(roomPhotoImg, sx, sy, sw, sh, 0, 0, outW, outH);
-                // лёгкое усиление контраста для пола
-                const tex = new THREE.CanvasTexture(c);
-                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-                tex.repeat.set(repeatX || 1, repeatY || 1);
-                if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
-                return tex;
+            function avgRegion(x0, y0, x1, y1) {
+                x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+                x1 = Math.min(w, Math.ceil(x1)); y1 = Math.min(h, Math.ceil(y1));
+                let r = 0, gg = 0, b = 0, n = 0;
+                for (let y = y0; y < y1; y++) {
+                    for (let x = x0; x < x1; x++) {
+                        const i = (y * w + x) * 4;
+                        r += data[i]; gg += data[i + 1]; b += data[i + 2]; n++;
+                    }
+                }
+                if (!n) return { r: 200, g: 190, b: 175 };
+                return { r: Math.round(r / n), g: Math.round(gg / n), b: Math.round(b / n) };
             }
 
-            // Пол — нижние ~40% кадра
-            const floorTex = sliceToTexture(0, Math.floor(ih * 0.55), iw, Math.floor(ih * 0.45), 2.5, 2.5, false);
-            // Обои — средняя полоса (стены), мягкий повтор
-            const wallTex = sliceToTexture(0, Math.floor(ih * 0.15), iw, Math.floor(ih * 0.45), 2.2, 1.6, true);
-            return { floorTex, wallTex };
+            const wallColor = avgRegion(w * 0.1, h * 0.2, w * 0.9, h * 0.55);
+            const floorColor = avgRegion(w * 0.15, h * 0.65, w * 0.85, h * 0.95);
+
+            let bestWin = { score: -1, side: 'right', t: 0.5 };
+            [
+                { side: 'left', x0: 0, y0: h * 0.15, x1: w * 0.2, y1: h * 0.55 },
+                { side: 'right', x0: w * 0.8, y0: h * 0.15, x1: w, y1: h * 0.55 },
+                { side: 'top', x0: w * 0.2, y0: 0, x1: w * 0.8, y1: h * 0.22 }
+            ].forEach(band => {
+                const col = avgRegion(band.x0, band.y0, band.x1, band.y1);
+                const lum = 0.299 * col.r + 0.587 * col.g + 0.114 * col.b;
+                const score = lum + Math.max(0, col.b - col.r) * 0.3;
+                if (score > bestWin.score) bestWin = { score, side: band.side, t: 0.5, color: col };
+            });
+
+            // Небольшой патч для фактуры обоев (не целое фото)
+            const patC = document.createElement('canvas');
+            patC.width = 128; patC.height = 128;
+            const pg = patC.getContext('2d');
+            pg.drawImage(roomPhotoImg, iw * 0.25, ih * 0.25, iw * 0.5, ih * 0.3, 0, 0, 128, 128);
+            pg.fillStyle = `rgba(${wallColor.r},${wallColor.g},${wallColor.b},0.55)`;
+            pg.fillRect(0, 0, 128, 128);
+
+            return { wallColor, floorColor, windowHint: bestWin, patternCanvas: patC };
+        }
+
+        function makeTexturesFromRoomPhoto(THREE) {
+            const info = analyzeRoomPhoto();
+            if (!info) return null;
+            const { wallColor, floorColor, windowHint, patternCanvas } = info;
+            const fr = floorColor.r, fg0 = floorColor.g, fb = floorColor.b;
+
+            // Ламинат, тонированный цветом пола с фото
+            const floorC = document.createElement('canvas');
+            floorC.width = 512; floorC.height = 512;
+            const fctx = floorC.getContext('2d');
+            fctx.fillStyle = `rgb(${fr},${fg0},${fb})`;
+            fctx.fillRect(0, 0, 512, 512);
+            const plankH = 64;
+            for (let y = 0; y < 512; y += plankH) {
+                const shade = 0.88 + ((y / plankH) % 3) * 0.04;
+                fctx.fillStyle = `rgb(${Math.min(255, fr * shade) | 0},${Math.min(255, fg0 * shade) | 0},${Math.min(255, fb * shade) | 0})`;
+                fctx.fillRect(0, y, 512, plankH - 2);
+                for (let i = 0; i < 12; i++) {
+                    fctx.strokeStyle = `rgba(0,0,0,${0.04 + Math.random() * 0.05})`;
+                    fctx.beginPath();
+                    const yy = y + 6 + Math.random() * (plankH - 12);
+                    fctx.moveTo(0, yy);
+                    fctx.lineTo(512, yy + (Math.random() - 0.5) * 5);
+                    fctx.stroke();
+                }
+                fctx.fillStyle = 'rgba(0,0,0,0.2)';
+                fctx.fillRect(0, y + plankH - 2, 512, 2);
+                for (let x = ((y / plankH) % 2) * 80; x < 512; x += 160) {
+                    fctx.fillStyle = 'rgba(0,0,0,0.14)';
+                    fctx.fillRect(x, y, 2, plankH - 2);
+                }
+            }
+            const floorTex = new THREE.CanvasTexture(floorC);
+            floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+            floorTex.repeat.set(4, 4);
+
+            // Обои: цвет стен + лёгкая фактура с фото
+            const wallC = document.createElement('canvas');
+            wallC.width = 256; wallC.height = 256;
+            const wctx = wallC.getContext('2d');
+            wctx.fillStyle = `rgb(${wallColor.r},${wallColor.g},${wallColor.b})`;
+            wctx.fillRect(0, 0, 256, 256);
+            if (patternCanvas) {
+                wctx.globalAlpha = 0.32;
+                for (let yy = 0; yy < 256; yy += 128) {
+                    for (let xx = 0; xx < 256; xx += 128) wctx.drawImage(patternCanvas, xx, yy);
+                }
+                wctx.globalAlpha = 1;
+            }
+            wctx.strokeStyle = 'rgba(0,0,0,0.06)';
+            wctx.lineWidth = 1;
+            for (let y = 0; y < 256; y += 32) {
+                for (let x = 0; x < 256; x += 32) wctx.strokeRect(x + 4, y + 4, 24, 24);
+            }
+            const wallTex = new THREE.CanvasTexture(wallC);
+            wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
+            wallTex.repeat.set(3, 2);
+
+            return { floorTex, wallTex, windowHint, wallColor, floorColor };
         }
 
         function loadThreeJs() {
@@ -4438,7 +4528,17 @@ function getCurrentCeilingPayload() {
                 return { i, a, b, dx, dz, len: Math.hypot(dx, dz) || 0.01, ang: -Math.atan2(dz, dx) };
             }).sort((u, v) => v.len - u.len);
             const doorEdge = wallEdges[0];
-            const windowEdge = wallEdges.find(e => e.i !== doorEdge.i) || wallEdges[1] || wallEdges[0];
+            // Окно: по фото (светлая зона) или вторая длинная стена
+            let windowEdge = wallEdges.find(e => e.i !== doorEdge.i) || wallEdges[1] || wallEdges[0];
+            if (photoTex && photoTex.windowHint && wallEdges.length >= 2) {
+                // яркое пятно слева/справа на фото → ставим окно не на дверь
+                const candidates = wallEdges.filter(e => e.i !== doorEdge.i);
+                if (candidates.length) {
+                    // предпочитаем более длинную «не дверную» стену; t сдвинем от центра если нужно
+                    windowEdge = candidates[0];
+                    if (photoTex.windowHint.side === 'left') windowEdge = candidates[candidates.length - 1] || candidates[0];
+                }
+            }
 
             for (let i = 0; i < roomContour.length; i++) {
                 const a = roomContour[i];
@@ -4823,8 +4923,8 @@ function getCurrentCeilingPayload() {
             const hint = document.createElement('div');
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;color:#ccc;font-size:11px;text-align:right;max-width:55%;z-index:5;pointer-events:none;';
             hint.innerHTML = roomPhotoImg
-                ? 'Пол и стены с вашего фото<br>Пальцем — смотреть · джойстик — ходить'
-                : 'Пальцем — смотреть · джойстик — ходить<br>📷 Фото комнаты — реальные обои/пол';
+                ? 'Цвет обоев и пола с фото<br>Пальцем — смотреть · джойстик — ходить'
+                : 'Пальцем — смотреть · джойстик — ходить<br>📷 Фото — цвет обоев, пола, окно';
             host.style.position = 'relative';
             host.appendChild(pad);
             host.appendChild(lightPanel);
