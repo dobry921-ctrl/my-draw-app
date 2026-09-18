@@ -414,7 +414,12 @@
             <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="showClientPreview('2d')">🖼 2D клиенту</button>
             <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="showClientPreview('3d')">🏛 3D клиенту</button>
         </div>
-        <div class="hint" style="margin-top:2px;">Откроется картинка на весь экран — покажите клиенту или «Сохранить»</div>
+        <div style="display:flex;gap:4px;margin-top:4px;">
+            <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="triggerRoomPhotoCapture()">📷 Фото комнаты</button>
+            <button type="button" class="btn btn-outline" id="btn-clear-room-photo" style="flex:0.55;padding:8px;display:none;" onclick="clearRoomPhoto()">✕ Фото</button>
+        </div>
+        <input type="file" id="room-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="onRoomPhotoSelected(event)">
+        <div class="hint" style="margin-top:2px;">Фото комнаты → в 3D пол и обои как на снимке. Потом «3D клиенту».</div>
         <div style="display:flex;gap:4px;margin-top:4px;">
             <button class="btn btn-outline" style="flex:1;padding:6px;" onclick="skipInstall()">Пропустить</button>
             <button class="btn btn-success" style="flex:1;padding:6px;" onclick="finishInstall()">Готово</button>
@@ -3989,6 +3994,79 @@ function getCurrentCeilingPayload() {
         let _threeCamera = null;
         let _threeAnim = null;
         let _threeDrag = null;
+        // Фото реальной комнаты → текстуры пола/стен в 3D
+        let roomPhotoImg = null;
+        let roomPhotoUrl = null;
+
+        function triggerRoomPhotoCapture() {
+            const inp = document.getElementById('room-photo-input');
+            if (inp) inp.click();
+        }
+
+        function clearRoomPhoto() {
+            if (roomPhotoUrl) {
+                try { URL.revokeObjectURL(roomPhotoUrl); } catch (e) {}
+            }
+            roomPhotoUrl = null;
+            roomPhotoImg = null;
+            const btn = document.getElementById('btn-clear-room-photo');
+            if (btn) btn.style.display = 'none';
+            showToast('Фото комнаты сброшено', 1800);
+        }
+
+        function onRoomPhotoSelected(ev) {
+            const file = ev && ev.target && ev.target.files && ev.target.files[0];
+            if (!file) return;
+            if (roomPhotoUrl) {
+                try { URL.revokeObjectURL(roomPhotoUrl); } catch (e) {}
+            }
+            roomPhotoUrl = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = function () {
+                roomPhotoImg = img;
+                const btn = document.getElementById('btn-clear-room-photo');
+                if (btn) btn.style.display = 'block';
+                showToast('Фото загружено — откройте 3D', 2500);
+                // если 3D уже открыт — пересобрать сцену
+                const d3 = document.getElementById('client-preview-3d');
+                if (d3 && d3.style.display !== 'none' && _clientPreviewMode === '3d') {
+                    renderClient3DRealistic().catch(function () {});
+                }
+            };
+            img.onerror = function () {
+                showToast('Не удалось загрузить фото', 2500);
+            };
+            img.src = roomPhotoUrl;
+            try { ev.target.value = ''; } catch (e) {}
+        }
+
+        /** Нарезать фото: пол (низ кадра) и стены (середина). */
+        function makeTexturesFromRoomPhoto(THREE) {
+            if (!roomPhotoImg || !roomPhotoImg.width) return null;
+            const iw = roomPhotoImg.width, ih = roomPhotoImg.height;
+
+            function sliceToTexture(sx, sy, sw, sh, repeatX, repeatY, blur) {
+                const c = document.createElement('canvas');
+                const outW = Math.min(1024, Math.max(256, sw));
+                const outH = Math.min(1024, Math.max(256, sh));
+                c.width = outW; c.height = outH;
+                const g = c.getContext('2d');
+                if (blur) g.filter = 'blur(0.5px)';
+                g.drawImage(roomPhotoImg, sx, sy, sw, sh, 0, 0, outW, outH);
+                // лёгкое усиление контраста для пола
+                const tex = new THREE.CanvasTexture(c);
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(repeatX || 1, repeatY || 1);
+                if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                return tex;
+            }
+
+            // Пол — нижние ~40% кадра
+            const floorTex = sliceToTexture(0, Math.floor(ih * 0.55), iw, Math.floor(ih * 0.45), 2.5, 2.5, false);
+            // Обои — средняя полоса (стены), мягкий повтор
+            const wallTex = sliceToTexture(0, Math.floor(ih * 0.15), iw, Math.floor(ih * 0.45), 2.2, 1.6, true);
+            return { floorTex, wallTex };
+        }
 
         function loadThreeJs() {
             if (window.THREE) return Promise.resolve(window.THREE);
@@ -4332,13 +4410,14 @@ function getCurrentCeilingPayload() {
                 tex.repeat.set(3, 2);
                 return tex;
             }
+            // Текстуры: из фото комнаты или процедурные
+            const photoTex = makeTexturesFromRoomPhoto(THREE);
             const floorMat = new THREE.MeshLambertMaterial({
-                map: makeLaminateTexture(),
+                map: photoTex ? photoTex.floorTex : makeLaminateTexture(),
                 side: THREE.DoubleSide
             });
             const floorGeo = makeRoomPlaneGeometry(0);
             if (floorGeo) {
-                // UV для плоскости-веера: простая проекция XZ
                 const pos = floorGeo.attributes.position;
                 const uvs = [];
                 for (let i = 0; i < pos.count; i++) {
@@ -4350,7 +4429,7 @@ function getCurrentCeilingPayload() {
 
             // Стены + окно и дверь на самых длинных сторонах
             const wallMat = new THREE.MeshLambertMaterial({
-                map: makeWallpaperTexture(),
+                map: photoTex ? photoTex.wallTex : makeWallpaperTexture(),
                 side: THREE.DoubleSide
             });
             const wallEdges = roomContour.map((a, i) => {
@@ -4730,10 +4809,22 @@ function getCurrentCeilingPayload() {
                 allBtn.textContent = anyOn ? 'Все вкл' : 'Все выкл';
             };
             lightPanel.appendChild(allBtn);
+            const photoBtn = document.createElement('button');
+            photoBtn.type = 'button';
+            photoBtn.textContent = roomPhotoImg ? '📷 Сменить фото' : '📷 Фото комнаты';
+            photoBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(0,40,80,0.55);color:#fff;font-size:12px;margin-top:4px;';
+            photoBtn.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                triggerRoomPhotoCapture();
+            };
+            lightPanel.appendChild(photoBtn);
 
             const hint = document.createElement('div');
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;color:#ccc;font-size:11px;text-align:right;max-width:55%;z-index:5;pointer-events:none;';
-            hint.innerHTML = 'Пальцем по экрану — смотреть<br>Джойстик слева — ходить<br>WASD / стрелки на ПК';
+            hint.innerHTML = roomPhotoImg
+                ? 'Пол и стены с вашего фото<br>Пальцем — смотреть · джойстик — ходить'
+                : 'Пальцем — смотреть · джойстик — ходить<br>📷 Фото комнаты — реальные обои/пол';
             host.style.position = 'relative';
             host.appendChild(pad);
             host.appendChild(lightPanel);
