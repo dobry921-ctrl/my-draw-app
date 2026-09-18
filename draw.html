@@ -4410,17 +4410,33 @@ function getCurrentCeilingPayload() {
             camera.lookAt(0, roomH - 0.05, 0);
 
             const renderer = new THREE.WebGLRenderer({
-                antialias: true,
+                antialias: false,
                 preserveDrawingBuffer: true,
                 powerPreference: 'high-performance',
                 logarithmicDepthBuffer: true
             });
             renderer.setSize(W, H);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
             renderer.shadowMap.enabled = false;
             renderer.setClearColor(0x1a1a1a, 1);
             if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
             if (renderer.outputColorSpace !== undefined) renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+            // лимит PointLight — иначе большие потолки тормозят
+            let _plBudget = 22;
+            function addCappedPointLight(color, intensity, distance, decay) {
+                if (_plBudget <= 0) return null;
+                _plBudget--;
+                const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
+                scene.add(pl);
+                return pl;
+            }
+            // полосы всегда освещают комнату (без лимита)
+            function addStripPointLight(color, intensity, distance, decay) {
+                const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
+                scene.add(pl);
+                return pl;
+            }
             host.appendChild(renderer.domElement);
             renderer.domElement.style.width = '100%';
             renderer.domElement.style.height = '100%';
@@ -4593,6 +4609,30 @@ function getCurrentCeilingPayload() {
                 : points.map(function () { return 'Стандартный'; });
             let hasFloatingProfile = false;
 
+            // Параметры проёма окна (общие для стены с дыркой и самой рамы)
+            const winOpen = {
+                edgeI: windowEdge ? windowEdge.i : -1,
+                w: windowEdge ? Math.min(1.4, Math.max(1.05, windowEdge.len * 0.4)) : 1.2,
+                h: 1.2,
+                y: 1.35,
+                t: 0.5
+            };
+            const doorOpen = {
+                edgeI: doorEdge ? doorEdge.i : -1,
+                w: 0.85,
+                h: 2.05,
+                y: 2.05 / 2,
+                t: 0.28
+            };
+
+            function addWallPanel(midX, midZ, ang, ux, uz, alongOff, yCenter, w, h, mat) {
+                if (w < 0.02 || h < 0.02) return;
+                const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+                m.position.set(midX + ux * alongOff, yCenter, midZ + uz * alongOff);
+                m.rotation.y = ang;
+                scene.add(m);
+            }
+
             for (let i = 0; i < roomContour.length; i++) {
                 const a = roomContour[i];
                 const b = roomContour[(i + 1) % roomContour.length];
@@ -4602,14 +4642,47 @@ function getCurrentCeilingPayload() {
                 let nx = -Math.sin(ang), nz = -Math.cos(ang);
                 const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
                 if (midX * nx + midZ * nz > 0) { nx = -nx; nz = -nz; }
-
-                // чуть ниже потолка — чистый стык без артефактов
+                const ux = dx / len, uz = dz / len;
                 const wallH = roomH - 0.004;
-                const wallGeo = new THREE.PlaneGeometry(len + 0.004, wallH);
-                const wall = new THREE.Mesh(wallGeo, wallMat);
-                wall.position.set(midX, wallH / 2, midZ);
-                wall.rotation.y = ang;
-                scene.add(wall);
+
+                // Стена с вырезом под окно / дверь (обои не закрывают проём)
+                if (i === winOpen.edgeI && windowEdge && windowEdge.len > 0.7) {
+                    const wOff = (winOpen.t - 0.5) * len;
+                    const half = winOpen.w / 2;
+                    const leftEdge = wOff - half;
+                    const rightEdge = wOff + half;
+                    const leftW = leftEdge + len / 2;
+                    const rightW = len / 2 - rightEdge;
+                    addWallPanel(midX, midZ, ang, ux, uz, -len / 2 + leftW / 2, wallH / 2, leftW, wallH, wallMat);
+                    addWallPanel(midX, midZ, ang, ux, uz, rightEdge + rightW / 2, wallH / 2, rightW, wallH, wallMat);
+                    const topH = wallH - (winOpen.y + winOpen.h / 2);
+                    if (topH > 0.02) {
+                        addWallPanel(midX, midZ, ang, ux, uz, wOff, (winOpen.y + winOpen.h / 2) + topH / 2, winOpen.w, topH, wallMat);
+                    }
+                    const botH = winOpen.y - winOpen.h / 2;
+                    if (botH > 0.02) {
+                        addWallPanel(midX, midZ, ang, ux, uz, wOff, botH / 2, winOpen.w, botH, wallMat);
+                    }
+                } else if (i === doorOpen.edgeI && doorEdge && doorEdge.len > 0.9) {
+                    const wOff = (doorOpen.t - 0.5) * len;
+                    const half = doorOpen.w / 2;
+                    const leftEdge = wOff - half;
+                    const rightEdge = wOff + half;
+                    const leftW = leftEdge + len / 2;
+                    const rightW = len / 2 - rightEdge;
+                    addWallPanel(midX, midZ, ang, ux, uz, -len / 2 + leftW / 2, wallH / 2, leftW, wallH, wallMat);
+                    addWallPanel(midX, midZ, ang, ux, uz, rightEdge + rightW / 2, wallH / 2, rightW, wallH, wallMat);
+                    const topH = wallH - doorOpen.h;
+                    if (topH > 0.02) {
+                        addWallPanel(midX, midZ, ang, ux, uz, wOff, doorOpen.h + topH / 2, doorOpen.w, topH, wallMat);
+                    }
+                } else {
+                    const wallGeo = new THREE.PlaneGeometry(len + 0.004, wallH);
+                    const wall = new THREE.Mesh(wallGeo, wallMat);
+                    wall.position.set(midX, wallH / 2, midZ);
+                    wall.rotation.y = ang;
+                    scene.add(wall);
+                }
 
                 const profName = (profiles3d[i] || '').toString();
                 // Теневой профиль — тонкая щель ~3 мм
@@ -4655,21 +4728,23 @@ function getCurrentCeilingPayload() {
                     window._pendingFloatingLights.push({
                         light: null, mesh: joint, baseI: 0, baseEmissive: 1.15, onColor: 0xfff4c8, offColor: 0x444440
                     });
-                    const baseI = Math.min(0.5, 0.18 + len * 0.07);
-                    const pl = new THREE.PointLight(0xfff2dc, baseI, Math.max(3.5, len * 1.2), 1.4);
-                    pl.position.set(midX + nx * 0.18, roomH - 0.28, midZ + nz * 0.18);
-                    scene.add(pl);
-                    window._pendingFloatingLights.push({ light: pl, mesh: null, baseI: baseI });
+                    // мягкая подсветка вдоль стены, без яркого «блика»
+                    const baseI = Math.min(0.18, 0.08 + len * 0.025);
+                    const pl = addCappedPointLight(0xfff2dc, baseI, Math.max(2.2, len * 0.7), 2);
+                    if (pl) {
+                        pl.position.set(midX + nx * 0.08, roomH - 0.12, midZ + nz * 0.08);
+                        window._pendingFloatingLights.push({ light: pl, mesh: null, baseI: baseI });
+                    }
                 }
             }
 
-            // Дверь — цельное полотно + наличники в стене
+            // Дверь — в вырезе стены
             if (doorEdge && doorEdge.len > 0.9) {
-                const t = 0.28;
+                const t = doorOpen.t;
                 const mx = doorEdge.a.x + doorEdge.dx * t;
                 const mz = doorEdge.a.z + doorEdge.dz * t;
-                const doorW = 0.85;
-                const doorH = 2.05;
+                const doorW = doorOpen.w;
+                const doorH = doorOpen.h;
                 const nx = -Math.sin(doorEdge.ang), nz = -Math.cos(doorEdge.ang);
                 const tx = Math.cos(doorEdge.ang), tz = Math.sin(doorEdge.ang);
                 const d = 0.03; // отступ от плоскости стены внутрь
@@ -4728,14 +4803,14 @@ function getCurrentCeilingPayload() {
                 scene.add(hKnob);
             }
 
-            // Окно: проём в стене, вид улицы, белая рама, подоконник
+            // Окно: в вырезе стены (обои не перекрывают), вечерняя картинка
             if (windowEdge && windowEdge.len > 0.7) {
-                const t = 0.5;
+                const t = winOpen.t;
                 const mx = windowEdge.a.x + windowEdge.dx * t;
                 const mz = windowEdge.a.z + windowEdge.dz * t;
-                const winW = Math.min(1.4, Math.max(1.05, windowEdge.len * 0.4));
-                const winH = 1.2;
-                const winY = 1.35;
+                const winW = winOpen.w;
+                const winH = winOpen.h;
+                const winY = winOpen.y;
                 const nx = -Math.sin(windowEdge.ang), nz = -Math.cos(windowEdge.ang);
                 const tx = Math.cos(windowEdge.ang), tz = Math.sin(windowEdge.ang);
                 const frameMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 40 });
@@ -4753,73 +4828,62 @@ function getCurrentCeilingPayload() {
                     m.rotation.y = windowEdge.ang;
                     scene.add(m);
                 });
-                // Вид из окна — процедурная «улица»
-                function makeStreetViewTexture() {
+                // Вечер (закат), не глубокая ночь
+                function makeEveningViewTexture() {
                     const c = document.createElement('canvas');
-                    c.width = 512; c.height = 384;
+                    c.width = 640; c.height = 400;
                     const g = c.getContext('2d');
-                    // небо
-                    const sky = g.createLinearGradient(0, 0, 0, 220);
-                    sky.addColorStop(0, '#6eb5e0');
-                    sky.addColorStop(1, '#c8e4f5');
+                    const sky = g.createLinearGradient(0, 0, 0, 280);
+                    sky.addColorStop(0, '#4a6fa5');
+                    sky.addColorStop(0.35, '#7b8eb8');
+                    sky.addColorStop(0.55, '#c9956c');
+                    sky.addColorStop(0.75, '#e8a060');
+                    sky.addColorStop(1, '#f0c090');
                     g.fillStyle = sky;
-                    g.fillRect(0, 0, 512, 220);
-                    // солнце
-                    g.fillStyle = 'rgba(255,250,220,0.9)';
-                    g.beginPath(); g.arc(400, 60, 28, 0, Math.PI * 2); g.fill();
-                    // дальние дома
-                    g.fillStyle = '#8a9aaa';
-                    g.fillRect(20, 140, 90, 90);
-                    g.fillStyle = '#7a8a9a';
-                    g.fillRect(130, 120, 110, 110);
-                    g.fillStyle = '#6a7a88';
-                    g.fillRect(280, 130, 100, 100);
-                    g.fillStyle = '#5a6a78';
-                    g.fillRect(400, 145, 90, 85);
-                    // окна на домах
-                    g.fillStyle = '#d4e8ff';
-                    for (let hx = 0; hx < 4; hx++) {
-                        const bx = [30, 145, 295, 415][hx];
-                        const by = [150, 130, 140, 155][hx];
-                        for (let row = 0; row < 3; row++) {
+                    g.fillRect(0, 0, 640, 280);
+                    // солнце у горизонта
+                    g.fillStyle = 'rgba(255,220,140,0.95)';
+                    g.beginPath(); g.arc(480, 230, 36, 0, Math.PI * 2); g.fill();
+                    g.fillStyle = 'rgba(255,200,100,0.25)';
+                    g.beginPath(); g.arc(480, 230, 70, 0, Math.PI * 2); g.fill();
+                    // дома в тёплых тонах
+                    const buildings = [
+                        [0, 170, 70, 130], [70, 150, 90, 150], [160, 130, 80, 170],
+                        [240, 160, 100, 140], [340, 120, 70, 180], [410, 145, 95, 155],
+                        [505, 155, 80, 145], [585, 135, 55, 165]
+                    ];
+                    buildings.forEach(function (b, bi) {
+                        g.fillStyle = bi % 2 ? '#5a4a42' : '#4a3e38';
+                        g.fillRect(b[0], b[1], b[2], b[3]);
+                        for (let row = 0; row < 4; row++) {
                             for (let col = 0; col < 3; col++) {
-                                g.fillRect(bx + col * 22, by + row * 22, 12, 12);
+                                if (Math.random() > 0.45) {
+                                    g.fillStyle = Math.random() > 0.4 ? '#ffd89a' : '#ffe8c0';
+                                    g.fillRect(b[0] + 10 + col * 20, b[1] + 14 + row * 24, 11, 13);
+                                } else {
+                                    g.fillStyle = 'rgba(80,100,120,0.5)';
+                                    g.fillRect(b[0] + 10 + col * 20, b[1] + 14 + row * 24, 11, 13);
+                                }
                             }
                         }
-                    }
-                    // деревья
-                    g.fillStyle = '#3d7a3d';
-                    g.beginPath(); g.ellipse(100, 210, 35, 45, 0, 0, Math.PI * 2); g.fill();
-                    g.beginPath(); g.ellipse(350, 205, 40, 50, 0, 0, Math.PI * 2); g.fill();
-                    g.fillStyle = '#5a3a20';
-                    g.fillRect(95, 230, 10, 30);
-                    g.fillRect(345, 230, 10, 30);
+                    });
                     // земля / тротуар
-                    g.fillStyle = '#7a8a70';
-                    g.fillRect(0, 250, 512, 50);
-                    g.fillStyle = '#9a9a9a';
-                    g.fillRect(0, 300, 512, 84);
-                    // разметка дороги
-                    g.strokeStyle = '#ccc';
-                    g.setLineDash([20, 16]);
-                    g.lineWidth = 4;
-                    g.beginPath(); g.moveTo(0, 340); g.lineTo(512, 340); g.stroke();
-                    g.setLineDash([]);
+                    g.fillStyle = '#6a5a4a';
+                    g.fillRect(0, 295, 640, 40);
+                    g.fillStyle = '#5a5048';
+                    g.fillRect(0, 335, 640, 65);
                     const tex = new THREE.CanvasTexture(c);
                     if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
                     return tex;
                 }
-                // вид улицы — одна плоскость (без прозрачного стекла поверх = нет артефактов)
                 const viewMat = new THREE.MeshBasicMaterial({
-                    map: makeStreetViewTexture(),
-                    side: THREE.FrontSide,
+                    map: makeEveningViewTexture(),
+                    side: THREE.DoubleSide,
                     depthWrite: true
                 });
                 const view = new THREE.Mesh(new THREE.PlaneGeometry(winW * 0.92, winH * 0.92), viewMat);
-                view.position.set(mx + nx * 0.02, winY, mz + nz * 0.02);
+                view.position.set(mx + nx * 0.025, winY, mz + nz * 0.025);
                 view.rotation.y = windowEdge.ang;
-                // нормаль внутрь комнаты
-                view.scale.x = -1;
                 scene.add(view);
                 // переплёт
                 const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.9, 0.028, 0.03), frameMat);
@@ -4847,39 +4911,29 @@ function getCurrentCeilingPayload() {
                     slope.rotation.y = windowEdge.ang;
                     scene.add(slope);
                 });
-                // Естественный свет — заметный, но не «солнце в комнате»
-                const sun = new THREE.DirectionalLight(0xfff6e8, 0.55);
+                // Свет из окна — только днём; ночью гасится через windowDayLights
+                const sun = new THREE.DirectionalLight(0xffe0c0, 0.4);
                 sun.position.set(mx + nx * 4, winY + 1.5, mz + nz * 4);
                 sun.target.position.set(mx - nx * 1.2, 0.8, mz - nz * 1.2);
                 scene.add(sun);
                 scene.add(sun.target);
-                for (let wi = -1; wi <= 1; wi++) {
-                    const ox = mx + tx * (winW * 0.3 * wi);
-                    const oz = mz + tz * (winW * 0.3 * wi);
-                    const wl = new THREE.PointLight(0xeaf3ff, 0.55, 7, 1.8);
-                    wl.position.set(ox + nx * 0.25, winY, oz + nz * 0.25);
-                    scene.add(wl);
-                }
-                const floorSpot = new THREE.PointLight(0xfff5e0, 0.35, 4, 2);
-                floorSpot.position.set(mx - nx * 1.0, 0.35, mz - nz * 1.0);
-                scene.add(floorSpot);
+                const wl = addCappedPointLight(0xffd8a8, 0.28, 5.5, 1.8);
+                if (wl) wl.position.set(mx + nx * 0.3, winY, mz + nz * 0.3);
+                const floorSpot = addCappedPointLight(0xffd0a0, 0.15, 3.2, 2);
+                if (floorSpot) floorSpot.position.set(mx - nx * 0.9, 0.35, mz - nz * 0.9);
+                window._windowDayLights = [sun, wl, floorSpot].filter(Boolean);
             }
 
-            // Потолок (плёнка) — белый цвет учитывается
+            // Потолок: мягкий белый днём, ночью серый (реагирует на свет)
             const matName = (selectedMaterial || '').toLowerCase();
             const colName = (typeof selectedColor !== 'undefined' ? selectedColor : '').toString().toLowerCase();
-            let ceilColor = 0xf5f5f5;
-            if (colName.includes('бел') || colName.includes('white') || matName.includes('бел')) {
-                ceilColor = 0xffffff;
-            } else if (matName.includes('глянец')) {
-                ceilColor = 0xffffff;
-            } else if (matName.includes('сатин')) {
-                ceilColor = 0xf8f4ff;
-            } else if (matName.includes('мат')) {
-                ceilColor = 0xf2f0eb;
-            }
+            const isWhiteCeil = colName.includes('бел') || colName.includes('white') || matName.includes('бел');
+            let ceilColor = 0xf0eeea;
+            if (isWhiteCeil) ceilColor = 0xf2f0ec;      // молочный белый, не #FFFFFF
+            else if (matName.includes('глянец')) ceilColor = 0xf4f2ee;
+            else if (matName.includes('сатин')) ceilColor = 0xf0ecf4;
+            else if (matName.includes('мат')) ceilColor = 0xeeeae4;
             const ceilMat = new THREE.MeshLambertMaterial({ color: ceilColor, side: THREE.DoubleSide });
-            // потолок чуть inset — углы без щелей/наложений со стенами
             const ceilGeo = makeRoomPlaneGeometry(roomH, 0.002);
             if (ceilGeo) scene.add(new THREE.Mesh(ceilGeo, ceilMat));
 
@@ -4913,6 +4967,13 @@ function getCurrentCeilingPayload() {
             });
 
             let isNight = false;
+            // Явно гасим свет окна ночью (не должен светить)
+            (window._windowDayLights || []).forEach(function (L) {
+                if (!L) return;
+                const dayI = L.intensity;
+                envLights.push({ light: L, day: dayI, night: 0 });
+            });
+            window._windowDayLights = [];
             function applyDayNight() {
                 envLights.forEach(function (e) {
                     if (e.light) e.light.intensity = isNight ? e.night : e.day;
@@ -5026,17 +5087,18 @@ function getCurrentCeilingPayload() {
                     const lx = a.x + ux * (t * len) + nx * (inset + 0.12);
                     const lz = a.z + uz * (t * len) + nz * (inset + 0.12);
                     const baseI = 0.14; // слабее световой полосы
-                    const pl = new THREE.PointLight(0xfff2dc, blOn ? baseI : 0, 2.4, 2);
-                    pl.position.set(lx, roomH - 0.14, lz);
-                    scene.add(pl);
-                    ceilingLights.push({
-                        kind: 'cornice',
-                        light: pl,
-                        mesh: null,
-                        baseIntensity: baseI,
-                        baseEmissive: 0,
-                        onColor: 0xfff2dc
-                    });
+                    const pl = addCappedPointLight(0xfff2dc, blOn ? baseI : 0, 2.4, 2);
+                    if (pl) {
+                        pl.position.set(lx, roomH - 0.14, lz);
+                        ceilingLights.push({
+                            kind: 'cornice',
+                            light: pl,
+                            mesh: null,
+                            baseIntensity: baseI,
+                            baseEmissive: 0,
+                            onColor: 0xfff2dc
+                        });
+                    }
                 }
                 lightKindState.cornice = blOn;
             }
@@ -5091,13 +5153,46 @@ function getCurrentCeilingPayload() {
                             onColor: isTrack ? 0x333333 : 0xfff2aa,
                             offColor: isTrack ? 0x222222 : 0x666660
                         });
-                        // один мягкий свет на сегмент
-                        const baseI = isTrack ? 0.5 : 0.7;
-                        const pl = new THREE.PointLight(isTrack ? 0xe8e0ff : 0xfff0c8, baseI, 3.8, 1.8);
-                        pl.position.set((a.x + b.x) / 2, roomH - 0.12, (a.z + b.z) / 2);
-                        scene.add(pl);
+                    }
+                    // равномерный свет вдоль полосы — реально освещает комнату
+                    let totalLen = 0;
+                    const segs = [];
+                    for (let i = 0; i < ptsM.length - 1; i++) {
+                        const a = ptsM[i], b = ptsM[i + 1];
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const len = Math.hypot(dx, dz) || 0.01;
+                        segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
+                        totalLen += len;
+                    }
+                    // Ровная заливка: мало очень мягких источников + общий fill (без пятен на стенах)
+                    const nWant = Math.max(2, Math.min(5, Math.ceil(totalLen / 1.4)));
+                    const baseI = isTrack ? 0.14 : 0.16;
+                    for (let k = 0; k < nWant; k++) {
+                        const dist = ((k + 0.5) / nWant) * totalLen;
+                        let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
+                        for (let s = 0; s < segs.length; s++) {
+                            if (acc + segs[s].len >= dist) {
+                                const t = (dist - acc) / segs[s].len;
+                                px = segs[s].a.x + segs[s].dx * t;
+                                pz = segs[s].a.z + segs[s].dz * t;
+                                break;
+                            }
+                            acc += segs[s].len;
+                        }
+                        // большой радиус, слабая яркость, сильное затухание → без «бликов» на стенах
+                        const pl = addStripPointLight(isTrack ? 0xe8e0ff : 0xfff2d0, baseI, 6.5, 2.4);
+                        pl.position.set(px, roomH - 0.35, pz);
                         ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
                     }
+                    // общий мягкий fill от полосы (равномерно по комнате)
+                    const fillI = Math.min(0.22, 0.08 + totalLen * 0.03) * (isTrack ? 0.85 : 1);
+                    const fill = new THREE.HemisphereLight(
+                        isTrack ? 0xe8e0ff : 0xfff5e0,
+                        isTrack ? 0x2a2830 : 0x2a2820,
+                        fillI
+                    );
+                    scene.add(fill);
+                    ceilingLights.push({ kind: sk, light: fill, mesh: null, baseIntensity: fillI, baseEmissive: 0, onColor: 0xfff8e0 });
                     // шары на углах — плавная стыковка сегментов
                     for (let i = 0; i < ptsM.length; i++) {
                         const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.05, 10, 10), stripMat);
@@ -5147,9 +5242,8 @@ function getCurrentCeilingPayload() {
                     scene.add(bottomRing);
                     // ярче на ~50%
                     const intensity = 0.68;
-                    const pl = new THREE.PointLight(0xfff5e6, intensity, 5.2, 2);
-                    pl.position.set(m.x, roomH - 0.42, m.z);
-                    scene.add(pl);
+                    const pl = addCappedPointLight(0xfff5e6, intensity, 5.2, 2);
+                    if (pl) pl.position.set(m.x, roomH - 0.42, m.z);
                     const shadeMat2 = drum.material;
                     if (shadeMat2) shadeMat2.emissiveIntensity = 0.55;
                     ceilingLights.push({
@@ -5165,37 +5259,34 @@ function getCurrentCeilingPayload() {
                 }
 
                 if (t === 'spot') {
-                    // Спот — аккуратный цилиндр, ровный свет вниз
+                    // Спот — аккуратный цилиндр; PointLight только в пределах бюджета
                     const bodyLen = 0.09;
-                    const ringMat = new THREE.MeshPhongMaterial({ color: 0x3a3a3a, shininess: 40 });
+                    const ringMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
                     const body = new THREE.Mesh(
-                        new THREE.CylinderGeometry(0.028, 0.022, bodyLen, 12),
+                        new THREE.CylinderGeometry(0.028, 0.022, bodyLen, 8),
                         ringMat
                     );
                     body.position.set(m.x, roomH - bodyLen / 2 - 0.015, m.z);
                     scene.add(body);
-                    // белое кольцо в потолке
                     const bezel = new THREE.Mesh(
-                        new THREE.TorusGeometry(0.032, 0.004, 8, 20),
-                        new THREE.MeshPhongMaterial({ color: 0xe8e8e8, shininess: 60 })
+                        new THREE.TorusGeometry(0.032, 0.004, 6, 12),
+                        new THREE.MeshLambertMaterial({ color: 0xe8e8e8 })
                     );
                     bezel.position.set(m.x, roomH - 0.008, m.z);
                     bezel.rotation.x = Math.PI / 2;
                     scene.add(bezel);
-                    const glowMat = new THREE.MeshPhongMaterial({
+                    const glowMat = new THREE.MeshLambertMaterial({
                         color: 0xfff8e8,
                         emissive: 0xffe8a0,
-                        emissiveIntensity: 1.2,
-                        shininess: 80
+                        emissiveIntensity: 1.2
                     });
-                    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.018, 16), glowMat);
+                    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.018, 12), glowMat);
                     glow.position.set(m.x, roomH - bodyLen - 0.02, m.z);
                     glow.rotation.x = Math.PI / 2;
                     scene.add(glow);
                     const intensity = 0.75;
-                    const pl = new THREE.PointLight(0xfff6e8, intensity, 4.0, 2);
-                    pl.position.set(m.x, roomH - bodyLen - 0.05, m.z);
-                    scene.add(pl);
+                    const pl = addCappedPointLight(0xfff6e8, intensity, 4.0, 2);
+                    if (pl) pl.position.set(m.x, roomH - bodyLen - 0.05, m.z);
                     ceilingLights.push({ kind: 'spot', light: pl, mesh: glow, baseIntensity: intensity, baseEmissive: 1.2, onColor: 0xfff8e8, offColor: 0x666660 });
                     return;
                 }
@@ -5217,9 +5308,8 @@ function getCurrentCeilingPayload() {
                     ring.rotation.x = Math.PI / 2;
                     scene.add(ring);
                     const intensity = 0.8;
-                    const pl = new THREE.PointLight(0xfff8e0, intensity, 4, 2);
-                    pl.position.set(m.x, roomH - 0.06, m.z);
-                    scene.add(pl);
+                    const pl = addCappedPointLight(0xfff8e0, intensity, 4, 2);
+                    if (pl) pl.position.set(m.x, roomH - 0.06, m.z);
                     ceilingLights.push({ kind: 'light_point', light: pl, mesh: disc, baseIntensity: intensity, baseEmissive: 2.0, onColor: 0xfff8e0, offColor: 0x888880 });
                 }
             });
@@ -5252,7 +5342,6 @@ function getCurrentCeilingPayload() {
             // Границы комнаты в метрах (XZ)
             const roomPts = points.map(p => toM(p.x, p.y));
             function pointInRoomXZ(x, z) {
-                // ray-cast 2D
                 let inside = false;
                 for (let i = 0, j = roomPts.length - 1; i < roomPts.length; j = i++) {
                     const xi = roomPts[i].x, zi = roomPts[i].z;
@@ -5263,26 +5352,46 @@ function getCurrentCeilingPayload() {
                 }
                 return inside;
             }
+            // отступ от стен ~28 см — нельзя «провалиться» в стену
+            const WALL_MARGIN = 0.28;
+            function distToWalls(x, z) {
+                let minD = 1e9;
+                for (let i = 0; i < roomPts.length; i++) {
+                    const a = roomPts[i], b = roomPts[(i + 1) % roomPts.length];
+                    const abx = b.x - a.x, abz = b.z - a.z;
+                    const len2 = abx * abx + abz * abz || 1e-9;
+                    let t = ((x - a.x) * abx + (z - a.z) * abz) / len2;
+                    t = Math.max(0, Math.min(1, t));
+                    const px = a.x + abx * t, pz = a.z + abz * t;
+                    const d = Math.hypot(x - px, z - pz);
+                    if (d < minD) minD = d;
+                }
+                return minD;
+            }
+            function canStand(x, z) {
+                return pointInRoomXZ(x, z) && distToWalls(x, z) >= WALL_MARGIN;
+            }
             // Угол комнаты с максимальным удалением от центра — стартовая точка
             let startX = roomPts[0].x, startZ = roomPts[0].z, bestD = -1;
             roomPts.forEach(p => {
                 const d = p.x * p.x + p.z * p.z;
                 if (d > bestD) { bestD = d; startX = p.x; startZ = p.z; }
             });
-            // Чуть внутрь от угла к центру
-            const inset = 0.45;
+            const inset = 0.55;
             let camX = startX * (1 - inset / (Math.hypot(startX, startZ) || 1));
             let camZ = startZ * (1 - inset / (Math.hypot(startX, startZ) || 1));
-            // Если всё ещё снаружи — ближе к центру
-            if (!pointInRoomXZ(camX, camZ)) {
-                camX = startX * 0.5;
-                camZ = startZ * 0.5;
+            if (!canStand(camX, camZ)) {
+                camX = startX * 0.4;
+                camZ = startZ * 0.4;
             }
             const eyeH = 1.55; // рост глаз
             let yaw = Math.atan2(-camX, -camZ); // смотрим примерно к центру
             let pitch = 0.35; // слегка вверх на потолок
 
+            let camFov = 60;
             function applyCam() {
+                camera.fov = camFov;
+                camera.updateProjectionMatrix();
                 camera.position.set(camX, eyeH, camZ);
                 const lookDist = 2;
                 const lx = camX + Math.sin(yaw) * Math.cos(pitch) * lookDist;
@@ -5292,6 +5401,11 @@ function getCurrentCeilingPayload() {
                 camera.lookAt(lx, ly, lz);
             }
             applyCam();
+
+            function zoomBy(delta) {
+                camFov = Math.max(28, Math.min(85, camFov + delta));
+                applyCam();
+            }
 
             // Джойстик перемещения на экране
             const pad = document.createElement('div');
@@ -5431,9 +5545,7 @@ function getCurrentCeilingPayload() {
 
             const hint = document.createElement('div');
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;color:#ccc;font-size:11px;text-align:right;max-width:55%;z-index:5;pointer-events:none;';
-            hint.innerHTML = roomPhotoImg
-                ? 'Цвет обоев и пола с фото<br>Пальцем — смотреть · джойстик — ходить'
-                : 'Пальцем — смотреть · джойстик — ходить<br>📷 Фото — цвет обоев, пола, окно';
+            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Щипок / колёсико — зум';
             host.style.position = 'relative';
             host.appendChild(pad);
             host.appendChild(lightPanel);
@@ -5472,12 +5584,37 @@ function getCurrentCeilingPayload() {
             el.addEventListener('mousedown', onLookDown);
             window.addEventListener('mousemove', onLookMove);
             window.addEventListener('mouseup', onLookUp);
+            // Зум колесом
+            const onWheel = (e) => {
+                e.preventDefault();
+                zoomBy(e.deltaY > 0 ? 3 : -3);
+            };
+            el.addEventListener('wheel', onWheel, { passive: false });
+            // Зум щипком
+            let pinchStartDist = 0;
+            let pinchStartFov = 60;
             el.addEventListener('touchstart', (e) => {
-                // если тап не по паду — осмотр
+                if (e.touches && e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    pinchStartDist = Math.hypot(dx, dy) || 1;
+                    pinchStartFov = camFov;
+                    draggingLook = false;
+                    return;
+                }
                 if (padActive) return;
                 onLookDown(e);
             }, { passive: true });
             el.addEventListener('touchmove', (e) => {
+                if (e.touches && e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const d = Math.hypot(dx, dy) || 1;
+                    const scale = pinchStartDist / d;
+                    camFov = Math.max(28, Math.min(85, pinchStartFov * scale));
+                    applyCam();
+                    return;
+                }
                 if (padActive) return;
                 onLookMove(e);
             }, { passive: true });
@@ -5532,8 +5669,7 @@ function getCurrentCeilingPayload() {
                     el.removeEventListener('mousedown', onLookDown);
                     window.removeEventListener('mousemove', onLookMove);
                     window.removeEventListener('mouseup', onLookUp);
-                    el.removeEventListener('touchstart', onLookDown);
-                    el.removeEventListener('touchmove', onLookMove);
+                    el.removeEventListener('wheel', onWheel);
                     el.removeEventListener('touchend', onLookUp);
                     pad.removeEventListener('mousedown', padStart);
                     window.removeEventListener('mousemove', padMove);
@@ -5578,8 +5714,8 @@ function getCurrentCeilingPayload() {
                     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
                     let nx = camX + (fx * mz + rx * mx) * speed * dt;
                     let nz = camZ + (fz * mz + rz * mx) * speed * dt;
-                    if (pointInRoomXZ(nx, camZ)) camX = nx;
-                    if (pointInRoomXZ(camX, nz)) camZ = nz;
+                    if (canStand(nx, camZ)) camX = nx;
+                    if (canStand(camX, nz)) camZ = nz;
                     applyCam();
                 }
 
