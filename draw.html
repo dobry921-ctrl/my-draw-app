@@ -352,6 +352,17 @@
                     <option value="light_point">Светильник</option>
                 </select>
             </div>
+            <!-- Свободно / Равномерно (как BRIKA) -->
+            <div id="point-place-mode-row" style="display:flex;gap:6px;margin-top:4px;">
+                <button type="button" class="btn btn-success" id="btn-place-free" style="flex:1;padding:8px;" onclick="setPointPlaceMode('free')">Свободно</button>
+                <button type="button" class="btn btn-outline" id="btn-place-even" style="flex:1;padding:8px;" onclick="setPointPlaceMode('even')">Равномерно</button>
+            </div>
+            <div id="even-place-row" class="color-row" style="display:none;margin-top:6px;margin-bottom:2px;">
+                <label>Шт. в ряду:</label>
+                <input type="number" id="even-count-input" value="4" min="1" max="40" step="1"
+                    style="width:64px;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">
+                <span style="font-size:0.75rem;color:#555;">тап по стене</span>
+            </div>
 
             <!-- Люстры: материал + по центру -->
             <div id="chandelier-tools-row" style="display:none;margin-top:6px;">
@@ -399,6 +410,11 @@
         <div id="fixture-list" class="fixture-list"></div>
         <!-- Кнопка завершения полосы в основной панели -->
         <button class="btn btn-success" id="finish-strip-btn" onclick="finishStrip()" style="display:none; width:100%; margin-top:4px; padding:6px;">✅ Завершить полосу</button>
+        <div style="display:flex;gap:4px;margin-top:6px;">
+            <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="showClientPreview('2d')">🖼 2D клиенту</button>
+            <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="showClientPreview('3d')">🏛 3D клиенту</button>
+        </div>
+        <div class="hint" style="margin-top:2px;">Откроется картинка на весь экран — покажите клиенту или «Сохранить»</div>
         <div style="display:flex;gap:4px;margin-top:4px;">
             <button class="btn btn-outline" style="flex:1;padding:6px;" onclick="skipInstall()">Пропустить</button>
             <button class="btn btn-success" style="flex:1;padding:6px;" onclick="finishInstall()">Готово</button>
@@ -430,8 +446,30 @@
             <div class="hint" style="margin-top:4px;">Выберите потолок 👁, затем раздел правки. Перед отправкой проверьте все.</div>
         </div>
         <button class="btn btn-accent" id="add-ceiling-btn" onclick="addCeiling()" style="width:100%; margin-bottom:4px;padding:6px;">➕ Добавить ещё потолок</button>
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="showClientPreview('2d')">🖼 2D клиенту</button>
+            <button type="button" class="btn btn-outline" style="flex:1;padding:8px;" onclick="showClientPreview('3d')">🏛 3D клиенту</button>
+        </div>
         <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
         <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
+    </div>
+
+    <!-- Полноэкранный превью для клиента -->
+    <div id="client-preview-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:#0b0b0b;flex-direction:column;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#111;color:#fff;z-index:2;">
+            <span id="client-preview-title" style="font-weight:bold;font-size:0.95rem;">Превью для клиента</span>
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-outline" style="padding:6px 10px;color:#fff;border-color:#666;" onclick="downloadClientPreview()">💾 Сохранить</button>
+                <button type="button" class="btn btn-success" style="padding:6px 10px;" onclick="closeClientPreview()">✕ Закрыть</button>
+            </div>
+        </div>
+        <div id="client-preview-host" style="flex:1;position:relative;overflow:hidden;">
+            <canvas id="client-preview-canvas" style="display:none;max-width:100%;max-height:100%;background:#fff;"></canvas>
+            <div id="client-preview-3d" style="display:none;position:absolute;inset:0;"></div>
+        </div>
+        <div style="padding:8px 12px;color:#aaa;font-size:0.75rem;text-align:center;z-index:2;">
+            3D: старт из угла · пальцем — осмотр · джойстик слева — ходить по комнате
+        </div>
     </div>
 
     <!-- Плавающая кнопка меню -->
@@ -469,6 +507,9 @@
         let selectedStripMaterial = 'Световая полоса';
         let selectedProfileName = 'Стандартный';
         let spotKind = 'spot'; // 'spot' | 'light_point'
+        let pointPlaceMode = 'free'; // 'free' | 'even'
+        let evenCount = 4;
+        let nextLightRowId = 1;
         let profileEdgesPainted = false;
         let stripDraft = [];
         let stripPreviewLen = 0;
@@ -587,7 +628,31 @@
             if (!dragFixture) return;
             const f = fixtures[dragFixture.idx];
             if (!f) return;
+            // Равномерный ряд — двигаем весь ряд целиком
+            if (dragFixture.mode === 'row' && dragFixture.bases && dragFixture.bases.length) {
+                const leadBase = dragFixture.bases.find(b => b.idx === dragFixture.idx) || dragFixture.bases[0];
+                let x = worldPos.x - dragFixture.grabDx;
+                let y = worldPos.y - dragFixture.grabDy;
+                const sn = snapPointToGuides(x, y, dragFixture.idx);
+                const ddx = sn.x - leadBase.x;
+                const ddy = sn.y - leadBase.y;
+                dragFixture.bases.forEach(b => {
+                    const fi = fixtures[b.idx];
+                    if (!fi) return;
+                    fi.x = b.x + ddx;
+                    fi.y = b.y + ddy;
+                    const off = twoNearestEdgeOffsetsCm({ x: fi.x, y: fi.y });
+                    fi.offset_wall_a_cm = off.offset_wall_a_cm;
+                    fi.offset_wall_b_cm = off.offset_wall_b_cm;
+                });
+                const lead = fixtures[dragFixture.idx];
+                let text = 'Ряд · ' + formatWallOffsets({ x: lead.x, y: lead.y });
+                if (snapGuides.length) text += '\n∥ выравнивание';
+                dragLiveLabel = { wx: lead.x, wy: lead.y, text };
+                return;
+            }
             if (dragFixture.mode === 'point') {
+                // Свободная расстановка — только один
                 let x = worldPos.x - dragFixture.grabDx;
                 let y = worldPos.y - dragFixture.grabDy;
                 const sn = snapPointToGuides(x, y, dragFixture.idx);
@@ -654,12 +719,30 @@
                         updateLightDragBar();
                         showLightDragBar();
                         if (hit.mode === 'point') {
-                            dragFixture = {
-                                idx: hit.idx,
-                                mode: 'point',
-                                grabDx: worldPos.x - f.x,
-                                grabDy: worldPos.y - f.y
-                            };
+                            if (f.rowId != null) {
+                                // Равномерный ряд — тащим все точки ряда
+                                const bases = [];
+                                fixtures.forEach((fi, i) => {
+                                    if (fi && fi.rowId === f.rowId && fi.x != null) {
+                                        bases.push({ idx: i, x: fi.x, y: fi.y });
+                                    }
+                                });
+                                dragFixture = {
+                                    idx: hit.idx,
+                                    mode: 'row',
+                                    rowId: f.rowId,
+                                    grabDx: worldPos.x - f.x,
+                                    grabDy: worldPos.y - f.y,
+                                    bases
+                                };
+                            } else {
+                                dragFixture = {
+                                    idx: hit.idx,
+                                    mode: 'point',
+                                    grabDx: worldPos.x - f.x,
+                                    grabDy: worldPos.y - f.y
+                                };
+                            }
                         } else {
                             dragFixture = {
                                 idx: hit.idx,
@@ -1531,8 +1614,8 @@
                     draw();
                     return;
                 }
-                pushLightingUndo(snapshotFixtures());
                 if (lightingSub === 'chandelier') {
+                    pushLightingUndo(snapshotFixtures());
                     const n = fixtures.filter(f => f.type === 'chandelier').length + 1;
                     fixtures.push({
                         type: 'chandelier', x: worldPos.x, y: worldPos.y, label: 'L' + n,
@@ -1541,33 +1624,41 @@
                     selectedFixtureIdx = fixtures.length - 1;
                     updateFixtureList();
                     showToast(`Люстра L${n}`, 1800);
+                    draw();
+                    return;
+                }
+                // Точечные: свободно или равномерно (BRIKA-style)
+                if (pointPlaceMode === 'even') {
+                    placeEvenRowAlongWall(worldPos);
+                    return;
+                }
+                pushLightingUndo(snapshotFixtures());
+                const kind = spotKind === 'light_point' ? 'light_point' : 'spot';
+                const off = twoNearestEdgeOffsetsCm(worldPos);
+                if (kind === 'light_point') {
+                    const n = fixtures.filter(f => f.type === 'light_point').length + 1;
+                    fixtures.push({
+                        type: 'light_point', x: worldPos.x, y: worldPos.y, label: 'T' + n,
+                        offset_wall_a_cm: off.offset_wall_a_cm,
+                        offset_wall_b_cm: off.offset_wall_b_cm,
+                        material: selectedLightingName || 'Светильник (установка)',
+                        placeMode: 'free'
+                    });
+                    selectedFixtureIdx = fixtures.length - 1;
+                    updateFixtureList();
+                    showToast(`Светильник T${n}`, 1800);
                 } else {
-                    // Точечные: Спот или Светильник
-                    const kind = spotKind === 'light_point' ? 'light_point' : 'spot';
-                    const off = twoNearestEdgeOffsetsCm(worldPos);
-                    if (kind === 'light_point') {
-                        const n = fixtures.filter(f => f.type === 'light_point').length + 1;
-                        fixtures.push({
-                            type: 'light_point', x: worldPos.x, y: worldPos.y, label: 'T' + n,
-                            offset_wall_a_cm: off.offset_wall_a_cm,
-                            offset_wall_b_cm: off.offset_wall_b_cm,
-                            material: selectedLightingName || 'Светильник (установка)'
-                        });
-                        selectedFixtureIdx = fixtures.length - 1;
-                        updateFixtureList();
-                        showToast(`Светильник T${n}`, 1800);
-                    } else {
-                        const n = fixtures.filter(f => f.type === 'spot').length + 1;
-                        fixtures.push({
-                            type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
-                            offset_wall_a_cm: off.offset_wall_a_cm,
-                            offset_wall_b_cm: off.offset_wall_b_cm,
-                            material: selectedLightingName || 'Спот (установка)'
-                        });
-                        selectedFixtureIdx = fixtures.length - 1;
-                        updateFixtureList();
-                        showToast(`Спот S${n}`, 1800);
-                    }
+                    const n = fixtures.filter(f => f.type === 'spot').length + 1;
+                    fixtures.push({
+                        type: 'spot', x: worldPos.x, y: worldPos.y, label: 'S' + n,
+                        offset_wall_a_cm: off.offset_wall_a_cm,
+                        offset_wall_b_cm: off.offset_wall_b_cm,
+                        material: selectedLightingName || 'Спот (установка)',
+                        placeMode: 'free'
+                    });
+                    selectedFixtureIdx = fixtures.length - 1;
+                    updateFixtureList();
+                    showToast(`Спот S${n}`, 1800);
                 }
                 draw();
             }
@@ -1897,12 +1988,110 @@
             if (!sel) return;
             spotKind = sel.value === 'light_point' ? 'light_point' : 'spot';
             selectedLightingName = spotKind === 'light_point' ? 'Светильник (установка)' : 'Спот (установка)';
+            updatePointPlaceHint();
+        }
+
+        function setPointPlaceMode(mode) {
+            pointPlaceMode = mode === 'even' ? 'even' : 'free';
+            const bFree = document.getElementById('btn-place-free');
+            const bEven = document.getElementById('btn-place-even');
+            const row = document.getElementById('even-place-row');
+            if (bFree) bFree.className = 'btn ' + (pointPlaceMode === 'free' ? 'btn-success' : 'btn-outline');
+            if (bEven) bEven.className = 'btn ' + (pointPlaceMode === 'even' ? 'btn-success' : 'btn-outline');
+            if (row) row.style.display = pointPlaceMode === 'even' ? 'flex' : 'none';
+            updatePointPlaceHint();
+        }
+
+        function updatePointPlaceHint() {
             const mh = document.getElementById('lighting-mode-hint');
-            if (mh) {
-                mh.innerText = spotKind === 'light_point'
-                    ? 'Светильник: тапните на чертёж. Отступ от стен + расстояние до соседнего света. За контур — удаление.'
-                    : 'Спот: тапните на чертёж. Отступ от стен + расстояние до соседнего света. За контур — удаление.';
+            if (!mh) return;
+            const kindLab = spotKind === 'light_point' ? 'Светильник' : 'Спот';
+            if (pointPlaceMode === 'even') {
+                const inp = document.getElementById('even-count-input');
+                const n = inp ? (parseInt(inp.value, 10) || 4) : evenCount;
+                mh.innerText = `${kindLab}: ряд из ${n} — тап у стены. Вдоль стены равномерно; отступ от стены = место тапа. Тянете — весь ряд.`;
+            } else {
+                mh.innerText = `${kindLab}: свободно — тапните точку. Двигать только по одному. За контур — удаление.`;
             }
+        }
+
+        /** Равномерный ряд вдоль ближайшей стены (как BRIKA). */
+        function placeEvenRowAlongWall(worldPos) {
+            if (!points || points.length < 3) {
+                showToast('Сначала постройте контур', 2500);
+                return;
+            }
+            const inp = document.getElementById('even-count-input');
+            evenCount = Math.max(1, Math.min(40, parseInt(inp && inp.value, 10) || evenCount || 4));
+            if (inp) inp.value = String(evenCount);
+
+            // Ближайшее ребро
+            let bestEi = 0, bestD = Infinity;
+            for (let i = 0; i < points.length; i++) {
+                const a = points[i], b = points[(i + 1) % points.length];
+                const d = distPointToSegment(worldPos, a, b);
+                if (d < bestD) { bestD = d; bestEi = i; }
+            }
+            const a = points[bestEi], b = points[(bestEi + 1) % points.length];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len, uy = dy / len;
+            // Нормаль внутрь контура
+            let nx = -uy, ny = ux;
+            const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+            const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+            if ((cx - mx) * nx + (cy - my) * ny < 0) { nx = -nx; ny = -ny; }
+
+            // Равномерно только ВДОЛЬ линии (стены):
+            // step = L/(n+1) — отступы от торцов = шаг между точками
+            // отступ от параллельной стены = расстояние тапа (можно ближе/дальше)
+            const n = evenCount;
+            const step = len / (n + 1);
+            const offset = Math.max(5, bestD); // отступ от параллельной стены по тапу
+            const kind = spotKind === 'light_point' ? 'light_point' : 'spot';
+            const mat = selectedLightingName || (kind === 'light_point' ? 'Светильник (установка)' : 'Спот (установка)');
+            const rowId = nextLightRowId++;
+
+            pushLightingUndo(snapshotFixtures());
+            let placed = 0;
+            for (let i = 1; i <= n; i++) {
+                const along = step * i;
+                const px = a.x + ux * along + nx * offset;
+                const py = a.y + uy * along + ny * offset;
+                if (!pointInPolygon({ x: px, y: py }, points)) continue;
+                const off = twoNearestEdgeOffsetsCm({ x: px, y: py });
+                if (kind === 'light_point') {
+                    const num = fixtures.filter(f => f.type === 'light_point').length + 1;
+                    fixtures.push({
+                        type: 'light_point', x: px, y: py, label: 'T' + num,
+                        offset_wall_a_cm: off.offset_wall_a_cm,
+                        offset_wall_b_cm: off.offset_wall_b_cm,
+                        material: mat,
+                        rowId,
+                        placeMode: 'even'
+                    });
+                } else {
+                    const num = fixtures.filter(f => f.type === 'spot').length + 1;
+                    fixtures.push({
+                        type: 'spot', x: px, y: py, label: 'S' + num,
+                        offset_wall_a_cm: off.offset_wall_a_cm,
+                        offset_wall_b_cm: off.offset_wall_b_cm,
+                        material: mat,
+                        rowId,
+                        placeMode: 'even'
+                    });
+                }
+                placed++;
+            }
+            selectedFixtureIdx = fixtures.length - 1;
+            updateFixtureList();
+            draw();
+            const lab = edges[bestEi] ? edges[bestEi].label : (bestEi + 1);
+            const stepCm = (edges[bestEi] && edges[bestEi].lengthCm != null)
+                ? (edges[bestEi].lengthCm / (n + 1))
+                : step;
+            showToast(`Ряд ${placed} шт · шаг ${stepCm.toFixed(0)} см · от стены ${offset.toFixed(0)} см · ${lab}`, 3200);
         }
 
         function selectChandelierFromSelect() {
@@ -1974,10 +2163,14 @@
             const miniPanel = document.getElementById('strip-mini-panel');
             const finishBtn = document.getElementById('finish-strip-btn');
             const kindRow = document.getElementById('spot-kind-row');
+            const placeModeRow = document.getElementById('point-place-mode-row');
+            const evenRow = document.getElementById('even-place-row');
             const chRow = document.getElementById('chandelier-tools-row');
             const stripRow = document.getElementById('strip-material-row');
 
             if (kindRow) kindRow.style.display = sub === 'spot' ? 'flex' : 'none';
+            if (placeModeRow) placeModeRow.style.display = sub === 'spot' ? 'flex' : 'none';
+            if (evenRow) evenRow.style.display = (sub === 'spot' && pointPlaceMode === 'even') ? 'flex' : 'none';
             if (chRow) chRow.style.display = sub === 'chandelier' ? 'block' : 'none';
             if (stripRow) stripRow.style.display = sub === 'strip' ? 'flex' : 'none';
 
@@ -1992,7 +2185,8 @@
                 if (finishBtn) finishBtn.style.display = 'none';
                 if (sub === 'spot') {
                     selectPointTypeFromSelect();
-                    if (hint) hint.innerText = 'Точечные: выберите Спот или Светильник, тапните на чертёж.';
+                    setPointPlaceMode(pointPlaceMode);
+                    if (hint) hint.innerText = 'Точечные: Спот/Светильник → Свободно или Равномерно.';
                 } else if (sub === 'chandelier') {
                     if (hint) hint.innerText = 'Люстры: тапните место или «по центру». За контур — удаление.';
                     if (modeHint) modeHint.innerText = 'Люстра: тапните на чертёж или «по центру».';
@@ -3785,6 +3979,913 @@ function getCurrentCeilingPayload() {
             });
 
             drawSummaryCardOnCanvas();
+        }
+
+        // ---- Превью для клиента: 2D план и реалистичный 3D (Three.js, вид снизу) ----
+        let _clientPreviewMode = '2d';
+        let _three = null;
+        let _threeScene = null;
+        let _threeRenderer = null;
+        let _threeCamera = null;
+        let _threeAnim = null;
+        let _threeDrag = null;
+
+        function loadThreeJs() {
+            if (window.THREE) return Promise.resolve(window.THREE);
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+                s.onload = () => resolve(window.THREE);
+                s.onerror = () => reject(new Error('Three.js не загрузился'));
+                document.head.appendChild(s);
+            });
+        }
+
+        async function showClientPreview(mode) {
+            if (!points || points.length < 3) {
+                showToast('Сначала постройте контур потолка', 2500);
+                return;
+            }
+            _clientPreviewMode = mode === '3d' ? '3d' : '2d';
+            const ov = document.getElementById('client-preview-overlay');
+            const title = document.getElementById('client-preview-title');
+            const c2d = document.getElementById('client-preview-canvas');
+            const d3 = document.getElementById('client-preview-3d');
+            if (title) title.textContent = _clientPreviewMode === '3d' ? '3D для клиента (вид снизу)' : '2D план для клиента';
+            if (ov) {
+                ov.style.display = 'flex';
+                ov.style.flexDirection = 'column';
+            }
+            if (_clientPreviewMode === '3d') {
+                if (c2d) c2d.style.display = 'none';
+                if (d3) d3.style.display = 'block';
+                try {
+                    showToast('Загрузка 3D…', 1200);
+                    await renderClient3DRealistic();
+                } catch (e) {
+                    console.error(e);
+                    showToast('3D не удалось загрузить. Проверьте интернет.', 3500);
+                }
+            } else {
+                disposeThreePreview();
+                if (d3) d3.style.display = 'none';
+                if (c2d) c2d.style.display = 'block';
+                renderClientPreview2DOnly();
+            }
+        }
+
+        function closeClientPreview() {
+            disposeThreePreview();
+            const ov = document.getElementById('client-preview-overlay');
+            if (ov) ov.style.display = 'none';
+        }
+
+        function disposeThreePreview() {
+            if (_threeAnim) {
+                cancelAnimationFrame(_threeAnim);
+                _threeAnim = null;
+            }
+            if (_threeDrag) {
+                _threeDrag.cleanup && _threeDrag.cleanup();
+                _threeDrag = null;
+            }
+            if (_threeRenderer) {
+                try {
+                    _threeRenderer.dispose();
+                    const el = _threeRenderer.domElement;
+                    if (el && el.parentNode) el.parentNode.removeChild(el);
+                } catch (e) {}
+                _threeRenderer = null;
+            }
+            _threeScene = null;
+            _threeCamera = null;
+        }
+
+        function downloadClientPreview() {
+            try {
+                let dataUrl = null;
+                if (_clientPreviewMode === '3d' && _threeRenderer) {
+                    _threeRenderer.render(_threeScene, _threeCamera);
+                    dataUrl = _threeRenderer.domElement.toDataURL('image/png');
+                } else {
+                    const c = document.getElementById('client-preview-canvas');
+                    if (c) dataUrl = c.toDataURL('image/png');
+                }
+                if (!dataUrl) {
+                    showToast('Нечего сохранять', 2000);
+                    return;
+                }
+                const a = document.createElement('a');
+                a.download = (_clientPreviewMode === '3d' ? 'potolok-3d' : 'potolok-2d') + '.png';
+                a.href = dataUrl;
+                a.click();
+                showToast('Картинка сохранена', 2000);
+            } catch (e) {
+                showToast('Не удалось сохранить', 2000);
+            }
+        }
+
+        function renderClientPreview2DOnly() {
+            const c = document.getElementById('client-preview-canvas');
+            if (!c || !points.length) return;
+            const host = document.getElementById('client-preview-host');
+            const W = Math.max(320, (host && host.clientWidth) || window.innerWidth || 400);
+            const H = Math.max(320, (host && host.clientHeight) || (window.innerHeight - 100) || 500);
+            c.width = W;
+            c.height = H;
+            c.style.width = '100%';
+            c.style.height = '100%';
+            c.style.objectFit = 'contain';
+            const ctx2 = c.getContext('2d');
+            ctx2.fillStyle = '#f7f5f2';
+            ctx2.fillRect(0, 0, W, H);
+            renderClient2D(ctx2, W, H);
+        }
+
+        function renderClient2D(ctx, W, H) {
+            const pad = 48;
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            points.forEach(p => {
+                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+            });
+            fixtures.forEach(f => {
+                if (f.x != null) { minX = Math.min(minX, f.x); maxX = Math.max(maxX, f.x); minY = Math.min(minY, f.y); maxY = Math.max(maxY, f.y); }
+                if (f.points) f.points.forEach(p => {
+                    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+                });
+            });
+            const bw = maxX - minX || 1, bh = maxY - minY || 1;
+            const scale = Math.min((W - 2 * pad) / bw, (H - 2 * pad - 40) / bh);
+            const ox = (W - bw * scale) / 2 - minX * scale;
+            const oy = (H - bh * scale) / 2 - minY * scale + 10;
+            const toS = (x, y) => ({ x: ox + x * scale, y: oy + y * scale });
+
+            // Заливка комнаты
+            ctx.beginPath();
+            points.forEach((p, i) => {
+                const s = toS(p.x, p.y);
+                if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+            });
+            ctx.closePath();
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Размеры сторон
+            ctx.font = 'bold 13px Arial';
+            ctx.fillStyle = '#c0392b';
+            ctx.textAlign = 'center';
+            for (let i = 0; i < points.length; i++) {
+                const a = points[i], b = points[(i + 1) % points.length];
+                const sa = toS(a.x, a.y), sb = toS(b.x, b.y);
+                const mx = (sa.x + sb.x) / 2, my = (sa.y + sb.y) / 2;
+                const len = edges[i] && edges[i].lengthCm != null ? edges[i].lengthCm : Math.round(Math.hypot(b.x - a.x, b.y - a.y));
+                ctx.fillText(String(len), mx, my - 6);
+            }
+
+            // Свет
+            fixtures.forEach(f => {
+                if (f.type === 'strip' && f.points && f.points.length >= 2) {
+                    const mat = (f.material || '').toString();
+                    const isTrack = /трек|track/i.test(mat);
+                    ctx.beginPath();
+                    f.points.forEach((p, i) => {
+                        const s = toS(p.x, p.y);
+                        if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+                    });
+                    ctx.strokeStyle = isTrack ? '#9b59b6' : '#f1c40f';
+                    ctx.lineWidth = isTrack ? 5 : 4;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                } else if (f.x != null) {
+                    const s = toS(f.x, f.y);
+                    ctx.beginPath();
+                    if (f.type === 'chandelier') {
+                        ctx.fillStyle = '#c0392b';
+                        ctx.arc(s.x, s.y, 10, 0, Math.PI * 2);
+                    } else if (f.type === 'light_point') {
+                        ctx.fillStyle = '#8e44ad';
+                        ctx.arc(s.x, s.y, 7, 0, Math.PI * 2);
+                    } else if (f.type === 'spot') {
+                        ctx.fillStyle = '#f39c12';
+                        ctx.arc(s.x, s.y, 8, 0, Math.PI * 2);
+                    } else return;
+                    ctx.fill();
+                }
+            });
+
+            // Подпись
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            const mat = selectedMaterial || 'Потолок';
+            const col = selectedColor || '';
+            ctx.fillText(`${mat}${col ? ' · ' + col : ''}`, W / 2, 28);
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#666';
+            let area = 0;
+            for (let i = 0; i < points.length; i++) {
+                const p1 = points[i], p2 = points[(i + 1) % points.length];
+                area += p1.x * p2.y - p2.x * p1.y;
+            }
+            area = Math.abs(area) / 2 / 10000;
+            ctx.fillText(`Площадь ≈ ${area.toFixed(2)} м²`, W / 2, H - 16);
+        }
+
+        /** Реалистичный 3D: вид снизу вверх, стены, пол, горящий свет. */
+        async function renderClient3DRealistic() {
+            const THREE = await loadThreeJs();
+            disposeThreePreview();
+
+            const host = document.getElementById('client-preview-3d');
+            if (!host) return;
+            host.innerHTML = '';
+            const W = host.clientWidth || window.innerWidth || 400;
+            const H = host.clientHeight || (window.innerHeight - 100) || 500;
+
+            // Координаты комнаты в метрах (из см чертежа)
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            points.forEach(p => {
+                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+            });
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            const toM = (x, y) => ({ x: (x - cx) / 100, z: (y - cy) / 100 }); // Y-up в three: высота; план XZ
+            const roomH = 2.7; // высота потолка, м
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+
+            const camera = new THREE.PerspectiveCamera(60, W / H, 0.05, 50);
+            // Вид снизу: камера чуть над полом, смотрит вверх на потолок
+            camera.position.set(0, 0.35, 0);
+            camera.up.set(0, 0, -1);
+            camera.lookAt(0, roomH - 0.05, 0);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+            renderer.setSize(W, H);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+            renderer.shadowMap.enabled = false;
+            if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
+            host.appendChild(renderer.domElement);
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
+            renderer.domElement.style.display = 'block';
+
+            // Контур комнаты в метрах (XZ), CCW для корректной заливки
+            const roomContour = points.map(p => toM(p.x, p.y));
+            let signedArea = 0;
+            for (let i = 0; i < roomContour.length; i++) {
+                const a = roomContour[i], b = roomContour[(i + 1) % roomContour.length];
+                signedArea += a.x * b.z - b.x * a.z;
+            }
+            if (signedArea < 0) roomContour.reverse();
+
+            // Пол и потолок — надёжная триангуляция (не ShapeGeometry)
+            function makeRoomPlaneGeometry(y) {
+                const n = roomContour.length;
+                if (n < 3) return null;
+                const verts = [];
+                const idxs = [];
+                // веер от среднего центра
+                let cx0 = 0, cz0 = 0;
+                roomContour.forEach(p => { cx0 += p.x; cz0 += p.z; });
+                cx0 /= n; cz0 /= n;
+                verts.push(cx0, y, cz0);
+                roomContour.forEach(p => verts.push(p.x, y, p.z));
+                for (let i = 0; i < n; i++) {
+                    const i1 = i + 1;
+                    const i2 = (i + 1) % n + 1;
+                    // порядок так, чтобы нормаль вверх (+Y) для пола
+                    if (y <= 0.01) idxs.push(0, i1, i2);
+                    else idxs.push(0, i2, i1); // потолок — нормаль вниз к камере
+                }
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+                geo.setIndex(idxs);
+                geo.computeVertexNormals();
+                return geo;
+            }
+
+            // Процедурные текстуры: ламинат + неброские обои
+            function makeLaminateTexture() {
+                const c = document.createElement('canvas');
+                c.width = 512; c.height = 512;
+                const g = c.getContext('2d');
+                g.fillStyle = '#c9a66b';
+                g.fillRect(0, 0, 512, 512);
+                const plankH = 64;
+                for (let y = 0; y < 512; y += plankH) {
+                    const base = 160 + ((y / plankH) % 3) * 12;
+                    g.fillStyle = `rgb(${base + 40},${base + 10},${base - 40})`;
+                    g.fillRect(0, y, 512, plankH - 2);
+                    // волокна
+                    for (let i = 0; i < 18; i++) {
+                        g.strokeStyle = `rgba(90,60,30,${0.04 + Math.random() * 0.06})`;
+                        g.beginPath();
+                        const yy = y + 8 + Math.random() * (plankH - 16);
+                        g.moveTo(0, yy);
+                        g.lineTo(512, yy + (Math.random() - 0.5) * 6);
+                        g.stroke();
+                    }
+                    // шов
+                    g.fillStyle = 'rgba(60,40,20,0.35)';
+                    g.fillRect(0, y + plankH - 2, 512, 2);
+                    // вертикальные стыки досок
+                    for (let x = ((y / plankH) % 2) * 80; x < 512; x += 160) {
+                        g.fillStyle = 'rgba(60,40,20,0.25)';
+                        g.fillRect(x, y, 2, plankH - 2);
+                    }
+                }
+                const tex = new THREE.CanvasTexture(c);
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(4, 4);
+                return tex;
+            }
+            function makeWallpaperTexture() {
+                const c = document.createElement('canvas');
+                c.width = 256; c.height = 256;
+                const g = c.getContext('2d');
+                g.fillStyle = '#ebe6dc';
+                g.fillRect(0, 0, 256, 256);
+                // тонкий геометрический узор
+                g.strokeStyle = 'rgba(180,170,155,0.35)';
+                g.lineWidth = 1;
+                for (let y = 0; y < 256; y += 32) {
+                    for (let x = 0; x < 256; x += 32) {
+                        g.strokeRect(x + 4, y + 4, 24, 24);
+                        g.beginPath();
+                        g.moveTo(x + 16, y + 8);
+                        g.lineTo(x + 16, y + 24);
+                        g.moveTo(x + 8, y + 16);
+                        g.lineTo(x + 24, y + 16);
+                        g.stroke();
+                    }
+                }
+                const tex = new THREE.CanvasTexture(c);
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(3, 2);
+                return tex;
+            }
+            const floorMat = new THREE.MeshLambertMaterial({
+                map: makeLaminateTexture(),
+                side: THREE.DoubleSide
+            });
+            const floorGeo = makeRoomPlaneGeometry(0);
+            if (floorGeo) {
+                // UV для плоскости-веера: простая проекция XZ
+                const pos = floorGeo.attributes.position;
+                const uvs = [];
+                for (let i = 0; i < pos.count; i++) {
+                    uvs.push(pos.getX(i) * 0.35, pos.getZ(i) * 0.35);
+                }
+                floorGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                scene.add(new THREE.Mesh(floorGeo, floorMat));
+            }
+
+            // Стены + окно и дверь на самых длинных сторонах
+            const wallMat = new THREE.MeshLambertMaterial({
+                map: makeWallpaperTexture(),
+                side: THREE.DoubleSide
+            });
+            const wallEdges = roomContour.map((a, i) => {
+                const b = roomContour[(i + 1) % roomContour.length];
+                const dx = b.x - a.x, dz = b.z - a.z;
+                return { i, a, b, dx, dz, len: Math.hypot(dx, dz) || 0.01, ang: -Math.atan2(dz, dx) };
+            }).sort((u, v) => v.len - u.len);
+            const doorEdge = wallEdges[0];
+            const windowEdge = wallEdges.find(e => e.i !== doorEdge.i) || wallEdges[1] || wallEdges[0];
+
+            for (let i = 0; i < roomContour.length; i++) {
+                const a = roomContour[i];
+                const b = roomContour[(i + 1) % roomContour.length];
+                const dx = b.x - a.x, dz = b.z - a.z;
+                const len = Math.hypot(dx, dz) || 0.01;
+                const wallGeo = new THREE.PlaneGeometry(len, roomH);
+                const wall = new THREE.Mesh(wallGeo, wallMat);
+                wall.position.set((a.x + b.x) / 2, roomH / 2, (a.z + b.z) / 2);
+                wall.rotation.y = -Math.atan2(dz, dx);
+                scene.add(wall);
+            }
+
+            // Дверь на самой длинной стене
+            if (doorEdge && doorEdge.len > 0.9) {
+                const t = 0.35;
+                const mx = doorEdge.a.x + doorEdge.dx * t;
+                const mz = doorEdge.a.z + doorEdge.dz * t;
+                const doorW = Math.min(0.9, doorEdge.len * 0.28);
+                const doorH = 2.05;
+                const doorMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2e });
+                const door = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.06), doorMat);
+                // чуть внутрь комнаты от стены
+                const nx = -Math.sin(doorEdge.ang), nz = -Math.cos(doorEdge.ang);
+                door.position.set(mx + nx * 0.04, doorH / 2, mz + nz * 0.04);
+                door.rotation.y = doorEdge.ang;
+                scene.add(door);
+                // коробка
+                const frameMat = new THREE.MeshLambertMaterial({ color: 0x8a6a45 });
+                const frameL = new THREE.Mesh(new THREE.BoxGeometry(0.06, doorH, 0.08), frameMat);
+                frameL.position.set(mx + nx * 0.04 - Math.cos(doorEdge.ang) * (doorW / 2 + 0.03), doorH / 2, mz + nz * 0.04 - Math.sin(doorEdge.ang) * (doorW / 2 + 0.03));
+                frameL.rotation.y = doorEdge.ang;
+                scene.add(frameL);
+                const frameR = frameL.clone();
+                frameR.position.set(mx + nx * 0.04 + Math.cos(doorEdge.ang) * (doorW / 2 + 0.03), doorH / 2, mz + nz * 0.04 + Math.sin(doorEdge.ang) * (doorW / 2 + 0.03));
+                scene.add(frameR);
+                // ручка
+                const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshLambertMaterial({ color: 0xc0c0c0 }));
+                knob.position.set(mx + nx * 0.08 + Math.cos(doorEdge.ang) * (doorW * 0.3), 1.0, mz + nz * 0.08 + Math.sin(doorEdge.ang) * (doorW * 0.3));
+                scene.add(knob);
+            }
+            // Окно на другой длинной стене
+            if (windowEdge && windowEdge.len > 0.8) {
+                const t = 0.5;
+                const mx = windowEdge.a.x + windowEdge.dx * t;
+                const mz = windowEdge.a.z + windowEdge.dz * t;
+                const winW = Math.min(1.4, windowEdge.len * 0.4);
+                const winH = 1.2;
+                const winY = 1.35;
+                const nx = -Math.sin(windowEdge.ang), nz = -Math.cos(windowEdge.ang);
+                // рама
+                const frameMat = new THREE.MeshLambertMaterial({ color: 0xf0f0f0 });
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.08, winH + 0.08, 0.07), frameMat);
+                frame.position.set(mx + nx * 0.03, winY, mz + nz * 0.03);
+                frame.rotation.y = windowEdge.ang;
+                scene.add(frame);
+                // стекло (светлое)
+                const glass = new THREE.Mesh(
+                    new THREE.PlaneGeometry(winW, winH),
+                    new THREE.MeshLambertMaterial({ color: 0xa8d4f0, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+                );
+                glass.position.set(mx + nx * 0.06, winY, mz + nz * 0.06);
+                glass.rotation.y = windowEdge.ang;
+                scene.add(glass);
+                // переплёт крест
+                const barH = new THREE.Mesh(new THREE.BoxGeometry(winW, 0.04, 0.04), frameMat);
+                barH.position.set(mx + nx * 0.05, winY, mz + nz * 0.05);
+                barH.rotation.y = windowEdge.ang;
+                scene.add(barH);
+                const barV = new THREE.Mesh(new THREE.BoxGeometry(0.04, winH, 0.04), frameMat);
+                barV.position.set(mx + nx * 0.05, winY, mz + nz * 0.05);
+                barV.rotation.y = windowEdge.ang;
+                scene.add(barV);
+                // дневной свет из окна
+                const winLight = new THREE.PointLight(0xddeeff, 0.45, 6, 2);
+                winLight.position.set(mx + nx * 0.5, winY, mz + nz * 0.5);
+                scene.add(winLight);
+            }
+
+            // Потолок (плёнка)
+            const matName = (selectedMaterial || '').toLowerCase();
+            let ceilColor = 0xf5f5f5;
+            if (matName.includes('глянец')) ceilColor = 0xffffff;
+            else if (matName.includes('сатин')) ceilColor = 0xf8f4ff;
+            else if (matName.includes('мат')) ceilColor = 0xf2f0eb;
+            const ceilMat = new THREE.MeshLambertMaterial({ color: ceilColor, side: THREE.DoubleSide });
+            const ceilGeo = makeRoomPlaneGeometry(roomH);
+            if (ceilGeo) scene.add(new THREE.Mesh(ceilGeo, ceilMat));
+
+            // Мягкий общий свет (без лишних источников)
+            scene.add(new THREE.AmbientLight(0x505050, 0.45));
+            scene.add(new THREE.HemisphereLight(0xfff5e6, 0x4a4035, 0.3));
+
+            // Модели: люстра / спот (цилиндр 10см) / светильник (точка)
+            const ceilingLights = [];
+            let lightsOn = true;
+            const matSpotBody = new THREE.MeshLambertMaterial({ color: 0x4a4a4a, side: THREE.DoubleSide });
+            const matMetal = new THREE.MeshLambertMaterial({ color: 0xb0b0b0, side: THREE.DoubleSide });
+
+            // Берём все приборы, в т.ч. если type записан иначе
+            const fxList = (typeof fixturesInsideOnly === 'function' ? fixturesInsideOnly() : fixtures) || fixtures || [];
+            fxList.forEach(f => {
+                if (!f) return;
+                const t = (f.type || '').toString();
+                if (t === 'strip' && f.points && f.points.length >= 2) {
+                    const isTrack = /трек|track/i.test((f.material || '').toString());
+                    for (let i = 0; i < f.points.length - 1; i++) {
+                        const a = toM(f.points[i].x, f.points[i].y);
+                        const b = toM(f.points[i + 1].x, f.points[i + 1].y);
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const len = Math.hypot(dx, dz) || 0.01;
+                        const stripMat = new THREE.MeshLambertMaterial({
+                            color: isTrack ? 0x333333 : 0xfff2aa,
+                            emissive: isTrack ? 0x222222 : 0xffe08a,
+                            emissiveIntensity: isTrack ? 0.4 : 1.2,
+                            side: THREE.DoubleSide
+                        });
+                        const mesh = new THREE.Mesh(
+                            new THREE.CylinderGeometry(isTrack ? 0.025 : 0.018, isTrack ? 0.025 : 0.018, len, 6),
+                            stripMat
+                        );
+                        mesh.position.set((a.x + b.x) / 2, roomH - 0.04, (a.z + b.z) / 2);
+                        mesh.rotation.z = Math.PI / 2;
+                        mesh.rotation.y = -Math.atan2(dz, dx);
+                        scene.add(mesh);
+                        const sk = isTrack ? 'track' : 'strip';
+                        // при выкл. свет — корпус остаётся (тёмный), не пропадает
+                        ceilingLights.push({
+                            kind: sk, light: null, mesh,
+                            baseIntensity: 0,
+                            baseEmissive: stripMat.emissiveIntensity,
+                            onColor: isTrack ? 0x333333 : 0xfff2aa,
+                            offColor: isTrack ? 0x222222 : 0x666660
+                        });
+                        const baseI = isTrack ? 0.55 : 0.75;
+                        const pl = new THREE.PointLight(isTrack ? 0xe8e0ff : 0xfff0c8, baseI, 4, 2);
+                        pl.position.set((a.x + b.x) / 2, roomH - 0.12, (a.z + b.z) / 2);
+                        scene.add(pl);
+                        ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
+                    }
+                    return;
+                }
+
+                if (f.x == null || f.y == null) return;
+                const m = toM(f.x, f.y);
+
+                if (t === 'chandelier') {
+                    // Современная люстра: чаша-потолок, штанга, кольцо, 5 плафонов-стаканов
+                    const chrome = new THREE.MeshLambertMaterial({ color: 0xd8d8d8, side: THREE.DoubleSide });
+                    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.04, 12), chrome);
+                    canopy.position.set(m.x, roomH - 0.025, m.z);
+                    scene.add(canopy);
+                    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.35, 8), chrome);
+                    stem.position.set(m.x, roomH - 0.22, m.z);
+                    scene.add(stem);
+                    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.012, 8, 24), chrome);
+                    ring.position.set(m.x, roomH - 0.42, m.z);
+                    ring.rotation.x = Math.PI / 2;
+                    scene.add(ring);
+                    const shadeMatOn = 0xfff6d8;
+                    for (let k = 0; k < 5; k++) {
+                        const ang = (k / 5) * Math.PI * 2 + 0.2;
+                        const px = m.x + Math.cos(ang) * 0.22;
+                        const pz = m.z + Math.sin(ang) * 0.22;
+                        // держатель
+                        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.08, 6), chrome);
+                        arm.position.set(px, roomH - 0.4, pz);
+                        scene.add(arm);
+                        // плафон-цилиндр (матовое стекло)
+                        const shadeMat = new THREE.MeshLambertMaterial({
+                            color: shadeMatOn, emissive: 0xffe8a8, emissiveIntensity: 1.4, side: THREE.DoubleSide
+                        });
+                        const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 10), shadeMat);
+                        shade.position.set(px, roomH - 0.48, pz);
+                        scene.add(shade);
+                        // лампочка внутри
+                        const bulb = new THREE.Mesh(
+                            new THREE.SphereGeometry(0.025, 8, 8),
+                            new THREE.MeshLambertMaterial({ color: 0xfff8e0, emissive: 0xffe080, emissiveIntensity: 1.8 })
+                        );
+                        bulb.position.set(px, roomH - 0.48, pz);
+                        scene.add(bulb);
+                        ceilingLights.push({ kind: 'chandelier', light: null, mesh: shade, baseIntensity: 0, baseEmissive: 1.4, onColor: shadeMatOn, offColor: 0xc8c4b8 });
+                        ceilingLights.push({ kind: 'chandelier', light: null, mesh: bulb, baseIntensity: 0, baseEmissive: 1.8, onColor: 0xfff8e0, offColor: 0x888888 });
+                    }
+                    // центральный плафон
+                    const centerShadeMat = new THREE.MeshLambertMaterial({
+                        color: shadeMatOn, emissive: 0xffe8a8, emissiveIntensity: 1.5, side: THREE.DoubleSide
+                    });
+                    const centerShade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.12, 12), centerShadeMat);
+                    centerShade.position.set(m.x, roomH - 0.5, m.z);
+                    scene.add(centerShade);
+                    const intensity = 1.6;
+                    const pl = new THREE.PointLight(0xfff0d0, intensity, 7, 2);
+                    pl.position.set(m.x, roomH - 0.5, m.z);
+                    scene.add(pl);
+                    ceilingLights.push({ kind: 'chandelier', light: pl, mesh: centerShade, baseIntensity: intensity, baseEmissive: 1.5, onColor: shadeMatOn, offColor: 0xc8c4b8 });
+                    return;
+                }
+
+                if (t === 'spot') {
+                    // Спот — цилиндр 10 см
+                    const bodyLen = 0.10;
+                    const body = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.032, 0.024, bodyLen, 8),
+                        matSpotBody
+                    );
+                    body.position.set(m.x, roomH - bodyLen / 2 - 0.02, m.z);
+                    scene.add(body);
+                    const glowMat = new THREE.MeshLambertMaterial({
+                        color: 0xfff2c8, emissive: 0xffe08a, emissiveIntensity: 1.8, side: THREE.DoubleSide
+                    });
+                    // сфера на торце — всегда видна с любого угла
+                    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), glowMat);
+                    glow.position.set(m.x, roomH - bodyLen - 0.03, m.z);
+                    scene.add(glow);
+                    const intensity = 0.9;
+                    const pl = new THREE.PointLight(0xfff5e0, intensity, 4.2, 2);
+                    pl.position.set(m.x, roomH - bodyLen - 0.04, m.z);
+                    scene.add(pl);
+                    ceilingLights.push({ kind: 'spot', light: pl, mesh: glow, baseIntensity: intensity, baseEmissive: 1.8, onColor: 0xfff2c8, offColor: 0x666660 });
+                    return;
+                }
+
+                // Светильник (light_point) — точка в потолке (корпус всегда виден)
+                if (t === 'light_point' || t === 'light' || t === 'point') {
+                    const discMat = new THREE.MeshLambertMaterial({
+                        color: 0xfff8e0, emissive: 0xffe9a8, emissiveIntensity: 2.0, side: THREE.DoubleSide
+                    });
+                    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.055, 16), discMat);
+                    disc.position.set(m.x, roomH - 0.02, m.z);
+                    disc.rotation.x = -Math.PI / 2;
+                    scene.add(disc);
+                    const ring = new THREE.Mesh(
+                        new THREE.TorusGeometry(0.05, 0.006, 6, 16),
+                        new THREE.MeshLambertMaterial({ color: 0xcccccc })
+                    );
+                    ring.position.set(m.x, roomH - 0.018, m.z);
+                    ring.rotation.x = Math.PI / 2;
+                    scene.add(ring);
+                    const intensity = 0.8;
+                    const pl = new THREE.PointLight(0xfff8e0, intensity, 4, 2);
+                    pl.position.set(m.x, roomH - 0.06, m.z);
+                    scene.add(pl);
+                    ceilingLights.push({ kind: 'light_point', light: pl, mesh: disc, baseIntensity: intensity, baseEmissive: 2.0, onColor: 0xfff8e0, offColor: 0x888880 });
+                }
+            });
+
+            const lightKindState = { spot: true, light_point: true, chandelier: true, strip: true, track: true };
+
+            function applyLightKindVisibility() {
+                // Выкл. свет = гасим излучение, корпус/трек/полоса ОСТАЮТСЯ видимыми
+                ceilingLights.forEach(item => {
+                    const on = lightKindState[item.kind] !== false;
+                    if (item.light) item.light.intensity = on ? item.baseIntensity : 0;
+                    if (item.mesh) {
+                        item.mesh.visible = true;
+                        if (item.mesh.material) {
+                            item.mesh.material.emissiveIntensity = on ? (item.baseEmissive || 0) : 0;
+                            const col = on
+                                ? (item.onColor != null ? item.onColor : 0xfff8e0)
+                                : (item.offColor != null ? item.offColor : 0x555555);
+                            item.mesh.material.color.setHex(col);
+                        }
+                    }
+                });
+            }
+
+            function setCeilingLights(on) {
+                // все виды сразу
+                Object.keys(lightKindState).forEach(k => { lightKindState[k] = !!on; });
+                applyLightKindVisibility();
+            }
+
+            // === FPS: старт из угла, осмотр + ходьба ===
+            // Границы комнаты в метрах (XZ)
+            const roomPts = points.map(p => toM(p.x, p.y));
+            function pointInRoomXZ(x, z) {
+                // ray-cast 2D
+                let inside = false;
+                for (let i = 0, j = roomPts.length - 1; i < roomPts.length; j = i++) {
+                    const xi = roomPts[i].x, zi = roomPts[i].z;
+                    const xj = roomPts[j].x, zj = roomPts[j].z;
+                    const inter = ((zi > z) !== (zj > z)) &&
+                        (x < (xj - xi) * (z - zi) / ((zj - zi) || 1e-9) + xi);
+                    if (inter) inside = !inside;
+                }
+                return inside;
+            }
+            // Угол комнаты с максимальным удалением от центра — стартовая точка
+            let startX = roomPts[0].x, startZ = roomPts[0].z, bestD = -1;
+            roomPts.forEach(p => {
+                const d = p.x * p.x + p.z * p.z;
+                if (d > bestD) { bestD = d; startX = p.x; startZ = p.z; }
+            });
+            // Чуть внутрь от угла к центру
+            const inset = 0.45;
+            let camX = startX * (1 - inset / (Math.hypot(startX, startZ) || 1));
+            let camZ = startZ * (1 - inset / (Math.hypot(startX, startZ) || 1));
+            // Если всё ещё снаружи — ближе к центру
+            if (!pointInRoomXZ(camX, camZ)) {
+                camX = startX * 0.5;
+                camZ = startZ * 0.5;
+            }
+            const eyeH = 1.55; // рост глаз
+            let yaw = Math.atan2(-camX, -camZ); // смотрим примерно к центру
+            let pitch = 0.35; // слегка вверх на потолок
+
+            function applyCam() {
+                camera.position.set(camX, eyeH, camZ);
+                const lookDist = 2;
+                const lx = camX + Math.sin(yaw) * Math.cos(pitch) * lookDist;
+                const ly = eyeH + Math.sin(pitch) * lookDist;
+                const lz = camZ + Math.cos(yaw) * Math.cos(pitch) * lookDist;
+                camera.up.set(0, 1, 0);
+                camera.lookAt(lx, ly, lz);
+            }
+            applyCam();
+
+            // Джойстик перемещения на экране
+            const pad = document.createElement('div');
+            pad.style.cssText = 'position:absolute;left:12px;bottom:12px;width:120px;height:120px;border-radius:60px;background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.25);touch-action:none;z-index:5;';
+            const knob = document.createElement('div');
+            knob.style.cssText = 'position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.45);';
+            pad.appendChild(knob);
+            // Переключатели света по видам
+            const lightPanel = document.createElement('div');
+            lightPanel.style.cssText = 'position:absolute;left:12px;top:12px;z-index:5;display:flex;flex-direction:column;gap:4px;';
+            const kindLabels = [
+                { k: 'spot', lab: 'Споты' },
+                { k: 'light_point', lab: 'Светильники' },
+                { k: 'chandelier', lab: 'Люстры' },
+                { k: 'strip', lab: 'Полосы' },
+                { k: 'track', lab: 'Треки' }
+            ];
+            const kindBtns = {};
+            kindLabels.forEach(({ k, lab }) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = '💡 ' + lab;
+                b.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(0,0,0,0.5);color:#fff;font-size:12px;text-align:left;';
+                b.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    lightKindState[k] = !lightKindState[k];
+                    applyLightKindVisibility();
+                    b.style.opacity = lightKindState[k] ? '1' : '0.45';
+                    b.textContent = (lightKindState[k] ? '💡 ' : '💤 ') + lab;
+                };
+                kindBtns[k] = b;
+                lightPanel.appendChild(b);
+            });
+            const allBtn = document.createElement('button');
+            allBtn.type = 'button';
+            allBtn.textContent = 'Все выкл';
+            allBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(80,40,0,0.55);color:#fff;font-size:12px;margin-top:2px;';
+            allBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const anyOn = Object.values(lightKindState).some(Boolean);
+                setCeilingLights(!anyOn);
+                kindLabels.forEach(({ k, lab }) => {
+                    const b = kindBtns[k];
+                    if (!b) return;
+                    b.style.opacity = lightKindState[k] ? '1' : '0.45';
+                    b.textContent = (lightKindState[k] ? '💡 ' : '💤 ') + lab;
+                });
+                allBtn.textContent = anyOn ? 'Все вкл' : 'Все выкл';
+            };
+            lightPanel.appendChild(allBtn);
+
+            const hint = document.createElement('div');
+            hint.style.cssText = 'position:absolute;right:12px;bottom:16px;color:#ccc;font-size:11px;text-align:right;max-width:55%;z-index:5;pointer-events:none;';
+            hint.innerHTML = 'Пальцем по экрану — смотреть<br>Джойстик слева — ходить<br>WASD / стрелки на ПК';
+            host.style.position = 'relative';
+            host.appendChild(pad);
+            host.appendChild(lightPanel);
+            host.appendChild(hint);
+
+            let moveX = 0, moveZ = 0; // локальные ввод
+            let draggingLook = false, lx0 = 0, ly0 = 0;
+            let padActive = false, padId = null;
+
+            function setKnob(nx, ny) {
+                // nx,ny -1..1
+                knob.style.left = (40 + nx * 28) + 'px';
+                knob.style.top = (40 + ny * 28) + 'px';
+            }
+
+            const el = renderer.domElement;
+
+            // Осмотр (drag по canvas)
+            const onLookDown = (e) => {
+                if (e.target.closest && e.target.closest('div') === pad) return;
+                draggingLook = true;
+                const t = e.touches ? e.touches[0] : e;
+                lx0 = t.clientX; ly0 = t.clientY;
+            };
+            const onLookMove = (e) => {
+                if (!draggingLook) return;
+                const t = e.touches ? e.touches[0] : e;
+                const dx = t.clientX - lx0, dy = t.clientY - ly0;
+                lx0 = t.clientX; ly0 = t.clientY;
+                yaw -= dx * 0.005;
+                pitch = Math.max(-1.2, Math.min(1.35, pitch - dy * 0.004));
+                applyCam();
+            };
+            const onLookUp = () => { draggingLook = false; };
+
+            el.addEventListener('mousedown', onLookDown);
+            window.addEventListener('mousemove', onLookMove);
+            window.addEventListener('mouseup', onLookUp);
+            el.addEventListener('touchstart', (e) => {
+                // если тап не по паду — осмотр
+                if (padActive) return;
+                onLookDown(e);
+            }, { passive: true });
+            el.addEventListener('touchmove', (e) => {
+                if (padActive) return;
+                onLookMove(e);
+            }, { passive: true });
+            el.addEventListener('touchend', onLookUp);
+
+            // Джойстик
+            function padStart(e) {
+                e.preventDefault();
+                padActive = true;
+                const t = e.touches ? e.touches[0] : e;
+                padId = t.identifier !== undefined ? t.identifier : 'mouse';
+                padMove(e);
+            }
+            function padMove(e) {
+                if (!padActive) return;
+                const t = e.touches
+                    ? Array.from(e.touches).find(tt => tt.identifier === padId) || e.touches[0]
+                    : e;
+                if (!t) return;
+                const rect = pad.getBoundingClientRect();
+                let nx = (t.clientX - rect.left) / rect.width * 2 - 1;
+                let ny = (t.clientY - rect.top) / rect.height * 2 - 1;
+                const mag = Math.hypot(nx, ny) || 1;
+                if (mag > 1) { nx /= mag; ny /= mag; }
+                setKnob(nx, ny);
+                // вверх стика = вперёд; вправо стика = вправо (без зеркала)
+                moveX = -nx;  // инверсия: было перепутано лево/право
+                moveZ = -ny;
+            }
+            function padEnd() {
+                padActive = false;
+                moveX = 0; moveZ = 0;
+                setKnob(0, 0);
+            }
+            pad.addEventListener('mousedown', padStart);
+            window.addEventListener('mousemove', padMove);
+            window.addEventListener('mouseup', padEnd);
+            pad.addEventListener('touchstart', padStart, { passive: false });
+            pad.addEventListener('touchmove', padMove, { passive: false });
+            pad.addEventListener('touchend', padEnd);
+            pad.addEventListener('touchcancel', padEnd);
+
+            // Клавиатура
+            const keys = {};
+            const onKeyDown = (e) => { keys[e.code] = true; };
+            const onKeyUp = (e) => { keys[e.code] = false; };
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+
+            _threeDrag = {
+                cleanup() {
+                    el.removeEventListener('mousedown', onLookDown);
+                    window.removeEventListener('mousemove', onLookMove);
+                    window.removeEventListener('mouseup', onLookUp);
+                    el.removeEventListener('touchstart', onLookDown);
+                    el.removeEventListener('touchmove', onLookMove);
+                    el.removeEventListener('touchend', onLookUp);
+                    pad.removeEventListener('mousedown', padStart);
+                    window.removeEventListener('mousemove', padMove);
+                    window.removeEventListener('mouseup', padEnd);
+                    pad.removeEventListener('touchstart', padStart);
+                    pad.removeEventListener('touchmove', padMove);
+                    pad.removeEventListener('touchend', padEnd);
+                    window.removeEventListener('keydown', onKeyDown);
+                    window.removeEventListener('keyup', onKeyUp);
+                    try {
+                        host.removeChild(pad);
+                        host.removeChild(hint);
+                        host.removeChild(lightPanel);
+                    } catch (e) {}
+                }
+            };
+
+            _threeScene = scene;
+            _threeCamera = camera;
+            _threeRenderer = renderer;
+
+            const speed = 1.8; // м/с
+            let lastT = performance.now();
+            const animate = () => {
+                _threeAnim = requestAnimationFrame(animate);
+                const now = performance.now();
+                const dt = Math.min(0.05, (now - lastT) / 1000);
+                lastT = now;
+
+                let mx = moveX, mz = moveZ;
+                if (keys['KeyW'] || keys['ArrowUp']) mz += 1;
+                if (keys['KeyS'] || keys['ArrowDown']) mz -= 1;
+                // A = влево, D = вправо (согласовано с инверсией стика)
+                if (keys['KeyA'] || keys['ArrowLeft']) mx += 1;
+                if (keys['KeyD'] || keys['ArrowRight']) mx -= 1;
+                const mlen = Math.hypot(mx, mz);
+                if (mlen > 1) { mx /= mlen; mz /= mlen; }
+
+                if (mx || mz) {
+                    // движение относительно взгляда (yaw): вперёд + вправо без зеркала
+                    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+                    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+                    let nx = camX + (fx * mz + rx * mx) * speed * dt;
+                    let nz = camZ + (fz * mz + rz * mx) * speed * dt;
+                    if (pointInRoomXZ(nx, camZ)) camX = nx;
+                    if (pointInRoomXZ(camX, nz)) camZ = nz;
+                    applyCam();
+                }
+
+                renderer.render(scene, camera);
+            };
+            animate();
         }
 
         // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
