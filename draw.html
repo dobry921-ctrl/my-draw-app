@@ -4010,6 +4010,8 @@ function getCurrentCeilingPayload() {
         let roomPhotoImg = null;
         let roomPhotoUrl = null;
         let preferredCurtainColor = '#c4b5a0';
+        let preferredWallColor = null;  // null = текстура по умолчанию / фото
+        let preferredFloorColor = null;
 
         function triggerRoomPhotoCapture() {
             const inp = document.getElementById('room-photo-input');
@@ -4433,24 +4435,33 @@ function getCurrentCeilingPayload() {
             }
             if (signedArea < 0) roomContour.reverse();
 
-            // Пол и потолок — надёжная триангуляция (не ShapeGeometry)
-            function makeRoomPlaneGeometry(y) {
+            // Пол и потолок — веерная триангуляция, лёгкий inset углов против щелей
+            function makeRoomPlaneGeometry(y, inset) {
                 const n = roomContour.length;
                 if (n < 3) return null;
-                const verts = [];
-                const idxs = [];
-                // веер от среднего центра
+                inset = inset || 0;
                 let cx0 = 0, cz0 = 0;
                 roomContour.forEach(p => { cx0 += p.x; cz0 += p.z; });
                 cx0 /= n; cz0 /= n;
+                const verts = [];
+                const idxs = [];
                 verts.push(cx0, y, cz0);
-                roomContour.forEach(p => verts.push(p.x, y, p.z));
+                for (let i = 0; i < n; i++) {
+                    const p = roomContour[i];
+                    let x = p.x, z = p.z;
+                    if (inset) {
+                        const dx = cx0 - x, dz = cz0 - z;
+                        const d = Math.hypot(dx, dz) || 1;
+                        x += (dx / d) * inset;
+                        z += (dz / d) * inset;
+                    }
+                    verts.push(x, y, z);
+                }
                 for (let i = 0; i < n; i++) {
                     const i1 = i + 1;
                     const i2 = (i + 1) % n + 1;
-                    // порядок так, чтобы нормаль вверх (+Y) для пола
                     if (y <= 0.01) idxs.push(0, i1, i2);
-                    else idxs.push(0, i2, i1); // потолок — нормаль вниз к камере
+                    else idxs.push(0, i2, i1);
                 }
                 const geo = new THREE.BufferGeometry();
                 geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
@@ -4523,10 +4534,11 @@ function getCurrentCeilingPayload() {
             const photoTex = makeTexturesFromRoomPhoto(THREE);
             const floorMat = new THREE.MeshPhongMaterial({
                 map: photoTex ? photoTex.floorTex : makeLaminateTexture(),
+                color: preferredFloorColor ? parseInt(String(preferredFloorColor).replace('#', ''), 16) : 0xffffff,
                 shininess: 25,
                 side: THREE.DoubleSide
             });
-            const floorGeo = makeRoomPlaneGeometry(0);
+            const floorGeo = makeRoomPlaneGeometry(0, 0);
             if (floorGeo) {
                 const pos = floorGeo.attributes.position;
                 const uvs = [];
@@ -4537,11 +4549,15 @@ function getCurrentCeilingPayload() {
                 scene.add(new THREE.Mesh(floorGeo, floorMat));
             }
 
-            // Стены + окно и дверь на самых длинных сторонах
+            // Стены
             const wallMat = new THREE.MeshPhongMaterial({
                 map: photoTex ? photoTex.wallTex : makeWallpaperTexture(),
+                color: preferredWallColor ? parseInt(String(preferredWallColor).replace('#', ''), 16) : 0xffffff,
                 shininess: 8,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
             });
             const wallEdges = roomContour.map((a, i) => {
                 const b = roomContour[(i + 1) % roomContour.length];
@@ -4587,9 +4603,11 @@ function getCurrentCeilingPayload() {
                 const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
                 if (midX * nx + midZ * nz > 0) { nx = -nx; nz = -nz; }
 
-                const wallGeo = new THREE.PlaneGeometry(len, roomH);
+                // чуть ниже потолка — чистый стык без артефактов
+                const wallH = roomH - 0.004;
+                const wallGeo = new THREE.PlaneGeometry(len + 0.004, wallH);
                 const wall = new THREE.Mesh(wallGeo, wallMat);
-                wall.position.set(midX, roomH / 2, midZ);
+                wall.position.set(midX, wallH / 2, midZ);
                 wall.rotation.y = ang;
                 scene.add(wall);
 
@@ -4620,17 +4638,23 @@ function getCurrentCeilingPayload() {
                         side: THREE.DoubleSide
                     });
                     const strip = new THREE.Mesh(
-                        new THREE.BoxGeometry(len * 0.99, 0.01, 0.01),
+                        new THREE.BoxGeometry(len + 0.01, 0.01, 0.01),
                         stripMat
                     );
                     strip.position.set(midX + nx * 0.012, roomH - 0.018, midZ + nz * 0.012);
                     strip.rotation.y = ang;
                     scene.add(strip);
+                    // шар на углу — стык полос соседних стен
+                    const joint = new THREE.Mesh(new THREE.SphereGeometry(0.007, 8, 8), stripMat);
+                    joint.position.set(a.x + nx * 0.012, roomH - 0.018, a.z + nz * 0.012);
+                    scene.add(joint);
                     if (!window._pendingFloatingLights) window._pendingFloatingLights = [];
                     window._pendingFloatingLights.push({
                         light: null, mesh: strip, baseI: 0, baseEmissive: 1.15, onColor: 0xfff4c8, offColor: 0x444440
                     });
-                    // один мягкий залив на всю сторону
+                    window._pendingFloatingLights.push({
+                        light: null, mesh: joint, baseI: 0, baseEmissive: 1.15, onColor: 0xfff4c8, offColor: 0x444440
+                    });
                     const baseI = Math.min(0.5, 0.18 + len * 0.07);
                     const pl = new THREE.PointLight(0xfff2dc, baseI, Math.max(3.5, len * 1.2), 1.4);
                     pl.position.set(midX + nx * 0.18, roomH - 0.28, midZ + nz * 0.18);
@@ -4716,15 +4740,7 @@ function getCurrentCeilingPayload() {
                 const tx = Math.cos(windowEdge.ang), tz = Math.sin(windowEdge.ang);
                 const frameMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 40 });
                 const sillMat = new THREE.MeshPhongMaterial({ color: 0xf0ebe3, shininess: 25 });
-                // тёмный «проём» в стене (глубина)
-                const hole = new THREE.Mesh(
-                    new THREE.BoxGeometry(winW + 0.08, winH + 0.08, 0.12),
-                    new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
-                );
-                hole.position.set(mx - nx * 0.02, winY, mz - nz * 0.02);
-                hole.rotation.y = windowEdge.ang;
-                scene.add(hole);
-                // рама по периметру
+                // рама по периметру (без лишних боксов — меньше артефактов при движении)
                 const ft = 0.055;
                 [
                     { w: winW + ft * 2, h: ft, y: winY + winH / 2 + ft / 2, ox: 0 },
@@ -4732,8 +4748,8 @@ function getCurrentCeilingPayload() {
                     { w: ft, h: winH, y: winY, ox: -(winW / 2 + ft / 2) },
                     { w: ft, h: winH, y: winY, ox: (winW / 2 + ft / 2) }
                 ].forEach(function (f) {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(f.w, f.h, 0.07), frameMat);
-                    m.position.set(mx + nx * 0.04 + tx * f.ox, f.y, mz + nz * 0.04 + tz * f.ox);
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(f.w, f.h, 0.05), frameMat);
+                    m.position.set(mx + nx * 0.03 + tx * f.ox, f.y, mz + nz * 0.03 + tz * f.ox);
                     m.rotation.y = windowEdge.ang;
                     scene.add(m);
                 });
@@ -4793,34 +4809,25 @@ function getCurrentCeilingPayload() {
                     if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
                     return tex;
                 }
-                // вид улицы ЗА рамой (глубже в «улицу»)
+                // вид улицы — одна плоскость (без прозрачного стекла поверх = нет артефактов)
                 const viewMat = new THREE.MeshBasicMaterial({
                     map: makeStreetViewTexture(),
-                    side: THREE.DoubleSide
+                    side: THREE.FrontSide,
+                    depthWrite: true
                 });
-                const view = new THREE.Mesh(new THREE.PlaneGeometry(winW * 0.95, winH * 0.95), viewMat);
-                view.position.set(mx - nx * 0.08, winY, mz - nz * 0.08);
+                const view = new THREE.Mesh(new THREE.PlaneGeometry(winW * 0.92, winH * 0.92), viewMat);
+                view.position.set(mx + nx * 0.02, winY, mz + nz * 0.02);
                 view.rotation.y = windowEdge.ang;
+                // нормаль внутрь комнаты
+                view.scale.x = -1;
                 scene.add(view);
-                // стекло с лёгким отражением
-                const glassMat = new THREE.MeshPhongMaterial({
-                    color: 0xb8d4f0,
-                    transparent: true,
-                    opacity: 0.18,
-                    shininess: 100,
-                    side: THREE.DoubleSide
-                });
-                const glass = new THREE.Mesh(new THREE.PlaneGeometry(winW * 0.9, winH * 0.9), glassMat);
-                glass.position.set(mx + nx * 0.05, winY, mz + nz * 0.05);
-                glass.rotation.y = windowEdge.ang;
-                scene.add(glass);
                 // переплёт
-                const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.9, 0.028, 0.035), frameMat);
-                barH.position.set(mx + nx * 0.045, winY, mz + nz * 0.045);
+                const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.9, 0.028, 0.03), frameMat);
+                barH.position.set(mx + nx * 0.035, winY, mz + nz * 0.035);
                 barH.rotation.y = windowEdge.ang;
                 scene.add(barH);
-                const barV = new THREE.Mesh(new THREE.BoxGeometry(0.028, winH * 0.9, 0.035), frameMat);
-                barV.position.set(mx + nx * 0.045, winY, mz + nz * 0.045);
+                const barV = new THREE.Mesh(new THREE.BoxGeometry(0.028, winH * 0.9, 0.03), frameMat);
+                barV.position.set(mx + nx * 0.035, winY, mz + nz * 0.035);
                 barV.rotation.y = windowEdge.ang;
                 scene.add(barV);
                 // подоконник внутрь комнаты
@@ -4872,7 +4879,8 @@ function getCurrentCeilingPayload() {
                 ceilColor = 0xf2f0eb;
             }
             const ceilMat = new THREE.MeshLambertMaterial({ color: ceilColor, side: THREE.DoubleSide });
-            const ceilGeo = makeRoomPlaneGeometry(roomH);
+            // потолок чуть inset — углы без щелей/наложений со стенами
+            const ceilGeo = makeRoomPlaneGeometry(roomH, 0.002);
             if (ceilGeo) scene.add(new THREE.Mesh(ceilGeo, ceilMat));
 
             // Дневной общий свет (для режима Ночь гасим)
@@ -5055,27 +5063,27 @@ function getCurrentCeilingPayload() {
 
                 if (t === 'strip' && f.points && f.points.length >= 2) {
                     const isTrack = /трек|track/i.test((f.material || '').toString());
-                    for (let i = 0; i < f.points.length - 1; i++) {
-                        const a = toM(f.points[i].x, f.points[i].y);
-                        const b = toM(f.points[i + 1].x, f.points[i + 1].y);
+                    const sk = isTrack ? 'track' : 'strip';
+                    const r = isTrack ? 0.022 : 0.016;
+                    const stripMat = new THREE.MeshLambertMaterial({
+                        color: isTrack ? 0x333333 : 0xfff2aa,
+                        emissive: isTrack ? 0x222222 : 0xffe08a,
+                        emissiveIntensity: isTrack ? 0.4 : 1.2,
+                        side: THREE.DoubleSide
+                    });
+                    const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
+                    for (let i = 0; i < ptsM.length - 1; i++) {
+                        const a = ptsM[i], b = ptsM[i + 1];
                         const dx = b.x - a.x, dz = b.z - a.z;
                         const len = Math.hypot(dx, dz) || 0.01;
-                        const stripMat = new THREE.MeshLambertMaterial({
-                            color: isTrack ? 0x333333 : 0xfff2aa,
-                            emissive: isTrack ? 0x222222 : 0xffe08a,
-                            emissiveIntensity: isTrack ? 0.4 : 1.2,
-                            side: THREE.DoubleSide
-                        });
                         const mesh = new THREE.Mesh(
-                            new THREE.CylinderGeometry(isTrack ? 0.025 : 0.018, isTrack ? 0.025 : 0.018, len, 6),
+                            new THREE.CylinderGeometry(r, r, len, 10),
                             stripMat
                         );
                         mesh.position.set((a.x + b.x) / 2, roomH - 0.04, (a.z + b.z) / 2);
                         mesh.rotation.z = Math.PI / 2;
                         mesh.rotation.y = -Math.atan2(dz, dx);
                         scene.add(mesh);
-                        const sk = isTrack ? 'track' : 'strip';
-                        // при выкл. свет — корпус остаётся (тёмный), не пропадает
                         ceilingLights.push({
                             kind: sk, light: null, mesh,
                             baseIntensity: 0,
@@ -5083,11 +5091,25 @@ function getCurrentCeilingPayload() {
                             onColor: isTrack ? 0x333333 : 0xfff2aa,
                             offColor: isTrack ? 0x222222 : 0x666660
                         });
-                        const baseI = isTrack ? 0.55 : 0.75;
-                        const pl = new THREE.PointLight(isTrack ? 0xe8e0ff : 0xfff0c8, baseI, 4, 2);
+                        // один мягкий свет на сегмент
+                        const baseI = isTrack ? 0.5 : 0.7;
+                        const pl = new THREE.PointLight(isTrack ? 0xe8e0ff : 0xfff0c8, baseI, 3.8, 1.8);
                         pl.position.set((a.x + b.x) / 2, roomH - 0.12, (a.z + b.z) / 2);
                         scene.add(pl);
                         ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
+                    }
+                    // шары на углах — плавная стыковка сегментов
+                    for (let i = 0; i < ptsM.length; i++) {
+                        const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.05, 10, 10), stripMat);
+                        j.position.set(ptsM[i].x, roomH - 0.04, ptsM[i].z);
+                        scene.add(j);
+                        ceilingLights.push({
+                            kind: sk, light: null, mesh: j,
+                            baseIntensity: 0,
+                            baseEmissive: stripMat.emissiveIntensity,
+                            onColor: isTrack ? 0x333333 : 0xfff2aa,
+                            offColor: isTrack ? 0x222222 : 0x666660
+                        });
                     }
                     return;
                 }
@@ -5348,19 +5370,24 @@ function getCurrentCeilingPayload() {
             };
             lightPanel.appendChild(nightBtn);
 
-            // Цвет штор — в окне 3D
-            if (curtainMeshes.length) {
+            // Цвета: шторы / стены / пол — только в 3D
+            function addColorRow(label, initHex, onChange) {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 6px;background:rgba(0,0,0,0.4);border-radius:8px;border:1px solid rgba(255,255,255,0.2);';
                 const lab = document.createElement('span');
-                lab.textContent = 'Шторы';
-                lab.style.cssText = 'color:#fff;font-size:12px;';
+                lab.textContent = label;
+                lab.style.cssText = 'color:#fff;font-size:12px;min-width:48px;';
                 const colInp = document.createElement('input');
                 colInp.type = 'color';
-                colInp.value = curtainColorHex || '#c4b5a0';
+                colInp.value = initHex || '#cccccc';
                 colInp.style.cssText = 'width:40px;height:28px;border:none;padding:0;background:transparent;cursor:pointer;';
-                colInp.oninput = function () {
-                    const hex = colInp.value;
+                colInp.oninput = function () { onChange(colInp.value); };
+                row.appendChild(lab);
+                row.appendChild(colInp);
+                lightPanel.appendChild(row);
+            }
+            if (curtainMeshes.length) {
+                addColorRow('Шторы', curtainColorHex || '#c4b5a0', function (hex) {
                     curtainColorHex = hex;
                     preferredCurtainColor = hex;
                     const c = parseHexColor(hex, 0xc4b5a0);
@@ -5370,11 +5397,23 @@ function getCurrentCeilingPayload() {
                     (fixtures || []).forEach(function (f) {
                         if (f && f.type === 'cornice') f.curtain_color = hex;
                     });
-                };
-                row.appendChild(lab);
-                row.appendChild(colInp);
-                lightPanel.appendChild(row);
+                });
             }
+            addColorRow('Стены', preferredWallColor || '#ebe6dc', function (hex) {
+                preferredWallColor = hex;
+                if (wallMat) {
+                    wallMat.color.set(hex);
+                    // при ручном цвете текстуру можно слегка приглушить
+                    wallMat.needsUpdate = true;
+                }
+            });
+            addColorRow('Пол', preferredFloorColor || '#c9a66b', function (hex) {
+                preferredFloorColor = hex;
+                if (floorMat) {
+                    floorMat.color.set(hex);
+                    floorMat.needsUpdate = true;
+                }
+            });
 
             // Синхронизировать кнопку подсветки карниза с начальным состоянием
             applyLightKindVisibility();
