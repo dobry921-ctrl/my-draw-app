@@ -5511,12 +5511,16 @@ function getCurrentCeilingPayload() {
             let hasFloatingProfile = false;
 
             // Параметры проёма каждого окна (общие для стены с дыркой и самой рамы)
+            // Французское окно: высокое, почти от пола до потолка (вместо обычной форточки)
+            const winFloorGap = 0.12;   // маленький порог у пола
+            const winCeilGap = 0.15;    // отступ до потолка/карниза
             const winOpensList = windowEdgesList.map(function (we) {
+                const h = Math.max(1.4, roomH - winFloorGap - winCeilGap);
                 return {
                     edgeI: we.i,
-                    w: Math.min(1.4, Math.max(1.05, we.len * 0.4)),
-                    h: 1.2,
-                    y: 1.35,
+                    w: Math.min(1.3, Math.max(0.9, we.len * 0.32)),
+                    h: h,
+                    y: winFloorGap + h / 2,
                     t: 0.5,
                     edge: we
                 };
@@ -5993,10 +5997,16 @@ function getCurrentCeilingPayload() {
                 // Переплёт: одна горизонтальная перекладина всегда, вертикальных —
                 // одна для узкого окна, две (деление на трети) для широкого —
                 // так широкие окна не выглядят одной огромной стеклянной плитой.
-                const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.94, 0.03, 0.032), frameMat);
-                barH.position.set(mx + nx * 0.035, winY, mz + nz * 0.035);
-                barH.rotation.y = windowEdge.ang;
-                scene.add(barH);
+                // Высокое (французское) окно — 2 горизонтальные перекладины (деление
+                // на трети по высоте) вместо одной, иначе стекло по вертикали
+                // читается одной непропорционально длинной пластиной.
+                const hBars = winH > 1.8 ? [-winH / 6, winH / 6] : [0];
+                hBars.forEach(function (oy) {
+                    const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.94, 0.03, 0.032), frameMat);
+                    barH.position.set(mx + nx * 0.035, winY + oy, mz + nz * 0.035);
+                    barH.rotation.y = windowEdge.ang;
+                    scene.add(barH);
+                });
                 const vBars = winW > 1.15 ? [-winW / 6, winW / 6] : [0];
                 vBars.forEach(function (ox) {
                     const barV = new THREE.Mesh(new THREE.BoxGeometry(0.03, winH * 0.94, 0.032), frameMat);
@@ -6108,7 +6118,7 @@ function getCurrentCeilingPayload() {
                 }
             });
 
-            let isNight = false;
+            let isNight = true; // по умолчанию открываем 3D в ночном режиме
             // Явно гасим свет окна ночью (не должен светить)
             (window._windowDayLights || []).forEach(function (L) {
                 if (!L) return;
@@ -6483,9 +6493,10 @@ function getCurrentCeilingPayload() {
                     return inside;
                 }
                 const cand = wallEdges.filter(function (e) {
+                    if (doorEdge && e.i === doorEdge.i) return false;
                     return !windowEdgesList.some(function (we) { return we.i === e.i; });
                 });
-                const edge = cand.find(function (e) { return e.len >= 1.9; }) || cand[0];
+                const edge = cand.find(function (e) { return e.len >= 1.9; }) || cand[0] || wallEdges[0];
                 if (!edge || edge.len < 1.9) return;
 
                 const ux = edge.dx / edge.len, uz = edge.dz / edge.len;
@@ -6581,6 +6592,8 @@ function getCurrentCeilingPayload() {
                     let best = null, bestDot = 1;
                     wallEdges.forEach(function (e) {
                         if (e.i === edge.i) return;
+                        if (doorEdge && e.i === doorEdge.i) return;
+                        if (windowEdgesList.some(function (we) { return we.i === e.i; })) return;
                         const eAng = e.ang;
                         let enx = -Math.sin(eAng), enz = -Math.cos(eAng);
                         const emx = (e.a.x + e.b.x) / 2, emz = (e.a.z + e.b.z) / 2;
@@ -6911,8 +6924,9 @@ function getCurrentCeilingPayload() {
             // Режим Ночь — комната темнеет, играют только приборы
             const nightBtn = document.createElement('button');
             nightBtn.type = 'button';
-            nightBtn.textContent = '🌙 Ночь';
-            nightBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(20,30,60,0.65);color:#fff;font-size:12px;margin-top:4px;';
+            nightBtn.textContent = isNight ? '☀️ День' : '🌙 Ночь';
+            nightBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:' +
+                (isNight ? 'rgba(60,40,10,0.7)' : 'rgba(20,30,60,0.65)') + ';color:#fff;font-size:12px;margin-top:4px;';
             nightBtn.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -6922,6 +6936,10 @@ function getCurrentCeilingPayload() {
                 nightBtn.style.background = isNight ? 'rgba(60,40,10,0.7)' : 'rgba(20,30,60,0.65)';
             };
             lightPanel.appendChild(nightBtn);
+            // Применяем ночной режим сразу при открытии — без этого клика по кнопке
+            // сцена всё равно стартовала бы с дневным светом несмотря на isNight=true
+            applyDayNight();
+            invalidate();
 
             // Температура света — тёплый / нейтральный / холодный
             const tempRow = document.createElement('div');
