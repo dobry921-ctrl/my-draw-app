@@ -242,6 +242,16 @@
             margin-bottom: 6px;
         }
         .field-label { font-size: 0.75rem; color: #5f6368; margin: 2px 0 3px; font-weight: 600; }
+        /* Нативные select/input должны принимать тапы (body touch-action:none ломает списки) */
+        select, input, textarea, .catalog-select, .bottom-panel select, .bottom-panel input {
+            touch-action: manipulation !important;
+            pointer-events: auto !important;
+            -webkit-user-select: auto !important;
+            user-select: auto !important;
+        }
+        #room-tpl-modal, #edit-sides-modal, #client-preview-overlay {
+            touch-action: auto;
+        }
 </style>
 </head>
 <body>
@@ -3815,9 +3825,15 @@ function getCurrentCeilingPayload() {
                     selectedMaterial: selectedMaterial,
                     selectedColor: selectedColor,
                     selectedStripMaterial: typeof selectedStripMaterial !== 'undefined' ? selectedStripMaterial : null,
+                    selectedProfileName: typeof selectedProfileName !== 'undefined' ? selectedProfileName : null,
+                    selectedChandelierName: typeof selectedChandelierName !== 'undefined' ? selectedChandelierName : null,
                     completedCeilings: completedCeilings,
                     currentInputEdge: currentInputEdge,
-                    camera: camera
+                    camera: camera,
+                    sketchPoints: typeof sketchPoints !== 'undefined' ? sketchPoints : null,
+                    sketchOrientation: typeof sketchOrientation !== 'undefined' ? sketchOrientation : 1,
+                    sketchTurnSigns: typeof sketchTurnSigns !== 'undefined' ? sketchTurnSigns : null,
+                    usedExactGeometry: typeof usedExactGeometry !== 'undefined' ? usedExactGeometry : false
                 };
                 localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
                 const chip = document.getElementById('saved-chip');
@@ -3836,33 +3852,105 @@ function getCurrentCeilingPayload() {
                 if (!raw) return false;
                 const data = JSON.parse(raw);
                 if (!data || !data.points || !data.points.length) return false;
-                // не старше 7 суток
                 if (data.ts && Date.now() - data.ts > 7 * 24 * 3600 * 1000) {
                     localStorage.removeItem(AUTOSAVE_KEY);
                     return false;
                 }
-                if (!confirm('Найден несохранённый замер. Восстановить?')) {
+                if (!confirm('Найден несохранённый замер. Восстановить и продолжить работу?')) {
                     return false;
                 }
                 points = data.points || [];
                 edges = data.edges || [];
                 isClosed = !!data.isClosed;
-                state = data.state || 'DRAWING';
                 fixtures = data.fixtures || [];
-                sideProfiles = data.sideProfiles || [];
+                sideProfiles = data.sideProfiles || points.map(function () { return 'Стандартный'; });
                 selectedDiagonals = data.selectedDiagonals || [];
                 if (data.selectedMaterial) selectedMaterial = data.selectedMaterial;
                 if (data.selectedColor) selectedColor = data.selectedColor;
                 if (data.selectedStripMaterial) selectedStripMaterial = data.selectedStripMaterial;
+                if (data.selectedProfileName) selectedProfileName = data.selectedProfileName;
+                if (data.selectedChandelierName) selectedChandelierName = data.selectedChandelierName;
                 completedCeilings = data.completedCeilings || [];
                 currentInputEdge = data.currentInputEdge || 0;
-                if (data.camera) camera = data.camera;
+                if (data.camera && typeof data.camera.zoom === 'number') {
+                    camera.x = data.camera.x; camera.y = data.camera.y; camera.zoom = data.camera.zoom;
+                }
+                if (data.sketchPoints && data.sketchPoints.length) {
+                    sketchPoints = data.sketchPoints;
+                    sketchOrientation = data.sketchOrientation != null ? data.sketchOrientation : 1;
+                    sketchTurnSigns = data.sketchTurnSigns || [];
+                } else if (points.length >= 3) {
+                    sketchPoints = clonePoints(points);
+                    sketchOrientation = polygonSignedArea(points) >= 0 ? 1 : -1;
+                    sketchTurnSigns = getTurnSigns(sketchPoints);
+                }
+                if (typeof data.usedExactGeometry === 'boolean') usedExactGeometry = data.usedExactGeometry;
+
+                // Состояние: DONE → INSTALL, чтобы можно было продолжать, а не только смотреть
+                var st = data.state || 'DRAWING';
+                if (st === 'DONE') st = 'INSTALL';
+                state = st;
+
+                // Синхронизация select'ов каталога
+                try {
+                    var ms = document.getElementById('mat-select');
+                    if (ms && selectedMaterial) {
+                        if (![].some.call(ms.options, function (o) { return o.value === selectedMaterial; })) {
+                            var o = document.createElement('option'); o.value = selectedMaterial; o.textContent = selectedMaterial;
+                            ms.appendChild(o);
+                        }
+                        ms.value = selectedMaterial;
+                    }
+                    var ps = document.getElementById('profile-select');
+                    if (ps && selectedProfileName) {
+                        if (![].some.call(ps.options, function (o) { return o.value === selectedProfileName; })) {
+                            var o2 = document.createElement('option'); o2.value = selectedProfileName; o2.textContent = selectedProfileName;
+                            ps.appendChild(o2);
+                        }
+                        ps.value = selectedProfileName;
+                    }
+                    var ss = document.getElementById('strip-material-select');
+                    if (ss && selectedStripMaterial) {
+                        if (![].some.call(ss.options, function (o) { return o.value === selectedStripMaterial; })) {
+                            var o3 = document.createElement('option'); o3.value = selectedStripMaterial; o3.textContent = selectedStripMaterial;
+                            ss.appendChild(o3);
+                        }
+                        ss.value = selectedStripMaterial;
+                    }
+                    var ci = document.getElementById('color-input');
+                    if (ci && selectedColor) ci.value = selectedColor;
+                } catch (e) {}
+
                 updateUI();
                 updateInputUI();
-                updateFixtureList();
+                try { updateFixtureList(); } catch (e) {}
                 try { fitCameraWithFixtures(); } catch (e) { try { autoFitCamera(); } catch (e2) {} }
+
+                // Открыть нужную панель для продолжения работы
+                if (state === 'DRAWING') {
+                    hideAllWorkPanels();
+                    statusText.innerText = 'Черчение контура';
+                } else if (state === 'INPUT_SIDES' || state === 'INPUT_DIAGONALS') {
+                    showOnlyPanel('bottom-input-bar');
+                    statusText.innerText = state === 'INPUT_SIDES' ? 'Ввод размеров' : 'Диагонали';
+                } else if (state === 'SELECT_DIAGONALS') {
+                    showOnlyPanel('diagonals-panel');
+                } else if (state === 'SELECT_MATERIAL') {
+                    showOnlyPanel('material-panel');
+                    statusText.innerText = 'Материал';
+                } else if (state === 'INSTALL') {
+                    openInstallPanel();
+                    statusText.innerText = 'Монтаж / освещение';
+                } else {
+                    showOnlyPanel('results-panel');
+                }
+
+                // Плавающая кнопка меню — чтобы всегда можно было открыть панели
+                var floatBtn = document.getElementById('float-menu-btn');
+                if (floatBtn && isClosed) floatBtn.style.display = 'flex';
+
                 draw();
-                showToast('Замер восстановлен', 2500);
+                showToast('Замер восстановлен — можно продолжать', 3000);
                 return true;
             } catch (e) {
                 console.warn('restoreAutosave', e);
@@ -4650,6 +4738,7 @@ function getCurrentCeilingPayload() {
         let preferredFloorColor = null;
         let roomHeightM = 2.7;          // высота потолка, м (регулируется в 3D)
         let selectedRoomType = 'living'; // всегда гостиная: диван + столик
+        const PAINTING_DATA_URL = 'data:image/jpeg;base64,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';
         let _maxAniso = 4;              // анизотропия текстур (из renderer.capabilities)
         let _glowTexCache = null;
 
@@ -5391,37 +5480,47 @@ function getCurrentCeilingPayload() {
 
             // Процедурные текстуры: ламинат + неброские обои
             function makeLaminateTexture() {
+                // Ровные доски ламината (не ёлочка)
                 const c = document.createElement('canvas');
                 c.width = 512; c.height = 512;
                 const g = c.getContext('2d');
-                g.fillStyle = '#c9a66b';
+                g.fillStyle = '#c4a574';
                 g.fillRect(0, 0, 512, 512);
-                const plankH = 64;
-                // лёгкая неравномерность тона по доскам делает пол живым
+                const plankH = 48;
                 for (let y = 0; y < 512; y += plankH) {
-                    const base = 160 + ((y / plankH) % 3) * 12;
-                    g.fillStyle = `rgb(${base + 40},${base + 10},${base - 40})`;
-                    g.fillRect(0, y, 512, plankH - 2);
-                    // волокна
-                    for (let i = 0; i < 18; i++) {
-                        g.strokeStyle = `rgba(90,60,30,${0.04 + Math.random() * 0.06})`;
+                    const row = (y / plankH) | 0;
+                    const tone = 155 + (row % 4) * 8;
+                    // доска
+                    g.fillStyle = 'rgb(' + (tone + 38) + ',' + (tone + 12) + ',' + (tone - 38) + ')';
+                    g.fillRect(0, y, 512, plankH - 1);
+                    // лёгкий градиент по длине
+                    const lg = g.createLinearGradient(0, y, 512, y);
+                    lg.addColorStop(0, 'rgba(255,255,255,0.04)');
+                    lg.addColorStop(0.5, 'rgba(0,0,0,0)');
+                    lg.addColorStop(1, 'rgba(0,0,0,0.05)');
+                    g.fillStyle = lg;
+                    g.fillRect(0, y, 512, plankH - 1);
+                    // волокна вдоль доски
+                    for (let i = 0; i < 10; i++) {
+                        g.strokeStyle = 'rgba(90,55,25,' + (0.03 + Math.random() * 0.04) + ')';
                         g.beginPath();
-                        const yy = y + 8 + Math.random() * (plankH - 16);
+                        const yy = y + 6 + Math.random() * (plankH - 12);
                         g.moveTo(0, yy);
-                        g.lineTo(512, yy + (Math.random() - 0.5) * 6);
+                        g.bezierCurveTo(128, yy + 1, 384, yy - 1, 512, yy);
                         g.stroke();
                     }
-                    // шов
-                    g.fillStyle = 'rgba(60,40,20,0.35)';
-                    g.fillRect(0, y + plankH - 2, 512, 2);
-                    // вертикальные стыки досок
-                    for (let x = ((y / plankH) % 2) * 80; x < 512; x += 160) {
-                        g.fillStyle = 'rgba(60,40,20,0.25)';
-                        g.fillRect(x, y, 2, plankH - 2);
+                    // горизонтальный шов
+                    g.fillStyle = 'rgba(70,45,22,0.4)';
+                    g.fillRect(0, y + plankH - 1, 512, 1);
+                    // стыки досок со сдвигом
+                    const shift = (row % 2) * 70;
+                    for (let x = shift; x < 512; x += 140) {
+                        g.fillStyle = 'rgba(70,45,22,0.28)';
+                        g.fillRect(x, y, 1, plankH - 1);
                     }
                 }
                 const tex = new THREE.CanvasTexture(c);
-                tuneTex(THREE, tex, 4, 4);
+                tuneTex(THREE, tex, 3.5, 3.5);
                 return tex;
             }
             function makeWallpaperTexture() {
@@ -5516,9 +5615,9 @@ function getCurrentCeilingPayload() {
             windowEdges.forEach(function (we) {
                 winByEdge[we.i] = {
                     edge: we,
-                    w: Math.min(1.35, Math.max(0.95, we.len * 0.38)),
-                    h: 1.2,
-                    y: 1.35,
+                    w: Math.min(2.1, Math.max(1.4, we.len * 0.55)),
+                    h: Math.min(roomH - 0.35, 2.15),
+                    y: Math.min(roomH - 0.35, 2.15) / 2 + 0.08,
                     t: 0.5
                 };
             });
@@ -5526,8 +5625,10 @@ function getCurrentCeilingPayload() {
             const winOpen = windowEdge ? {
                 edgeI: windowEdge.i,
                 w: winByEdge[windowEdge.i].w,
-                h: 1.2, y: 1.35, t: 0.5
-            } : { edgeI: -1, w: 1.2, h: 1.2, y: 1.35, t: 0.5 };
+                h: winByEdge[windowEdge.i].h,
+                y: winByEdge[windowEdge.i].y,
+                t: 0.5
+            } : { edgeI: -1, w: 1.6, h: 2.1, y: 1.15, t: 0.5 };
 
             const profiles3d = (sideProfiles && sideProfiles.length === points.length)
                 ? sideProfiles
@@ -5655,10 +5756,7 @@ function getCurrentCeilingPayload() {
                 addBaseboard(midX, midZ, ang, nx, nz, len);
 
                 const profName = (profiles3d[i] || '').toString();
-                // Стандартный профиль — аккуратная галтель по периметру
-                if (!/тенев|парящ/i.test(profName)) {
-                    addCove(midX, midZ, ang, nx, nz, len, wallH);
-                }
+                // Стандартный профиль — без выступов, чистый стык стена/потолок
                 // Теневой профиль — тонкая щель ~3 мм
                 if (/тенев/i.test(profName)) {
                     const gapMat = new THREE.MeshBasicMaterial({
@@ -5981,15 +6079,37 @@ function getCurrentCeilingPayload() {
                     sheen.renderOrder = 2;
                     scene.add(sheen);
                 })();
-                // переплёт
-                const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.9, 0.028, 0.03), frameMat);
-                barH.position.set(mx + nx * 0.035, winY, mz + nz * 0.035);
-                barH.rotation.y = windowEdge.ang;
-                scene.add(barH);
-                const barV = new THREE.Mesh(new THREE.BoxGeometry(0.028, winH * 0.9, 0.03), frameMat);
-                barV.position.set(mx + nx * 0.035, winY, mz + nz * 0.035);
-                barV.rotation.y = windowEdge.ang;
-                scene.add(barV);
+                // Французский переплёт: 2×3 секции
+                (function addFrenchMuntins() {
+                    const cols = 2, rows = 3;
+                    for (let r = 1; r < rows; r++) {
+                        const yy = winY - winH / 2 + (winH * r) / rows;
+                        const bar = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.92, 0.022, 0.028), frameMat);
+                        bar.position.set(mx + nx * 0.035, yy, mz + nz * 0.035);
+                        bar.rotation.y = windowEdge.ang;
+                        scene.add(bar);
+                    }
+                    for (let c = 1; c < cols; c++) {
+                        const ox = (-0.5 + c / cols) * winW * 0.9;
+                        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.022, winH * 0.92, 0.028), frameMat);
+                        bar.position.set(mx + nx * 0.035 + tx * ox, winY, mz + nz * 0.035 + tz * ox);
+                        bar.rotation.y = windowEdge.ang;
+                        scene.add(bar);
+                    }
+                    // внешняя рама толще
+                    const outer = [
+                        { w: winW + 0.06, h: 0.04, oy: winH / 2 + 0.02, ox: 0 },
+                        { w: winW + 0.06, h: 0.04, oy: -winH / 2 - 0.02, ox: 0 },
+                        { w: 0.04, h: winH + 0.08, oy: 0, ox: -winW / 2 - 0.02 },
+                        { w: 0.04, h: winH + 0.08, oy: 0, ox: winW / 2 + 0.02 }
+                    ];
+                    outer.forEach(function (o) {
+                        const b = new THREE.Mesh(new THREE.BoxGeometry(o.w, o.h, 0.04), frameMat);
+                        b.position.set(mx + nx * 0.03 + tx * o.ox, winY + o.oy, mz + nz * 0.03 + tz * o.ox);
+                        b.rotation.y = windowEdge.ang;
+                        scene.add(b);
+                    });
+                })();
                 // подоконник внутрь комнаты (шире, с носом)
                 const sill = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.16, 0.04, 0.16), sillMat);
                 sill.position.set(mx + nx * 0.08, winY - winH / 2 - 0.025, mz + nz * 0.08);
@@ -6038,15 +6158,16 @@ function getCurrentCeilingPayload() {
                 sun.position.set(mx + nx * 3.5, winY + 1.2, mz + nz * 3.5);
                 sun.target.position.set(mx - nx * 0.6, 1.0, mz - nz * 0.6);
                 sun.castShadow = true;
-                sun.shadow.mapSize.set(1024, 1024);
+                sun.shadow.mapSize.set(1536, 1536);
                 sun.shadow.camera.near = 0.5;
-                sun.shadow.camera.far = 14;
-                sun.shadow.camera.left = -4;
-                sun.shadow.camera.right = 4;
-                sun.shadow.camera.top = 4;
-                sun.shadow.camera.bottom = -4;
-                sun.shadow.bias = -0.0008;
-                sun.shadow.radius = 4;
+                sun.shadow.camera.far = 16;
+                sun.shadow.camera.left = -5;
+                sun.shadow.camera.right = 5;
+                sun.shadow.camera.top = 5;
+                sun.shadow.camera.bottom = -5;
+                sun.shadow.bias = -0.0005;
+                sun.shadow.normalBias = 0.02;
+                sun.shadow.radius = 6;
                 scene.add(sun);
                 scene.add(sun.target);
                 // локальная заливка у окна (короткий радиус — не бьёт в дальнюю стену)
@@ -6188,22 +6309,23 @@ function getCurrentCeilingPayload() {
 
                 // Половина шторы: много складок, «ткань» (не плоская стена)
                 function addPanel(t0, t1) {
-                    const segs = Math.max(16, Math.ceil((t1 - t0) * len * 22));
-                    const rows = 8;
+                    const segs = Math.max(18, Math.ceil((t1 - t0) * len * 22));
+                    const rows = 9;
                     const verts = [];
                     const idxs = [];
                     for (let j = 0; j <= rows; j++) {
                         const v = j / rows;
                         const y = hangTop + (hangBot - hangTop) * v;
-                        // лёгкий провис по вертикали
-                        const sag = Math.sin(v * Math.PI) * 0.02;
+                        // провис ткани
+                        const sag = Math.sin(v * Math.PI) * 0.024;
                         for (let i = 0; i <= segs; i++) {
                             const u = i / segs;
                             const t = t0 + (t1 - t0) * u;
-                            const fold = Math.sin(u * Math.PI * 8) * 0.09
-                                + Math.sin(u * Math.PI * 16) * 0.03
-                                + Math.sin(u * Math.PI * 3) * 0.015;
-                            const openPush = Math.sin(u * Math.PI) * 0.08;
+                            // +20% складок и объёма
+                            const fold = Math.sin(u * Math.PI * 6) * 0.054
+                                + Math.sin(u * Math.PI * 12) * 0.018
+                                + Math.sin(u * Math.PI * 3) * 0.012;
+                            const openPush = Math.sin(u * Math.PI) * 0.048;
                             const along = t * len;
                             const sx = -uz * fold + nx * (openPush + sag);
                             const sz = ux * fold + nz * (openPush + sag);
@@ -6230,9 +6352,9 @@ function getCurrentCeilingPayload() {
                     curtainMeshes.push(mesh);
                 }
 
-                // Раздвинуты: слева ~28%, справа ~28%, центр открыт к окну
-                addPanel(0.01, 0.28);
-                addPanel(0.72, 0.99);
+                // Раздвинуты мягко: слева/справа ~35%, центр открыт
+                addPanel(0.01, 0.34);
+                addPanel(0.66, 0.99);
 
                 // Карниз-рейка + наконечники
                 const railMat = new THREE.MeshPhongMaterial({ color: 0x2a2a2a, shininess: 40 });
@@ -6380,46 +6502,45 @@ function getCurrentCeilingPayload() {
                 const m = toM(f.x, f.y);
 
                 if (t === 'chandelier') {
-                    // Компактная люстра-барабан: спокойное свечение, без «солнца»
-                    const metal = new THREE.MeshLambertMaterial({ color: 0x9a9a9a, side: THREE.DoubleSide });
-                    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.03, 12), metal);
-                    canopy.position.set(m.x, roomH - 0.02, m.z);
+                    // Современная люстра: тонкий шток + 3 матовых шара
+                    const chrome = new THREE.MeshPhongMaterial({ color: 0xb8bcc0, shininess: 90, specular: 0x666666 });
+                    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.025, 14), chrome);
+                    canopy.position.set(m.x, roomH - 0.015, m.z);
                     scene.add(canopy);
-                    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.28, 8), metal);
-                    stem.position.set(m.x, roomH - 0.17, m.z);
+                    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.42, 8), chrome);
+                    stem.position.set(m.x, roomH - 0.23, m.z);
                     scene.add(stem);
-                    // верхний диск плафона
-                    const topDisk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 16), metal);
-                    topDisk.position.set(m.x, roomH - 0.32, m.z);
-                    scene.add(topDisk);
-                    // матовый плафон-барабан
                     const shadeMat = new THREE.MeshLambertMaterial({
-                        color: 0xf0ebe0,
-                        emissive: 0xe8dcc0,
-                        emissiveIntensity: 0.35,
+                        color: 0xf7f2e8,
+                        emissive: 0xffe8c0,
+                        emissiveIntensity: 0.4,
                         side: THREE.DoubleSide
                     });
-                    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.16, 16, 1, true), shadeMat);
-                    drum.position.set(m.x, roomH - 0.40, m.z);
-                    scene.add(drum);
-                    // нижнее кольцо
-                    const bottomRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.01, 6, 20), metal);
-                    bottomRing.position.set(m.x, roomH - 0.48, m.z);
-                    bottomRing.rotation.x = Math.PI / 2;
-                    scene.add(bottomRing);
-                    // ярче на ~50%
-                    const intensity = 0.68;
-                    const pl = addCappedPointLight(0xfff5e6, intensity, 5.2, 2);
-                    if (pl) pl.position.set(m.x, roomH - 0.42, m.z);
-                    const shadeMat2 = drum.material;
-                    if (shadeMat2) shadeMat2.emissiveIntensity = 0.55;
+                    const arms = [
+                        { dx: 0, dz: 0, y: 0.55 },
+                        { dx: 0.18, dz: 0.05, y: 0.48 },
+                        { dx: -0.16, dz: -0.08, y: 0.50 }
+                    ];
+                    let mainMesh = null;
+                    arms.forEach(function (a, i) {
+                        const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.12, 6), chrome);
+                        rod.position.set(m.x + a.dx * 0.5, roomH - a.y + 0.06, m.z + a.dz * 0.5);
+                        scene.add(rod);
+                        const ball = new THREE.Mesh(new THREE.SphereGeometry(i === 0 ? 0.11 : 0.08, 16, 16), shadeMat);
+                        ball.position.set(m.x + a.dx, roomH - a.y, m.z + a.dz);
+                        scene.add(ball);
+                        if (i === 0) mainMesh = ball;
+                    });
+                    const intensity = 0.55;
+                    const pl = addCappedPointLight(0xfff5e6, intensity, 5.0, 2);
+                    if (pl) pl.position.set(m.x, roomH - 0.55, m.z);
                     ceilingLights.push({
                         kind: 'chandelier',
                         light: pl,
-                        mesh: drum,
+                        mesh: mainMesh,
                         baseIntensity: intensity,
-                        baseEmissive: 0.55,
-                        onColor: 0xf0ebe0,
+                        baseEmissive: 0.4,
+                        onColor: 0xf7f2e8,
                         offColor: 0x888880
                     });
                     return;
@@ -6430,7 +6551,7 @@ function getCurrentCeilingPayload() {
                     const bodyLen = 0.10;
                     const bodyTopY = roomH - 0.012;
                     const bodyBotY = bodyTopY - bodyLen;
-                    const ringMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+                    const ringMat = new THREE.MeshPhongMaterial({ color: 0xf2f2f2, shininess: 55, specular: 0x888888 });
                     const body = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.026, 0.022, bodyLen, 10),
                         ringMat
@@ -6439,7 +6560,7 @@ function getCurrentCeilingPayload() {
                     scene.add(body);
                     const bezel = new THREE.Mesh(
                         new THREE.TorusGeometry(0.028, 0.003, 6, 12),
-                        new THREE.MeshLambertMaterial({ color: 0xc8c8c8 })
+                        new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 70 })
                     );
                     bezel.position.set(m.x, bodyTopY, m.z);
                     bezel.rotation.x = Math.PI / 2;
@@ -6648,24 +6769,268 @@ function getCurrentCeilingPayload() {
                 const czs = fr.midZ + fr.nz * 0.5;
                 if (!insidePoly(cxs, czs)) return;
 
-                const sofaW = Math.min(2.1, edge.len * 0.6);
-                const depth = 0.85;
-                place(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.36, depth), fabric), fr, 0, depth / 2 + 0.08, 0.22);
-                place(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.5, 0.16), fabric), fr, 0, 0.16, 0.55);
+                // ===== Диван: цельный каркас + мягкие подушки =====
+                const sofaW = Math.min(2.15, Math.max(1.6, edge.len * 0.58));
+                const seatD = 0.72;   // глубина сиденья
+                const baseY = 0.12;  // верх основания
+                const seatH = 0.18;
+                const backH = 0.42;
+                const armW = 0.14;
+                const sofaFabric = new THREE.MeshLambertMaterial({ color: 0x8e949b });
+                const sofaDark = new THREE.MeshLambertMaterial({ color: 0x7a8088 });
+                const sofaLight = new THREE.MeshLambertMaterial({ color: 0x9aa1a8 });
+                const legMat = new THREE.MeshPhongMaterial({ color: 0x4a3428, shininess: 20 });
+
+                function sofaPos(along, out, y) {
+                    return {
+                        x: fr.midX + fr.ux * along + fr.nx * out,
+                        z: fr.midZ + fr.uz * along + fr.nz * out,
+                        y: y
+                    };
+                }
+                function addSofaMesh(geo, mat, along, out, y, rotX) {
+                    const m = new THREE.Mesh(geo, mat);
+                    const p = sofaPos(along, out, y);
+                    m.position.set(p.x, p.y, p.z);
+                    m.rotation.y = fr.ang;
+                    if (rotX) m.rotation.x = rotX;
+                    m.castShadow = true;
+                    m.receiveShadow = true;
+                    furnitureGroup.add(m);
+                    return m;
+                }
+
+                // Ножки (4 шт) — диван стоит на полу
+                const legH = 0.1;
+                [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (s) {
+                    const along = s[0] * (sofaW / 2 - armW - 0.05);
+                    const out = 0.12 + (s[1] < 0 ? 0.08 : seatD - 0.08);
+                    addSofaMesh(new THREE.CylinderGeometry(0.02, 0.025, legH, 8), legMat, along, out, legH / 2);
+                });
+
+                // Основание (лежит на ножках)
+                addSofaMesh(
+                    new THREE.BoxGeometry(sofaW - 0.02, 0.08, seatD + 0.06),
+                    sofaDark,
+                    0, seatD / 2 + 0.05, legH + 0.04
+                );
+
+                // Сиденье — одна мягкая подушка
+                addSofaMesh(
+                    new THREE.BoxGeometry(sofaW - armW * 2 - 0.04, seatH, seatD - 0.04),
+                    sofaLight,
+                    0, seatD / 2 + 0.08, legH + 0.08 + seatH / 2
+                );
+
+                // Спинка — одна цельная
+                addSofaMesh(
+                    new THREE.BoxGeometry(sofaW - armW * 2 - 0.02, backH, 0.12),
+                    sofaFabric,
+                    0, 0.12, legH + 0.08 + seatH + backH / 2 - 0.02
+                );
+
+                // Подлокотники (слева / справа) — от пола сиденья вверх
                 [-1, 1].forEach(function (sgn) {
-                    place(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, depth), fabric), fr, sgn * (sofaW / 2 - 0.08), depth / 2 + 0.08, 0.52);
+                    const along = sgn * (sofaW / 2 - armW / 2);
+                    addSofaMesh(
+                        new THREE.BoxGeometry(armW, seatH + 0.22, seatD + 0.02),
+                        sofaDark,
+                        along, seatD / 2 + 0.05, legH + 0.08 + (seatH + 0.22) / 2
+                    );
                 });
-                contactShadow(fr, 0, depth / 2 + 0.08, sofaW + 0.5, depth + 0.5);
-                contactShadow(fr, 0, 1.45, 1.4, 0.95);
-                rugAt(fr, 0, 1.45, Math.min(2.4, sofaW + 0.5), 1.5);
-                place(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.5), wood), fr, 0, 1.45, 0.4);
-                [[-0.42, -0.2], [0.42, -0.2], [-0.42, 0.2], [0.42, 0.2]].forEach(function (o) {
-                    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.05), wood);
-                    leg.position.set(fr.midX + fr.ux * o[0] + fr.nx * (1.45 + o[1]), 0.19, fr.midZ + fr.uz * o[0] + fr.nz * (1.45 + o[1]));
-                    leg.rotation.y = fr.ang;
-                    leg.castShadow = true;
-                    furnitureGroup.add(leg);
+
+                // 2 декоративные подушки у спинки
+                const pMat1 = new THREE.MeshLambertMaterial({ color: 0xd2c6b6 });
+                const pMat2 = new THREE.MeshLambertMaterial({ color: 0xaeb8c4 });
+                addSofaMesh(new THREE.BoxGeometry(0.28, 0.26, 0.1), pMat1, -0.35, 0.22, legH + 0.08 + seatH + 0.16);
+                addSofaMesh(new THREE.BoxGeometry(0.26, 0.24, 0.09), pMat2, 0.32, 0.22, legH + 0.08 + seatH + 0.15);
+
+                contactShadow(fr, 0, seatD / 2 + 0.05, sofaW + 0.3, seatD + 0.25);
+
+                // Ковёр и столик перед диваном
+                contactShadow(fr, 0, 1.35, 1.35, 0.9);
+                rugAt(fr, 0, 1.35, Math.min(2.3, sofaW + 0.4), 1.4);
+                // столешница
+                addSofaMesh(new THREE.BoxGeometry(0.9, 0.04, 0.48), wood, 0, 1.35, 0.40);
+                [[-0.38, -0.18], [0.38, -0.18], [-0.38, 0.18], [0.38, 0.18]].forEach(function (o) {
+                    addSofaMesh(new THREE.BoxGeometry(0.045, 0.38, 0.045), wood, o[0], 1.35 + o[1], 0.19);
                 });
+
+                // уют: ваза и свеча на столике
+                (function addCozyBits() {
+                    const vaseMat = new THREE.MeshPhongMaterial({ color: 0xd8d2c8, shininess: 40 });
+                    const vase = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 12), vaseMat);
+                    vase.position.set(fr.midX + fr.nx * 1.3 - fr.ux * 0.2, 0.50, fr.midZ + fr.nz * 1.3 - fr.uz * 0.2);
+                    vase.castShadow = true;
+                    furnitureGroup.add(vase);
+                    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.08, 10), new THREE.MeshLambertMaterial({ color: 0xf5f0e0 }));
+                    candle.position.set(fr.midX + fr.nx * 1.38 + fr.ux * 0.18, 0.46, fr.midZ + fr.nz * 1.38 + fr.uz * 0.18);
+                    furnitureGroup.add(candle);
+                    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffc266 }));
+                    flame.position.set(candle.position.x, 0.51, candle.position.z);
+                    furnitureGroup.add(flame);
+                })();
+
+                // Книга на столике (лежит сверху столешницы)
+                (function addBookOnTable() {
+                    const bx = fr.midX + fr.nx * 1.42 + fr.ux * 0.08;
+                    const bz = fr.midZ + fr.nz * 1.42 + fr.uz * 0.08;
+                    const by = 0.42; // чуть выше столешницы 0.40
+                    const bookMat = new THREE.MeshPhongMaterial({ color: 0x16325c, shininess: 35 });
+                    const pageMat = new THREE.MeshLambertMaterial({ color: 0xf3efe6 });
+                    const book = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.032, 0.15), bookMat);
+                    book.position.set(bx, by, bz);
+                    book.rotation.y = fr.ang + 0.4;
+                    book.castShadow = true;
+                    furnitureGroup.add(book);
+                    const pages = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.026, 0.14), pageMat);
+                    pages.position.set(bx, by + 0.003, bz);
+                    pages.rotation.y = book.rotation.y;
+                    furnitureGroup.add(pages);
+                    // корешок
+                    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.034, 0.15), new THREE.MeshPhongMaterial({ color: 0x0d2140 }));
+                    spine.position.set(
+                        bx + Math.sin(book.rotation.y) * 0.10,
+                        by,
+                        bz + Math.cos(book.rotation.y) * 0.10
+                    );
+                    spine.rotation.y = book.rotation.y;
+                    furnitureGroup.add(spine);
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = 256; c.height = 160;
+                        const g = c.getContext('2d');
+                        g.fillStyle = '#16325c'; g.fillRect(0, 0, 256, 160);
+                        g.strokeStyle = 'rgba(255,255,255,0.2)';
+                        g.strokeRect(10, 10, 236, 140);
+                        g.fillStyle = '#f0f5ff';
+                        g.font = 'bold 26px Arial';
+                        g.textAlign = 'center';
+                        g.textBaseline = 'middle';
+                        g.fillText('Zamer_Master', 128, 80);
+                        const tex = new THREE.CanvasTexture(c);
+                        const cover = new THREE.Mesh(
+                            new THREE.PlaneGeometry(0.20, 0.125),
+                            new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+                        );
+                        cover.position.set(bx, by + 0.018, bz);
+                        cover.rotation.set(-Math.PI / 2, 0, book.rotation.y);
+                        furnitureGroup.add(cover);
+                    } catch (e) {}
+                })();
+
+                // ТВ строго напротив дивана
+                (function addTvOppositeSofa() {
+                    // Луч от дивана в комнату → ближайшая противоположная стена
+                    const ox = fr.midX + fr.nx * 0.5;
+                    const oz = fr.midZ + fr.nz * 0.5;
+                    const dirX = fr.nx, dirZ = fr.nz;
+                    let best = null, bestT = 1e9;
+                    wallEdges.forEach(function (e) {
+                        if (e.i === edge.i) return;
+                        if (doorEdge && e.i === doorEdge.i) return; // не на дверь
+                        const efr = edgeFrame(e);
+                        const denom = dirX * efr.nx + dirZ * efr.nz;
+                        if (Math.abs(denom) < 0.05) return;
+                        if (denom < 0.15) return;
+                        const t = ((efr.midX - ox) * efr.nx + (efr.midZ - oz) * efr.nz) / denom;
+                        if (t < 0.8 || t > bestT) return;
+                        const hx = ox + dirX * t, hz = oz + dirZ * t;
+                        const along = (hx - e.a.x) * (e.dx / e.len) + (hz - e.a.z) * (e.dz / e.len);
+                        if (along < 0.2 || along > e.len - 0.2) return;
+                        bestT = t;
+                        best = e;
+                    });
+                    // fallback: напротив дивана, но не дверь
+                    if (!best) {
+                        let bestDot = -999;
+                        wallEdges.forEach(function (e) {
+                            if (e.i === edge.i) return;
+                            if (doorEdge && e.i === doorEdge.i) return;
+                            const efr = edgeFrame(e);
+                            const d = efr.nx * (-fr.nx) + efr.nz * (-fr.nz);
+                            if (d > bestDot) { bestDot = d; best = e; }
+                        });
+                    }
+                    if (!best || best.len < 0.9) return;
+                    const tfr = edgeFrame(best);
+                    const tvW = Math.min(1.45, best.len * 0.48);
+                    const tvH = 0.82;
+                    const tvY = 1.25;
+                    const frame = new THREE.Mesh(
+                        new THREE.BoxGeometry(tvW + 0.05, tvH + 0.05, 0.035),
+                        new THREE.MeshPhongMaterial({ color: 0x0a0a0a, shininess: 80 })
+                    );
+                    frame.position.set(tfr.midX + tfr.nx * 0.04, tvY, tfr.midZ + tfr.nz * 0.04);
+                    frame.rotation.y = tfr.ang;
+                    frame.castShadow = true;
+                    furnitureGroup.add(frame);
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = 640; c.height = 360;
+                        const g = c.getContext('2d');
+                        const bg = g.createLinearGradient(0, 0, 0, 360);
+                        bg.addColorStop(0, '#0a1220');
+                        bg.addColorStop(0.55, '#12243a');
+                        bg.addColorStop(1, '#0d1a2b');
+                        g.fillStyle = bg; g.fillRect(0, 0, 640, 360);
+                        const flare = g.createRadialGradient(480, 80, 10, 480, 80, 220);
+                        flare.addColorStop(0, 'rgba(120,180,255,0.25)');
+                        flare.addColorStop(1, 'rgba(120,180,255,0)');
+                        g.fillStyle = flare; g.fillRect(0, 0, 640, 360);
+                        g.strokeStyle = 'rgba(180,210,255,0.55)';
+                        g.lineWidth = 3;
+                        g.beginPath(); g.moveTo(80, 210); g.lineTo(320, 120); g.lineTo(560, 210); g.stroke();
+                        g.fillStyle = 'rgba(255,255,255,0.95)';
+                        g.font = 'bold 40px Arial';
+                        g.textAlign = 'center';
+                        g.fillText('Натяжные потолки', 320, 230);
+                        g.font = '22px Arial';
+                        g.fillStyle = 'rgba(180,210,255,0.95)';
+                        g.fillText('Zamer Master · замер и 3D на объекте', 320, 270);
+                        g.font = '18px Arial';
+                        g.fillStyle = 'rgba(200,220,240,0.85)';
+                        g.fillText('Место для ваших контактов, логотипа', 320, 310);
+                        g.fillText('и рекламы вашей компании', 320, 335);
+                        const tex = new THREE.CanvasTexture(c);
+                        if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                        const screen = new THREE.Mesh(
+                            new THREE.PlaneGeometry(tvW * 0.96, tvH * 0.96),
+                            new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+                        );
+                        screen.position.set(tfr.midX + tfr.nx * 0.06, tvY, tfr.midZ + tfr.nz * 0.06);
+                        screen.rotation.y = tfr.ang;
+                        furnitureGroup.add(screen);
+                    } catch (e) {}
+                })();
+
+                // Картина НАД диваном (на той же стене)
+                (function addPaintingAboveSofa() {
+                    const pw = Math.min(0.7, sofaW * 0.45);
+                    const ph = pw;
+                    const py = 1.55;
+                    const frameMat = new THREE.MeshPhongMaterial({ color: 0xc9cdd1, shininess: 70, specular: 0x666666 });
+                    const frame = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.05, ph + 0.05, 0.028), frameMat);
+                    frame.position.set(fr.midX + fr.nx * 0.03, py, fr.midZ + fr.nz * 0.03);
+                    frame.rotation.y = fr.ang;
+                    furnitureGroup.add(frame);
+                    try {
+                        const url = (typeof PAINTING_DATA_URL !== 'undefined' && PAINTING_DATA_URL) ? PAINTING_DATA_URL : null;
+                        if (!url) return;
+                        const loader = new THREE.TextureLoader();
+                        loader.load(url, function (tex) {
+                            if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                            const art = new THREE.Mesh(
+                                new THREE.PlaneGeometry(pw, ph),
+                                new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+                            );
+                            art.position.set(fr.midX + fr.nx * 0.045, py, fr.midZ + fr.nz * 0.045);
+                            art.rotation.y = fr.ang;
+                            furnitureGroup.add(art);
+                            invalidate();
+                        });
+                    } catch (e) {}
+                })();
             }
 
             function applyLightKindVisibility() {
