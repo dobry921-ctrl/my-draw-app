@@ -4998,6 +4998,15 @@ function getCurrentCeilingPayload() {
                         if (obj.isLight && obj.shadow && obj.shadow.map) {
                             obj.shadow.map.dispose();
                         }
+                        if (obj.userData) {
+                            Object.keys(obj.userData).forEach(function (k) {
+                                const v = obj.userData[k];
+                                if (v && v.isTexture && v.dispose && !seen.has(v)) {
+                                    seen.add(v);
+                                    v.dispose();
+                                }
+                            });
+                        }
                     });
                     _threeScene.clear ? _threeScene.clear() : null;
                 } catch (e) {}
@@ -5788,6 +5797,7 @@ function getCurrentCeilingPayload() {
 
             // Окно: в вырезе стены (обои не перекрывают), вечерняя картинка
             const glassMats = [];
+            const viewMatsList = []; // {mat, day, night} — вид за каждым окном, меняется день/ночь
             const windowDayLightsAll = [];
             windowEdgesList.forEach(function (windowEdge) {
               const winOpen = winOpensByEdge[windowEdge.i] || { t: 0.5, w: 1.2, h: 1.2, y: 1.35 };
@@ -5937,15 +5947,133 @@ function getCurrentCeilingPayload() {
                     tex.anisotropy = _maxAniso;
                     return tex;
                 }
+                // Ночной вид за окном — звёздное небо, луна, город со светящимися
+                // окнами. Раньше за окном всегда был закат, даже когда в комнате
+                // включён режим «Ночь» — теперь снаружи тоже настоящая ночь.
+                function makeNightViewTexture() {
+                    const c = document.createElement('canvas');
+                    c.width = 1024; c.height = 640;
+                    const g = c.getContext('2d');
+                    const HOR = 430;
+
+                    const sky = g.createLinearGradient(0, 0, 0, HOR);
+                    sky.addColorStop(0, '#04060f');
+                    sky.addColorStop(0.55, '#0a1020');
+                    sky.addColorStop(0.85, '#141b2e');
+                    sky.addColorStop(1, '#1c2338');
+                    g.fillStyle = sky;
+                    g.fillRect(0, 0, 1024, HOR);
+
+                    // звёзды
+                    for (let i = 0; i < 160; i++) {
+                        const sx = Math.random() * 1024, sy = Math.random() * (HOR * 0.85);
+                        const a = 0.25 + Math.random() * 0.65;
+                        const r = Math.random() < 0.15 ? 1.6 : 0.8;
+                        g.fillStyle = 'rgba(255,255,255,' + a + ')';
+                        g.beginPath(); g.arc(sx, sy, r, 0, Math.PI * 2); g.fill();
+                    }
+
+                    // луна с мягким ореолом
+                    const moonX = 740, moonY = 110;
+                    const halo = g.createRadialGradient(moonX, moonY, 0, moonX, moonY, 150);
+                    halo.addColorStop(0, 'rgba(230,238,255,0.55)');
+                    halo.addColorStop(0.4, 'rgba(200,215,255,0.16)');
+                    halo.addColorStop(1, 'rgba(200,215,255,0)');
+                    g.fillStyle = halo;
+                    g.fillRect(moonX - 150, moonY - 150, 300, 300);
+                    g.fillStyle = '#f3f6ff';
+                    g.beginPath(); g.arc(moonX, moonY, 30, 0, Math.PI * 2); g.fill();
+                    g.fillStyle = 'rgba(150,165,200,0.35)';
+                    [[-8, -4, 7], [10, 6, 5], [-2, 12, 4]].forEach(function (cr) {
+                        g.beginPath(); g.arc(moonX + cr[0], moonY + cr[1], cr[2], 0, Math.PI * 2); g.fill();
+                    });
+
+                    // зарево города над горизонтом
+                    const glow = g.createLinearGradient(0, HOR - 160, 0, HOR);
+                    glow.addColorStop(0, 'rgba(255,190,120,0)');
+                    glow.addColorStop(1, 'rgba(255,175,110,0.22)');
+                    g.fillStyle = glow;
+                    g.fillRect(0, HOR - 160, 1024, 160);
+
+                    // дальний план — тёмные силуэты
+                    g.fillStyle = 'rgba(10,12,22,0.85)';
+                    let x = -20;
+                    while (x < 1044) {
+                        const w = 60 + Math.random() * 90, h = 90 + Math.random() * 150;
+                        g.fillRect(x, HOR - h, w, h);
+                        x += w + 12;
+                    }
+
+                    // ближний план — дома со светящимися окнами (ночью светится большинство)
+                    x = -30;
+                    while (x < 1054) {
+                        const w = 80 + Math.random() * 110, h = 150 + Math.random() * 190;
+                        const bx = x, by = HOR - h;
+                        const grd = g.createLinearGradient(bx, by, bx, by + h);
+                        grd.addColorStop(0, '#12101a');
+                        grd.addColorStop(1, '#08070d');
+                        g.fillStyle = grd;
+                        g.fillRect(bx, by, w, h);
+                        const cols = Math.max(2, Math.floor(w / 26));
+                        const rows = Math.max(3, Math.floor(h / 34));
+                        for (let r = 0; r < rows; r++) {
+                            for (let cl = 0; cl < cols; cl++) {
+                                const wx = bx + 10 + cl * ((w - 16) / cols);
+                                const wy = by + 16 + r * ((h - 24) / rows);
+                                const lit = Math.random() > 0.28;
+                                if (lit) {
+                                    const wg = g.createRadialGradient(wx + 6, wy + 7, 0, wx + 6, wy + 7, 17);
+                                    wg.addColorStop(0, 'rgba(255,221,150,0.65)');
+                                    wg.addColorStop(1, 'rgba(255,221,150,0)');
+                                    g.fillStyle = wg;
+                                    g.fillRect(wx - 11, wy - 10, 34, 34);
+                                    g.fillStyle = Math.random() > 0.5 ? '#ffdd96' : '#fff0c8';
+                                } else {
+                                    g.fillStyle = 'rgba(20,22,34,0.9)';
+                                }
+                                g.fillRect(wx, wy, 12, 14);
+                            }
+                        }
+                        x += w + 8;
+                    }
+
+                    // земля, тротуар, фонари
+                    const grd2 = g.createLinearGradient(0, HOR, 0, 640);
+                    grd2.addColorStop(0, '#0c0b12');
+                    grd2.addColorStop(1, '#05050a');
+                    g.fillStyle = grd2;
+                    g.fillRect(0, HOR, 1024, 210);
+                    for (let i = 0; i < 6; i++) {
+                        const lx = 60 + i * 180 + Math.random() * 40;
+                        const lg = g.createRadialGradient(lx, HOR + 30, 0, lx, HOR + 30, 75);
+                        lg.addColorStop(0, 'rgba(255,196,120,0.45)');
+                        lg.addColorStop(1, 'rgba(255,196,120,0)');
+                        g.fillStyle = lg;
+                        g.fillRect(lx - 75, HOR - 45, 150, 150);
+                    }
+
+                    const tex = new THREE.CanvasTexture(c);
+                    if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                    tex.anisotropy = _maxAniso;
+                    return tex;
+                }
+                const dayViewTex = makeEveningViewTexture();
+                const nightViewTex = makeNightViewTexture();
                 const viewMat = new THREE.MeshBasicMaterial({
-                    map: makeEveningViewTexture(),
+                    map: nightViewTex, // сцена по умолчанию открывается ночью
                     side: THREE.DoubleSide,
                     depthWrite: true
                 });
                 const view = new THREE.Mesh(new THREE.PlaneGeometry(winW * 0.92, winH * 0.92), viewMat);
                 view.position.set(mx + nx * 0.025, winY, mz + nz * 0.025);
                 view.rotation.y = windowEdge.ang;
+                // Обе текстуры (день/ночь) держим в userData меша, чтобы при закрытии
+                // 3D disposeThreePreview() освободил и ту, что сейчас не показана —
+                // иначе неактивная текстура каждый раз копилась бы в памяти GPU.
+                view.userData.dayTex = dayViewTex;
+                view.userData.nightTex = nightViewTex;
                 scene.add(view);
+                viewMatsList.push({ mat: viewMat, day: dayViewTex, night: nightViewTex });
                 // Настоящее стекло поверх вида: лёгкий голубоватый тон + отражение
                 // комнаты (подключается ниже к кубической камере) — без этого
                 // окно выглядело как плоская картинка, а не остекление.
@@ -6131,6 +6259,12 @@ function getCurrentCeilingPayload() {
                     if (e.light) e.light.intensity = isNight ? e.night : e.day;
                 });
                 scene.background = new THREE.Color(isNight ? 0x050508 : 0x1a1a1a);
+                // Вид за окном тоже должен соответствовать времени суток —
+                // иначе снаружи всегда закат, даже когда в комнате ночь
+                viewMatsList.forEach(function (v) {
+                    v.mat.map = isNight ? v.night : v.day;
+                    v.mat.needsUpdate = true;
+                });
                 invalidate();
             }
 
@@ -6616,6 +6750,28 @@ function getCurrentCeilingPayload() {
                     stand.castShadow = true;
                     stand.receiveShadow = true;
                     furnitureGroup.add(stand);
+                    // Контактная тень под тумбой — без неё ТВ-тумба выглядела
+                    // «приклеенной» к полу без веса, в отличие от дивана рядом
+                    (function tvContactShadow() {
+                        const sc2 = document.createElement('canvas');
+                        sc2.width = sc2.height = 128;
+                        const sg2 = sc2.getContext('2d');
+                        const grd = sg2.createRadialGradient(64, 64, 4, 64, 64, 62);
+                        grd.addColorStop(0, 'rgba(0,0,0,0.5)');
+                        grd.addColorStop(0.55, 'rgba(0,0,0,0.2)');
+                        grd.addColorStop(1, 'rgba(0,0,0,0)');
+                        sg2.fillStyle = grd;
+                        sg2.fillRect(0, 0, 128, 128);
+                        const shTex2 = new THREE.CanvasTexture(sc2);
+                        const sh = new THREE.Mesh(new THREE.PlaneGeometry(tvW + 0.6, 0.6), new THREE.MeshBasicMaterial({
+                            map: shTex2, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide
+                        }));
+                        sh.position.set(tMidX + tnx * 0.2, 0.006, tMidZ + tnz * 0.2);
+                        sh.rotation.x = -Math.PI / 2;
+                        sh.rotation.z = tAng;
+                        sh.renderOrder = 1;
+                        furnitureGroup.add(sh);
+                    })();
                     const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.05, tvH + 0.05, 0.035), standMat);
                     bezel.position.set(tMidX + tnx * 0.03, tvY, tMidZ + tnz * 0.03);
                     bezel.rotation.y = tAng;
