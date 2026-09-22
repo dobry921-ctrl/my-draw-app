@@ -3776,10 +3776,13 @@ function getCurrentCeilingPayload() {
                 let idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
                     ? editCeilingIndex
                     : (completedCeilings && completedCeilings.length) || 0;
-                if (window._kpPhotos && window._kpPhotos[idx]) {
-                    payload.kp_photo = window._kpPhotos[idx];
-                } else if (completedCeilings && completedCeilings[idx] && completedCeilings[idx].kp_photo) {
-                    payload.kp_photo = completedCeilings[idx].kp_photo;
+                var kpV = null;
+                if (window._kpPhotos && window._kpPhotos[idx]) kpV = window._kpPhotos[idx];
+                else if (completedCeilings && completedCeilings[idx]) {
+                    kpV = completedCeilings[idx].kp_photo || completedCeilings[idx].kp_photo_url;
+                }
+                if (kpV && typeof kpV === 'string' && (kpV.indexOf('http') === 0 || kpV.indexOf('data:') === 0)) {
+                    payload.kp_photo = kpV;
                 }
             } catch (e) {}
             return payload;
@@ -4131,17 +4134,43 @@ function getCurrentCeilingPayload() {
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
                                 }
+                                if (f.type === 'light_point') {
+                                    var lp = { t: 't', x: asM(f.x), y: asM(f.y) };
+                                    if (f.name || f.material) lp.n = String(f.name || f.material || '').slice(0, 40);
+                                    if (level < 1 && f.offset_wall_a_cm != null) lp.a = r(f.offset_wall_a_cm, 0);
+                                    if (level < 1 && f.offset_wall_b_cm != null) lp.b = r(f.offset_wall_b_cm, 0);
+                                    return lp;
+                                }
                                 var s = { t: 's', x: asM(f.x), y: asM(f.y) };
+                                if (f.name || f.material) s.n = String(f.name || f.material || '').slice(0, 40);
                                 if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
                                 if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
                                 return s;
                             });
                         }
-                        return {
+                        var outC = {
                             pts: pts, s: sides, d: diags,
                             m: c.material || 'Мат', col: c.color || 'Белый',
                             pr: profiles, fx: fx, u: 'm'
                         };
+                        // URL фото КП — короткая ссылка, всегда влезает в лимит Telegram
+                        try {
+                            var kpRaw = c.kp_photo || c.kp_photo_url || c.preview_3d || null;
+                            if (!kpRaw && window._kpPhotos) {
+                                var _ix = completedCeilings.indexOf(c);
+                                if (_ix < 0) {
+                                    for (var _j = 0; _j < completedCeilings.length; _j++) {
+                                        if (completedCeilings[_j] === c) { _ix = _j; break; }
+                                    }
+                                }
+                                if (_ix < 0) _ix = 0;
+                                kpRaw = window._kpPhotos[_ix] || window._kpPhotos[String(_ix)] || null;
+                            }
+                            if (kpRaw && typeof kpRaw === 'string' && /^https?:\/\//i.test(kpRaw) && kpRaw.length < 300) {
+                                outC.kp = kpRaw;
+                            }
+                        } catch (eKp) {}
+                        return outC;
                     });
                 }
 
@@ -7609,6 +7638,7 @@ function getCurrentCeilingPayload() {
             lightPanel.appendChild(overviewBtn);
 
             // Фото потолка для коммерческого предложения
+            // Снимок → загрузка на хостинг → короткая URL в payload (лимит Telegram 4096 байт)
             const kpPhotoBtn = document.createElement('button');
             kpPhotoBtn.type = 'button';
             kpPhotoBtn.textContent = '📷 Фото для КП';
@@ -7616,25 +7646,86 @@ function getCurrentCeilingPayload() {
             kpPhotoBtn.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                try {
-                    captureCeilingPhotoForKP();
-                } catch (err) {
+                captureCeilingPhotoForKP().catch(function (err) {
                     console.warn(err);
                     showToast('Не удалось сделать фото', 2500);
-                }
+                    kpPhotoBtn.disabled = false;
+                    kpPhotoBtn.textContent = '📷 Фото для КП';
+                });
             };
             lightPanel.appendChild(kpPhotoBtn);
 
-            function captureCeilingPhotoForKP() {
+            function dataUrlToBlob(dataUrl) {
+                var parts = dataUrl.split(',');
+                var mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
+                var bin = atob(parts[1] || '');
+                var arr = new Uint8Array(bin.length);
+                for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                return new Blob([arr], { type: mime });
+            }
+
+            function compressDataUrl(dataUrl, maxSide, quality) {
+                return new Promise(function (resolve) {
+                    try {
+                        var img = new Image();
+                        img.onload = function () {
+                            var w = img.width || 1, h = img.height || 1;
+                            var scale = 1;
+                            if (w > maxSide || h > maxSide) scale = Math.min(maxSide / w, maxSide / h);
+                            var tc = document.createElement('canvas');
+                            tc.width = Math.max(1, Math.round(w * scale));
+                            tc.height = Math.max(1, Math.round(h * scale));
+                            var ctx = tc.getContext('2d');
+                            ctx.drawImage(img, 0, 0, tc.width, tc.height);
+                            resolve(tc.toDataURL('image/jpeg', quality));
+                        };
+                        img.onerror = function () { resolve(dataUrl); };
+                        img.src = dataUrl;
+                    } catch (e) { resolve(dataUrl); }
+                });
+            }
+
+            async function uploadKpImage(dataUrl) {
+                var blob = dataUrlToBlob(dataUrl);
+                // 1) catbox.moe — без ключа, постоянная ссылка
+                try {
+                    var fd = new FormData();
+                    fd.append('reqtype', 'fileupload');
+                    fd.append('fileToUpload', blob, 'kp_potolok.jpg');
+                    var r = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd });
+                    var t = (await r.text()).trim();
+                    if (t && /^https?:\/\//i.test(t) && t.length < 200) return t;
+                } catch (e1) { console.warn('catbox', e1); }
+                // 2) litterbox (временное, 72ч) — запасной
+                try {
+                    var fd2 = new FormData();
+                    fd2.append('reqtype', 'fileupload');
+                    fd2.append('time', '72h');
+                    fd2.append('fileToUpload', blob, 'kp_potolok.jpg');
+                    var r2 = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd2 });
+                    var t2 = (await r2.text()).trim();
+                    if (t2 && /^https?:\/\//i.test(t2) && t2.length < 200) return t2;
+                } catch (e2) { console.warn('litterbox', e2); }
+                // 3) 0x0.st
+                try {
+                    var fd3 = new FormData();
+                    fd3.append('file', blob, 'kp.jpg');
+                    var r3 = await fetch('https://0x0.st', { method: 'POST', body: fd3 });
+                    var t3 = (await r3.text()).trim();
+                    if (t3 && /^https?:\/\//i.test(t3) && t3.length < 200) return t3;
+                } catch (e3) { console.warn('0x0', e3); }
+                return null;
+            }
+
+            async function captureCeilingPhotoForKP() {
                 if (!renderer || !scene || !camera) {
                     showToast('3D не готово', 2000);
                     return;
                 }
-                // угол обзора потолка
+                kpPhotoBtn.disabled = true;
+                kpPhotoBtn.textContent = '⏳ Съёмка…';
                 if (typeof goCeilingOverviewCam === 'function') goCeilingOverviewCam();
-                // скрыть UI-мебель опционально — оставляем, потолок важнее
-                // несколько кадров для стабилизации
-                for (let i = 0; i < 3; i++) {
+                for (var i = 0; i < 3; i++) {
                     try {
                         if (typeof stepCam === 'function') stepCam(0.05);
                         applyCam();
@@ -7642,46 +7733,55 @@ function getCurrentCeilingPayload() {
                         else renderer.render(scene, camera);
                     } catch (e1) {}
                 }
-                let dataUrl = '';
+                var dataUrl = '';
                 try {
-                    // высокий JPEG для КП
-                    dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.92);
+                    dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.85);
                 } catch (e2) {
                     showToast('Ошибка снимка', 2000);
+                    kpPhotoBtn.disabled = false;
+                    kpPhotoBtn.textContent = '📷 Фото для КП';
                     return;
                 }
                 if (!dataUrl || dataUrl.length < 1000) {
                     showToast('Пустой снимок', 2000);
+                    kpPhotoBtn.disabled = false;
+                    kpPhotoBtn.textContent = '📷 Фото для КП';
                     return;
                 }
-                // индекс текущего потолка
-                let idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
+                // сжимаем для быстрой загрузки (качество достаточное для листа КП)
+                dataUrl = await compressDataUrl(dataUrl, 1280, 0.78);
+                var idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
                     ? editCeilingIndex
                     : (completedCeilings && completedCeilings.length) || 0;
+
+                kpPhotoBtn.textContent = '⏳ Загрузка…';
+                showToast('Загружаю фото для КП…', 2500);
+                var url = await uploadKpImage(dataUrl);
+                if (!url) {
+                    showToast('Не удалось загрузить фото. Проверьте интернет и нажмите ещё раз.', 4500);
+                    kpPhotoBtn.disabled = false;
+                    kpPhotoBtn.textContent = '📷 Фото для КП';
+                    return;
+                }
                 if (typeof window._kpPhotos !== 'object' || !window._kpPhotos) window._kpPhotos = {};
-                window._kpPhotos[idx] = dataUrl;
-                // в текущий payload / completed
+                window._kpPhotos[idx] = url;
                 try {
                     if (completedCeilings && completedCeilings[idx]) {
-                        completedCeilings[idx].kp_photo = dataUrl;
+                        completedCeilings[idx].kp_photo = url;
+                        completedCeilings[idx].kp_photo_url = url;
                     }
                 } catch (e3) {}
                 try {
-                    localStorage.setItem('zamer_kp_photos_v1', JSON.stringify(window._kpPhotos));
-                } catch (e4) {
-                    // localStorage может не вместить — ок, держим в памяти
-                    console.warn('kp photo localStorage', e4);
-                }
-                // скачать файл — чтобы точно сохранить для КП
-                try {
-                    const a = document.createElement('a');
-                    a.href = dataUrl;
-                    a.download = 'KP_potolok_' + (idx + 1) + '.jpg';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                } catch (e5) {}
-                showToast('Фото потолка №' + (idx + 1) + ' сохранено для КП', 3200);
+                    // храним только URL (короткие) — localStorage не раздувается
+                    var store = {};
+                    Object.keys(window._kpPhotos).forEach(function (k) {
+                        var v = window._kpPhotos[k];
+                        if (typeof v === 'string' && v.indexOf('http') === 0) store[k] = v;
+                    });
+                    localStorage.setItem('zamer_kp_photos_v1', JSON.stringify(store));
+                } catch (e4) {}
+                showToast('Фото потолка №' + (idx + 1) + ' готово — попадёт в КП автоматически', 4000);
+                kpPhotoBtn.disabled = false;
                 kpPhotoBtn.textContent = '📷 Фото ✓ №' + (idx + 1);
             }
 
