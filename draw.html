@@ -3702,14 +3702,18 @@
             var current;
             try { current = getCurrentCeilingPayload(); } catch (e) { console.warn(e); return false; }
             if (!current || !current.points || current.points.length < 3) return false;
-            // Режим правки существующего потолка — обновляем по индексу
             if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
                 completedCeilings[editCeilingIndex] = current;
                 return true;
             }
-            // Новый потолок (после «Добавить ещё потолок» editCeilingIndex = -1):
-            // ВСЕГДА добавляем, не сливаем по геометрии — замер может иметь
-            // несколько одинаковых по форме комнат.
+            if (completedCeilings.length) {
+                var last = completedCeilings[completedCeilings.length - 1];
+                if (sameCeilingGeom(last, current)) {
+                    completedCeilings[completedCeilings.length - 1] = current;
+                    editCeilingIndex = completedCeilings.length - 1;
+                    return true;
+                }
+            }
             completedCeilings.push(current);
             editCeilingIndex = completedCeilings.length - 1;
             return true;
@@ -4039,18 +4043,16 @@ function getCurrentCeilingPayload() {
                     } catch (e) { console.warn(e); }
                 }
                 (function () {
-                    // Убираем только ПОДРЯД идущие дубли (двойной save одного потолка),
-                    // а не разные комнаты с одинаковой формой.
                     var out = [];
                     completedCeilings.forEach(function (c) {
-                        if (out.length && typeof sameCeilingGeom === 'function' && sameCeilingGeom(out[out.length - 1], c)) {
-                            out[out.length - 1] = c; // обновить последним вариантом
-                            return;
+                        var dup = false;
+                        for (var i = 0; i < out.length; i++) {
+                            if (typeof sameCeilingGeom === 'function' && sameCeilingGeom(out[i], c)) { dup = true; break; }
                         }
-                        out.push(c);
+                        if (!dup) out.push(c);
                     });
                     if (out.length !== completedCeilings.length) {
-                        console.warn('[sendToBot] consecutive dedupe', completedCeilings.length, '->', out.length);
+                        console.warn('[sendToBot] dedupe', completedCeilings.length, '->', out.length);
                         completedCeilings = out;
                     }
                 })();
@@ -4072,26 +4074,6 @@ function getCurrentCeilingPayload() {
                     return r(x, 3);
                 }
 
-                function compressKpForSend(dataUrl) {
-                    try {
-                        if (!dataUrl || typeof dataUrl !== 'string') return null;
-                        // уже короткая строка
-                        if (dataUrl.length < 2500 && dataUrl.indexOf('base64,') < 0) return dataUrl;
-                        var img = new Image();
-                        // синхронно не получится — используем canvas только если уже dataURL
-                        var m = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-                        if (!m) return dataUrl.length < 2800 ? dataUrl : null;
-                        // Пересжимаем через canvas если доступен offscreen
-                        var canvas = document.createElement('canvas');
-                        var maxSide = 640;
-                        // decode sync via Image only async — fallback: truncate quality by re-encoding if possible
-                        // Храним только base64 без prefix, сильно урезанный JPEG уже с клиента
-                        var b64 = m[1];
-                        // Если слишком большой — не отправляем (лимит 4096 на весь payload)
-                        if (b64.length > 3500) return null;
-                        return b64;
-                    } catch (e) { return null; }
-                }
                 function buildLevel(level) {
                     return completedCeilings.map(function (c) {
                         var pts = (c.points || []).map(function (p) {
@@ -4149,35 +4131,17 @@ function getCurrentCeilingPayload() {
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
                                 }
-                                // Споты и светильники — РАЗНЫЕ типы (t:'s' vs t:'t')
-                                if (f.type === 'light_point' || f.type === 'point' || f.type === 'точка') {
-                                    var t = { t: 't', x: asM(f.x), y: asM(f.y) };
-                                    if (f.name || f.material) t.n = String(f.name || f.material || '').slice(0, 40);
-                                    if (level < 1 && f.offset_wall_a_cm != null) t.a = r(f.offset_wall_a_cm, 0);
-                                    if (level < 1 && f.offset_wall_b_cm != null) t.b = r(f.offset_wall_b_cm, 0);
-                                    return t;
-                                }
                                 var s = { t: 's', x: asM(f.x), y: asM(f.y) };
-                                if (f.name || f.material) s.n = String(f.name || f.material || '').slice(0, 40);
                                 if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
                                 if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
                                 return s;
                             });
                         }
-                        var outC = {
+                        return {
                             pts: pts, s: sides, d: diags,
                             m: c.material || 'Мат', col: c.color || 'Белый',
                             pr: profiles, fx: fx, u: 'm'
                         };
-                        // Компактное фото для КП (если влезает в лимит sendData)
-                        try {
-                            var kpRaw = c.kp_photo || c.preview_3d || null;
-                            if (kpRaw && typeof kpRaw === 'string' && level < 3) {
-                                var kpSmall = compressKpForSend(kpRaw);
-                                if (kpSmall && kpSmall.length < 2800) outC.kp = kpSmall;
-                            }
-                        } catch (eKp) {}
-                        return outC;
                     });
                 }
 
@@ -7680,26 +7644,8 @@ function getCurrentCeilingPayload() {
                 }
                 let dataUrl = '';
                 try {
-                    // JPEG для КП: качество достаточное для листа, но компактнее для sendData
-                    dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.72);
-                    // Доп. сжатие через canvas max 960px — чтобы влезло в Telegram WebApp limit
-                    try {
-                        var im = new Image();
-                        im.src = dataUrl;
-                        // sync path unavailable; downscale via temp canvas from renderer size
-                        var srcC = renderer.domElement;
-                        var maxS = 960;
-                        var sw = srcC.width || 0, sh = srcC.height || 0;
-                        if (sw > maxS || sh > maxS) {
-                            var scale = Math.min(maxS / sw, maxS / sh);
-                            var tc = document.createElement('canvas');
-                            tc.width = Math.max(1, Math.round(sw * scale));
-                            tc.height = Math.max(1, Math.round(sh * scale));
-                            var tctx = tc.getContext('2d');
-                            tctx.drawImage(srcC, 0, 0, tc.width, tc.height);
-                            dataUrl = tc.toDataURL('image/jpeg', 0.65);
-                        }
-                    } catch (eDown) {}
+                    // высокий JPEG для КП
+                    dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.92);
                 } catch (e2) {
                     showToast('Ошибка снимка', 2000);
                     return;
@@ -7726,8 +7672,7 @@ function getCurrentCeilingPayload() {
                     // localStorage может не вместить — ок, держим в памяти
                     console.warn('kp photo localStorage', e4);
                 }
-                // Скачать файл — Telegram WebApp sendData ограничен 4096 байт,
-                // поэтому JPEG в payload не влезает. Файл нужно прислать боту после сохранения заказа.
+                // скачать файл — чтобы точно сохранить для КП
                 try {
                     const a = document.createElement('a');
                     a.href = dataUrl;
@@ -7736,7 +7681,7 @@ function getCurrentCeilingPayload() {
                     a.click();
                     document.body.removeChild(a);
                 } catch (e5) {}
-                showToast('Фото №' + (idx + 1) + ' скачано. После сохранения заказа: карточка → «📷 Фото для КП» → пришлите этот файл в чат', 5500);
+                showToast('Фото потолка №' + (idx + 1) + ' сохранено для КП', 3200);
                 kpPhotoBtn.textContent = '📷 Фото ✓ №' + (idx + 1);
             }
 
