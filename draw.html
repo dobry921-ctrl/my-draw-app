@@ -3761,7 +3761,7 @@ function getCurrentCeilingPayload() {
                 }
                 return o;
             });
-            return {
+            const payload = {
                 points: ptsMeters,
                 sides_cm: sides,
                 diagonals: diags,
@@ -3772,6 +3772,17 @@ function getCurrentCeilingPayload() {
                 fixtures: fxOut,
                 unit: 'm'
             };
+            try {
+                let idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
+                    ? editCeilingIndex
+                    : (completedCeilings && completedCeilings.length) || 0;
+                if (window._kpPhotos && window._kpPhotos[idx]) {
+                    payload.kp_photo = window._kpPhotos[idx];
+                } else if (completedCeilings && completedCeilings[idx] && completedCeilings[idx].kp_photo) {
+                    payload.kp_photo = completedCeilings[idx].kp_photo;
+                }
+            } catch (e) {}
+            return payload;
         }
 
         function calcAreaM2(pts) {
@@ -5185,6 +5196,21 @@ function getCurrentCeilingPayload() {
             const cx = (minX + maxX) / 2;
             const cy = (minY + maxY) / 2;
             const toM = (x, y) => ({ x: (x - cx) / 100, z: (y - cy) / 100 }); // Y-up в three: высота; план XZ
+            // Мощность приборов → интенсивность Three.js (калибровка комнаты ~15–25 м²)
+            // 1 Вт ≈ 0.011 ед. intensity для Point/Spot в этой сцене
+            const WATT_TO_I = 0.011;
+            const LIGHT_WATTS = {
+                spot: 10,
+                light_point: 10,
+                chandelier: 50,
+                strip_per_m: 15,
+                floating_per_m: 8,
+                cornice_per_m: 8
+            };
+            function wattsToIntensity(w) {
+                return Math.max(0, Number(w) || 0) * WATT_TO_I;
+            }
+
             const roomH = Math.max(2.2, Math.min(4.0, roomHeightM || 2.7)); // высота потолка, м
 
             const scene = new THREE.Scene();
@@ -5202,7 +5228,7 @@ function getCurrentCeilingPayload() {
             });
             renderer.setSize(W, H);
             // DPR до 1.75: заметно чище края, но без перегрева телефона
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.setClearColor(0x1a1a1a, 1);
@@ -5382,39 +5408,71 @@ function getCurrentCeilingPayload() {
                 return geo;
             }
 
-            // Процедурные текстуры: ламинат + неброские обои
+            // Процедурные текстуры: ламинат «ёлочкой» + спокойные обои
             function makeLaminateTexture() {
+                // Kronospan ламинат 1285×192 мм, укладка «ёлочкой»
+                // Соотношение сторон доски ≈ 6.69
                 const c = document.createElement('canvas');
-                c.width = 512; c.height = 512;
+                c.width = 1024; c.height = 1024;
                 const g = c.getContext('2d');
-                g.fillStyle = '#c9a66b';
-                g.fillRect(0, 0, 512, 512);
-                const plankH = 64;
-                // лёгкая неравномерность тона по доскам делает пол живым
-                for (let y = 0; y < 512; y += plankH) {
-                    const base = 160 + ((y / plankH) % 3) * 12;
-                    g.fillStyle = `rgb(${base + 40},${base + 10},${base - 40})`;
-                    g.fillRect(0, y, 512, plankH - 2);
-                    // волокна
-                    for (let i = 0; i < 18; i++) {
-                        g.strokeStyle = `rgba(90,60,30,${0.04 + Math.random() * 0.06})`;
+                g.fillStyle = '#b8956a';
+                g.fillRect(0, 0, 1024, 1024);
+                // пропорции: длина 1285, ширина 192 → в пикселях L/W = 6.69
+                const plankW = 36;                    // ширина доски в px
+                const plankL = Math.round(plankW * (1285 / 192)); // ≈ 241
+                function plank(x, y, ang, tone) {
+                    g.save();
+                    g.translate(x, y);
+                    g.rotate(ang);
+                    const r = tone + 38, gg0 = tone + 14, b = tone - 32;
+                    // основная заливка
+                    g.fillStyle = 'rgb(' + r + ',' + gg0 + ',' + b + ')';
+                    g.fillRect(-plankL / 2, -plankW / 2, plankL - 1, plankW - 1);
+                    // градиент «объём»
+                    const lg = g.createLinearGradient(0, -plankW / 2, 0, plankW / 2);
+                    lg.addColorStop(0, 'rgba(255,255,255,0.10)');
+                    lg.addColorStop(0.45, 'rgba(0,0,0,0)');
+                    lg.addColorStop(1, 'rgba(40,20,5,0.10)');
+                    g.fillStyle = lg;
+                    g.fillRect(-plankL / 2, -plankW / 2, plankL - 1, plankW - 1);
+                    // лёгкие волокна вдоль доски
+                    for (let i = 0; i < 6; i++) {
+                        g.strokeStyle = 'rgba(80,50,20,' + (0.035 + Math.random() * 0.05) + ')';
+                        g.lineWidth = 0.7 + Math.random() * 0.6;
                         g.beginPath();
-                        const yy = y + 8 + Math.random() * (plankH - 16);
-                        g.moveTo(0, yy);
-                        g.lineTo(512, yy + (Math.random() - 0.5) * 6);
+                        const yy = -plankW / 2 + 3 + Math.random() * (plankW - 6);
+                        g.moveTo(-plankL / 2 + 8, yy);
+                        g.bezierCurveTo(-plankL / 5, yy + 1.2, plankL / 5, yy - 1.2, plankL / 2 - 8, yy);
                         g.stroke();
                     }
-                    // шов
-                    g.fillStyle = 'rgba(60,40,20,0.35)';
-                    g.fillRect(0, y + plankH - 2, 512, 2);
-                    // вертикальные стыки досок
-                    for (let x = ((y / plankH) % 2) * 80; x < 512; x += 160) {
-                        g.fillStyle = 'rgba(60,40,20,0.25)';
-                        g.fillRect(x, y, 2, plankH - 2);
+                    // сучки редко
+                    if (Math.random() > 0.82) {
+                        g.fillStyle = 'rgba(90,55,25,0.18)';
+                        g.beginPath();
+                        g.ellipse((Math.random() - 0.5) * plankL * 0.5, (Math.random() - 0.5) * plankW * 0.3, 3 + Math.random() * 4, 2, 0, 0, Math.PI * 2);
+                        g.fill();
+                    }
+                    // фаска / шов
+                    g.strokeStyle = 'rgba(55,35,15,0.40)';
+                    g.lineWidth = 1.2;
+                    g.strokeRect(-plankL / 2, -plankW / 2, plankL - 1, plankW - 1);
+                    g.restore();
+                }
+                // шаг сетки ёлочки: стык по короткой стороне
+                const step = plankW * 0.98;
+                for (let row = -6; row < 55; row++) {
+                    for (let col = -6; col < 30; col++) {
+                        const cx = col * step * 2 + (row % 2) * step;
+                        const cy = row * step;
+                        const tone = 132 + ((row * 7 + col * 4) % 11) * 4;
+                        // пара досок под ±45°
+                        plank(cx, cy, -Math.PI / 4, tone);
+                        plank(cx + step, cy, Math.PI / 4, tone + 3);
                     }
                 }
                 const tex = new THREE.CanvasTexture(c);
-                tuneTex(THREE, tex, 4, 4);
+                // тайл: 1 повтор ≈ несколько досок; масштаб ближе к реальным 1.285 м
+                tuneTex(THREE, tex, 2.2, 2.2);
                 return tex;
             }
             function makeWallpaperTexture() {
@@ -5423,24 +5481,22 @@ function getCurrentCeilingPayload() {
                 const g = c.getContext('2d');
                 g.fillStyle = '#ece7de';
                 g.fillRect(0, 0, 512, 512);
-                // мягкие вертикальные полосы — спокойные однотонные обои
                 for (let x = 0; x < 512; x += 24) {
-                    g.fillStyle = (x / 24) % 2 ? 'rgba(255,255,255,0.35)' : 'rgba(198,188,172,0.13)';
+                    g.fillStyle = (x / 24) % 2 ? 'rgba(255,255,255,0.28)' : 'rgba(198,188,172,0.1)';
                     g.fillRect(x, 0, 12, 512);
                 }
-                // тонкое волокно/шум, чтобы стена не выглядела пластиковой
                 const img = g.getImageData(0, 0, 512, 512);
                 const d = img.data;
                 for (let i = 0; i < d.length; i += 4) {
-                    const n = (Math.random() - 0.5) * 11;
+                    const n = (Math.random() - 0.5) * 9;
                     d[i] += n; d[i + 1] += n; d[i + 2] += n;
                 }
                 g.putImageData(img, 0, 0);
                 const tex = new THREE.CanvasTexture(c);
-                // тайлинг задаётся UV-развёрткой стены (одинаковый масштаб на всех стенах)
                 tuneTex(THREE, tex, 1, 1);
                 return tex;
             }
+
             // Текстуры: из фото комнаты или процедурные
             const photoTex = makeTexturesFromRoomPhoto(THREE);
             // Ламинат матовый: небольшой рассеянный блик, без зеркальных отражений сцены
@@ -5457,7 +5513,8 @@ function getCurrentCeilingPayload() {
                 const pos = floorGeo.attributes.position;
                 const uvs = [];
                 for (let i = 0; i < pos.count; i++) {
-                    uvs.push(pos.getX(i) * 0.35, pos.getZ(i) * 0.35);
+                    // 1.285 м = длина доски Kronospan — UV в «досках»
+                    uvs.push(pos.getX(i) / 1.285, pos.getZ(i) / 1.285);
                 }
                 floorGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
                 const floorMesh = new THREE.Mesh(floorGeo, floorMat);
@@ -5659,10 +5716,7 @@ function getCurrentCeilingPayload() {
                 addBaseboard(midX, midZ, ang, nx, nz, len);
 
                 const profName = (profiles3d[i] || '').toString();
-                // Стандартный профиль — аккуратная галтель по периметру
-                if (!/тенев|парящ/i.test(profName)) {
-                    addCove(midX, midZ, ang, nx, nz, len, wallH);
-                }
+                // Стандартный профиль — без плинтуса/галтели, чистый угол 90°
                 // Теневой профиль — тонкая щель ~3 мм
                 if (/тенев/i.test(profName)) {
                     const gapMat = new THREE.MeshBasicMaterial({
@@ -5685,7 +5739,7 @@ function getCurrentCeilingPayload() {
                     const stripMat = new THREE.MeshLambertMaterial({
                         color: 0xfff4c8,
                         emissive: 0xffe6a0,
-                        emissiveIntensity: 1.15,
+                        emissiveIntensity: 0.55,
                         side: THREE.DoubleSide
                     });
                     const strip = new THREE.Mesh(
@@ -5720,9 +5774,10 @@ function getCurrentCeilingPayload() {
                     pendingFloatingLights.push({
                         light: null, mesh: joint, baseI: 0, baseEmissive: 1.15, onColor: 0xfff4c8, offColor: 0x444440
                     });
-                    // мягкая подсветка вдоль стены, без яркого «блика»
-                    const baseI = Math.min(0.18, 0.08 + len * 0.025);
-                    const pl = addCappedPointLight(0xfff2dc, baseI, Math.max(2.2, len * 0.7), 2);
+                    // парящий профиль: 8 Вт/м
+                    const floatWatts = len * LIGHT_WATTS.floating_per_m;
+                    const baseI = wattsToIntensity(floatWatts);
+                    const pl = addCappedPointLight(0xfff2dc, baseI, Math.max(2.2, len * 0.85), 2);
                     if (pl) {
                         pl.position.set(midX + nx * 0.08, roomH - 0.12, midZ + nz * 0.08);
                         pendingFloatingLights.push({ light: pl, mesh: null, baseI: baseI });
@@ -5774,17 +5829,25 @@ function getCurrentCeilingPayload() {
                 p2.position.set(mx + nx * (d + 0.025), 1.45, mz + nz * (d + 0.025));
                 p2.rotation.y = doorEdge.ang;
                 scene.add(p2);
-                // Наличники
-                const fw = 0.07;
-                function addFrame(w, h, ox, oy) {
-                    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.035), frameMat);
-                    m.position.set(mx + nx * (d + 0.005) + tx * ox, oy, mz + nz * (d + 0.005) + tz * ox);
+                // Наличники — на плоскости стены вокруг проёма (не на полотне)
+                const fw = 0.08;           // ширина наличника
+                const casingD = 0.012;     // чуть в комнату от плоскости стены
+                function addCasing(w, h, ox, oy) {
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.022), frameMat);
+                    m.position.set(
+                        mx + nx * casingD + tx * ox,
+                        oy,
+                        mz + nz * casingD + tz * ox
+                    );
                     m.rotation.y = doorEdge.ang;
+                    m.castShadow = true;
                     scene.add(m);
                 }
-                addFrame(fw, doorH + fw, -(doorW / 2 + fw / 2), doorH / 2);
-                addFrame(fw, doorH + fw, (doorW / 2 + fw / 2), doorH / 2);
-                addFrame(doorW + fw * 2, fw, 0, doorH + fw / 2);
+                // боковые стойки: от пола до верха проёма
+                addCasing(fw, doorH, -(doorW / 2 + fw / 2), doorH / 2);
+                addCasing(fw, doorH,  (doorW / 2 + fw / 2), doorH / 2);
+                // верхняя перемычка поверх стоек
+                addCasing(doorW + fw * 2, fw, 0, doorH + fw / 2);
                 // Ручка
                 const hBase = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.02), metalMat);
                 hBase.position.set(mx + nx * (d + 0.04) + tx * (doorW * 0.3), 1.0, mz + nz * (d + 0.04) + tz * (doorW * 0.3));
@@ -6160,7 +6223,7 @@ function getCurrentCeilingPayload() {
                     scene.add(slope);
                 });
                 // Свет из окна — только днём; ночью гасится через windowDayLights
-                const sun = new THREE.DirectionalLight(0xffe0c0, 0.45);
+                const sun = new THREE.DirectionalLight(0xffe0c0, 0.22);
                 sun.position.set(mx + nx * 4, winY + 1.5, mz + nz * 4);
                 sun.target.position.set(mx - nx * 1.2, 0.8, mz - nz * 1.2);
                 // единственный источник с тенями — дёшево и сразу «приземляет» предметы
@@ -6176,9 +6239,9 @@ function getCurrentCeilingPayload() {
                 sun.shadow.radius = 3;
                 scene.add(sun);
                 scene.add(sun.target);
-                const wl = addCappedPointLight(0xffd8a8, 0.28, 5.5, 1.8);
+                const wl = addCappedPointLight(0xffd8a8, 0.14, 4.5, 1.8);
                 if (wl) wl.position.set(mx + nx * 0.3, winY, mz + nz * 0.3);
-                const floorSpot = addCappedPointLight(0xffd0a0, 0.15, 3.2, 2);
+                const floorSpot = addCappedPointLight(0xffd0a0, 0.08, 2.8, 2);
                 if (floorSpot) floorSpot.position.set(mx - nx * 0.9, 0.35, mz - nz * 0.9);
                 windowDayLightsAll.push(sun, wl, floorSpot);
               }
@@ -6360,9 +6423,10 @@ function getCurrentCeilingPayload() {
                 addPanel(0.70, 0.98);
 
                 // Карниз-рейка (тёмная, без светящейся полосы)
-                const railMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-                const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.03, 0.04), railMat);
-                rail.position.set(midX + nx * inset, hangTop + 0.02, midZ + nz * inset);
+                // Карниз почти невидим: белый, тонкий
+                const railMat = new THREE.MeshLambertMaterial({ color: 0xf5f3ef });
+                const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.012, 0.018), railMat);
+                rail.position.set(midX + nx * inset, hangTop + 0.01, midZ + nz * inset);
                 rail.rotation.y = -Math.atan2(dz, dx);
                 scene.add(rail);
 
@@ -6374,8 +6438,10 @@ function getCurrentCeilingPayload() {
                     // чуть ближе к центру комнаты, чем штора
                     const lx = a.x + ux * (t * len) + nx * (inset + 0.12);
                     const lz = a.z + uz * (t * len) + nz * (inset + 0.12);
-                    const baseI = 0.14; // слабее световой полосы
-                    const pl = addCappedPointLight(0xfff2dc, blOn ? baseI : 0, 2.4, 2);
+                    // карниз с подсветкой: 8 Вт/м, делим на число точек
+                    const cornWatts = len * LIGHT_WATTS.cornice_per_m;
+                    const baseI = wattsToIntensity(cornWatts) / Math.max(1, nLights);
+                    const pl = addCappedPointLight(0xfff2dc, blOn ? baseI : 0, 2.6, 2);
                     if (pl) {
                         pl.position.set(lx, roomH - 0.14, lz);
                         ceilingLights.push({
@@ -6452,9 +6518,10 @@ function getCurrentCeilingPayload() {
                         segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
                         totalLen += len;
                     }
-                    // Ровная заливка: мало очень мягких источников + общий fill (без пятен на стенах)
-                    const nWant = Math.max(2, Math.min(5, Math.ceil(totalLen / 1.4)));
-                    const baseI = isTrack ? 0.14 : 0.16;
+                    // Световая полоса 15 Вт/м (трек — та же шкала)
+                    const nWant = Math.max(2, Math.min(6, Math.ceil(totalLen / 1.2)));
+                    const stripWatts = totalLen * LIGHT_WATTS.strip_per_m;
+                    const baseI = wattsToIntensity(stripWatts) / nWant;
                     for (let k = 0; k < nWant; k++) {
                         const dist = ((k + 0.5) / nWant) * totalLen;
                         let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
@@ -6472,8 +6539,8 @@ function getCurrentCeilingPayload() {
                         pl.position.set(px, roomH - 0.35, pz);
                         ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
                     }
-                    // общий мягкий fill от полосы (равномерно по комнате)
-                    const fillI = Math.min(0.22, 0.08 + totalLen * 0.03) * (isTrack ? 0.85 : 1);
+                    // общий мягкий fill ~25% мощности полосы
+                    const fillI = wattsToIntensity(stripWatts) * 0.25 * (isTrack ? 0.85 : 1);
                     const fill = new THREE.HemisphereLight(
                         isTrack ? 0xe8e0ff : 0xfff5e0,
                         isTrack ? 0x2a2830 : 0x2a2820,
@@ -6501,46 +6568,84 @@ function getCurrentCeilingPayload() {
                 const m = toM(f.x, f.y);
 
                 if (t === 'chandelier') {
-                    // Компактная люстра-барабан: спокойное свечение, без «солнца»
+                    const style = 'drum';
+                    const chrome = new THREE.MeshPhongMaterial({ color: 0xb8bcc0, shininess: 90, specular: 0x666666 });
                     const metal = new THREE.MeshLambertMaterial({ color: 0x9a9a9a, side: THREE.DoubleSide });
-                    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.03, 12), metal);
-                    canopy.position.set(m.x, roomH - 0.02, m.z);
-                    scene.add(canopy);
-                    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.28, 8), metal);
-                    stem.position.set(m.x, roomH - 0.17, m.z);
-                    scene.add(stem);
-                    // верхний диск плафона
-                    const topDisk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 16), metal);
-                    topDisk.position.set(m.x, roomH - 0.32, m.z);
-                    scene.add(topDisk);
-                    // матовый плафон-барабан
-                    const shadeMat = new THREE.MeshLambertMaterial({
-                        color: 0xf0ebe0,
-                        emissive: 0xe8dcc0,
-                        emissiveIntensity: 0.35,
-                        side: THREE.DoubleSide
-                    });
-                    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.16, 16, 1, true), shadeMat);
-                    drum.position.set(m.x, roomH - 0.40, m.z);
-                    scene.add(drum);
-                    // нижнее кольцо
-                    const bottomRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.01, 6, 20), metal);
-                    bottomRing.position.set(m.x, roomH - 0.48, m.z);
-                    bottomRing.rotation.x = Math.PI / 2;
-                    scene.add(bottomRing);
-                    // ярче на ~50%
-                    const intensity = 0.68;
+                    let mainMesh = null;
+                    let intensity = wattsToIntensity(LIGHT_WATTS.chandelier);
+                    let emissiveI = 0.45;
+                    let onCol = 0xf0ebe0;
+
+                    if (style === 'spheres') {
+                        // 3 матовых шара на штоке
+                        const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.025, 14), chrome);
+                        canopy.position.set(m.x, roomH - 0.015, m.z); scene.add(canopy);
+                        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.42, 8), chrome);
+                        stem.position.set(m.x, roomH - 0.23, m.z); scene.add(stem);
+                        const shadeMat = new THREE.MeshLambertMaterial({ color: 0xf7f2e8, emissive: 0xffe8c0, emissiveIntensity: 0.4, side: THREE.DoubleSide });
+                        [{ dx: 0, dz: 0, y: 0.55, r: 0.11 }, { dx: 0.18, dz: 0.05, y: 0.48, r: 0.08 }, { dx: -0.16, dz: -0.08, y: 0.50, r: 0.08 }].forEach(function (a, i) {
+                            const ball = new THREE.Mesh(new THREE.SphereGeometry(a.r, 16, 16), shadeMat);
+                            ball.position.set(m.x + a.dx, roomH - a.y, m.z + a.dz);
+                            scene.add(ball);
+                            if (i === 0) mainMesh = ball;
+                        });
+                        emissiveI = 0.45; onCol = 0xf0ebe0;
+                    } else if (style === 'ring') {
+                        // современное кольцо
+                        const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.02, 12), chrome);
+                        canopy.position.set(m.x, roomH - 0.015, m.z); scene.add(canopy);
+                        const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.35, 6), chrome);
+                        cord.position.set(m.x, roomH - 0.2, m.z); scene.add(cord);
+                        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.018, 10, 32), chrome);
+                        ring.position.set(m.x, roomH - 0.42, m.z);
+                        ring.rotation.x = Math.PI / 2;
+                        scene.add(ring);
+                        const glowMat = new THREE.MeshLambertMaterial({ color: 0xfff5e6, emissive: 0xffe8c0, emissiveIntensity: 0.5 });
+                        const glow = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.01, 8, 28), glowMat);
+                        glow.position.set(m.x, roomH - 0.42, m.z);
+                        glow.rotation.x = Math.PI / 2;
+                        scene.add(glow);
+                        mainMesh = glow;
+                        emissiveI = 0.45; onCol = 0xf0ebe0;
+                    } else if (style === 'modern') {
+                        // плоский диск / «тарелка»
+                        const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.02, 12), chrome);
+                        canopy.position.set(m.x, roomH - 0.015, m.z); scene.add(canopy);
+                        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.2, 8), chrome);
+                        stem.position.set(m.x, roomH - 0.12, m.z); scene.add(stem);
+                        const discMat = new THREE.MeshLambertMaterial({ color: 0xf5f0e8, emissive: 0xffe8c8, emissiveIntensity: 0.55, side: THREE.DoubleSide });
+                        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.04, 24), discMat);
+                        disc.position.set(m.x, roomH - 0.28, m.z);
+                        scene.add(disc);
+                        mainMesh = disc;
+                        emissiveI = 0.45; onCol = 0xf0ebe0;
+                    } else {
+                        // drum — классический барабан
+                        const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.03, 12), metal);
+                        canopy.position.set(m.x, roomH - 0.02, m.z); scene.add(canopy);
+                        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.28, 8), metal);
+                        stem.position.set(m.x, roomH - 0.17, m.z); scene.add(stem);
+                        const topDisk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 16), metal);
+                        topDisk.position.set(m.x, roomH - 0.32, m.z); scene.add(topDisk);
+                        const shadeMat = new THREE.MeshLambertMaterial({ color: 0xf0ebe0, emissive: 0xe8dcc0, emissiveIntensity: 0.45, side: THREE.DoubleSide });
+                        const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.16, 16, 1, true), shadeMat);
+                        drum.position.set(m.x, roomH - 0.40, m.z); scene.add(drum);
+                        const bottomRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.01, 6, 20), metal);
+                        bottomRing.position.set(m.x, roomH - 0.48, m.z);
+                        bottomRing.rotation.x = Math.PI / 2; scene.add(bottomRing);
+                        mainMesh = drum;
+                        emissiveI = 0.45; onCol = 0xf0ebe0;
+                    }
+
                     const pl = addCappedPointLight(0xfff5e6, intensity, 5.2, 2);
                     if (pl) pl.position.set(m.x, roomH - 0.42, m.z);
-                    const shadeMat2 = drum.material;
-                    if (shadeMat2) shadeMat2.emissiveIntensity = 0.55;
                     ceilingLights.push({
                         kind: 'chandelier',
                         light: pl,
-                        mesh: drum,
+                        mesh: mainMesh,
                         baseIntensity: intensity,
-                        baseEmissive: 0.55,
-                        onColor: 0xf0ebe0,
+                        baseEmissive: emissiveI,
+                        onColor: onCol,
                         offColor: 0x888880
                     });
                     return;
@@ -6549,7 +6654,7 @@ function getCurrentCeilingPayload() {
                 if (t === 'spot') {
                     // Спот — аккуратный цилиндр; PointLight только в пределах бюджета
                     const bodyLen = 0.09;
-                    const ringMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+                    const ringMat = new THREE.MeshPhongMaterial({ color: 0xf5f5f5, shininess: 50, specular: 0x888888 });
                     const body = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.028, 0.022, bodyLen, 8),
                         ringMat
@@ -6572,10 +6677,9 @@ function getCurrentCeilingPayload() {
                     glow.position.set(m.x, roomH - bodyLen - 0.02, m.z);
                     glow.rotation.x = Math.PI / 2;
                     scene.add(glow);
-                    // Конус света вместо точки: на полу появляется пятно — то,
-                    // по чему клиент и сравнивает раскладку спотов
-                    const intensity = 1.1;
-                    const sl = addCappedSpotLight(0xfff6e8, intensity, 7.0, 0.62, 0.55);
+                    // Спот 10 Вт
+                    const intensity = wattsToIntensity(LIGHT_WATTS.spot);
+                    const sl = addCappedSpotLight(0xfff6e8, intensity, 5.5, 0.55, 0.55);
                     if (sl) {
                         sl.position.set(m.x, roomH - bodyLen - 0.03, m.z);
                         sl.target.position.set(m.x, 0, m.z);
@@ -6602,8 +6706,9 @@ function getCurrentCeilingPayload() {
                     ring.position.set(m.x, roomH - 0.018, m.z);
                     ring.rotation.x = Math.PI / 2;
                     scene.add(ring);
-                    const intensity = 0.8;
-                    const pl = addCappedPointLight(0xfff8e0, intensity, 4, 2);
+                    // Светильник 10 Вт
+                    const intensity = wattsToIntensity(LIGHT_WATTS.light_point);
+                    const pl = addCappedPointLight(0xfff8e0, intensity, 4.2, 2);
                     if (pl) pl.position.set(m.x, roomH - 0.06, m.z);
                     const halo = addCeilingHalo(m.x, roomH - 0.012, m.z, 0.38, 0.3);
                     ceilingLights.push({ kind: 'light_point', light: pl, mesh: disc, halo: halo, baseIntensity: intensity, baseEmissive: 2.0, onColor: 0xfff8e0, offColor: 0x888880 });
@@ -7159,7 +7264,10 @@ function getCurrentCeilingPayload() {
                     preferredCurtainColor = hex;
                     const c = parseHexColor(hex, 0xc4b5a0);
                     curtainMeshes.forEach(function (m) {
-                        if (m.material) m.material.color.setHex(c);
+                        if (m.material) {
+                            m.material.color.setHex(c);
+                            m.material.needsUpdate = true;
+                        }
                     });
                     (fixtures || []).forEach(function (f) {
                         if (f && f.type === 'cornice') f.curtain_color = hex;
@@ -7170,7 +7278,6 @@ function getCurrentCeilingPayload() {
                 preferredWallColor = hex;
                 if (wallMat) {
                     wallMat.color.set(hex);
-                    // при ручном цвете текстуру можно слегка приглушить
                     wallMat.needsUpdate = true;
                 }
             });
@@ -7203,20 +7310,40 @@ function getCurrentCeilingPayload() {
             overviewBtn.type = 'button';
             overviewBtn.textContent = '🔝 Весь потолок';
             overviewBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(0,60,50,0.55);color:#fff;font-size:12px;margin-top:4px;';
+            function goCeilingOverviewCam() {
+                let ox = 0, oz = 0;
+                roomPts.forEach(function (p2) { ox += p2.x; oz += p2.z; });
+                ox /= Math.max(1, roomPts.length); oz /= Math.max(1, roomPts.length);
+                // угол, максимально удалённый от центра — лучший обзор потолка
+                let best = roomPts[0], bestD = -1;
+                roomPts.forEach(function (p2) {
+                    const d = (p2.x - ox) * (p2.x - ox) + (p2.z - oz) * (p2.z - oz);
+                    if (d > bestD) { bestD = d; best = p2; }
+                });
+                // встать ближе к углу, но не в стене
+                let nx = best.x + (ox - best.x) * 0.28;
+                let nz = best.z + (oz - best.z) * 0.28;
+                if (!canStand(nx, nz)) {
+                    nx = best.x + (ox - best.x) * 0.4;
+                    nz = best.z + (oz - best.z) * 0.4;
+                }
+                if (!canStand(nx, nz)) { nx = ox; nz = oz; }
+                camX = nx; camZ = nz;
+                eyeH = 0.72; // ниже — больше потолка в кадре
+                // смотрим в центр комнаты / вверх на потолок
+                yaw = Math.atan2(ox - camX, oz - camZ);
+                pitch = 0.78;
+                camFov = 78;
+                syncZoomSlider();
+                applyCam();
+                invalidate();
+            }
             overviewBtn.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!overviewOn) {
                     savedView = { camX: camX, camZ: camZ, eyeH: eyeH, pitch: pitch, yaw: yaw, fov: camFov };
-                    syncZoomSlider();
-                    let ox = 0, oz = 0;
-                    roomPts.forEach(function (p2) { ox += p2.x; oz += p2.z; });
-                    ox /= roomPts.length; oz /= roomPts.length;
-                    if (canStand(ox, oz)) { camX = ox; camZ = oz; }
-                    eyeH = 1.2;
-                    pitch = 0.62;
-                    camFov = 85;
-                    syncZoomSlider();
+                    goCeilingOverviewCam();
                     overviewOn = true;
                     overviewBtn.textContent = '🚶 Вернуться';
                 } else if (savedView) {
@@ -7226,10 +7353,88 @@ function getCurrentCeilingPayload() {
                     syncZoomSlider();
                     overviewOn = false;
                     overviewBtn.textContent = '🔝 Весь потолок';
+                    applyCam();
+                    invalidate();
                 }
-                applyCam();
             };
             lightPanel.appendChild(overviewBtn);
+
+            // Фото потолка для коммерческого предложения
+            const kpPhotoBtn = document.createElement('button');
+            kpPhotoBtn.type = 'button';
+            kpPhotoBtn.textContent = '📷 Фото для КП';
+            kpPhotoBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(80,40,0,0.55);color:#fff;font-size:12px;margin-top:4px;';
+            kpPhotoBtn.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    captureCeilingPhotoForKP();
+                } catch (err) {
+                    console.warn(err);
+                    showToast('Не удалось сделать фото', 2500);
+                }
+            };
+            lightPanel.appendChild(kpPhotoBtn);
+
+            function captureCeilingPhotoForKP() {
+                if (!renderer || !scene || !camera) {
+                    showToast('3D не готово', 2000);
+                    return;
+                }
+                // угол обзора потолка
+                if (typeof goCeilingOverviewCam === 'function') goCeilingOverviewCam();
+                // скрыть UI-мебель опционально — оставляем, потолок важнее
+                // несколько кадров для стабилизации
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        if (typeof stepCam === 'function') stepCam(0.05);
+                        applyCam();
+                        if (typeof renderFrame === 'function') renderFrame();
+                        else renderer.render(scene, camera);
+                    } catch (e1) {}
+                }
+                let dataUrl = '';
+                try {
+                    // высокий JPEG для КП
+                    dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.92);
+                } catch (e2) {
+                    showToast('Ошибка снимка', 2000);
+                    return;
+                }
+                if (!dataUrl || dataUrl.length < 1000) {
+                    showToast('Пустой снимок', 2000);
+                    return;
+                }
+                // индекс текущего потолка
+                let idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
+                    ? editCeilingIndex
+                    : (completedCeilings && completedCeilings.length) || 0;
+                if (typeof window._kpPhotos !== 'object' || !window._kpPhotos) window._kpPhotos = {};
+                window._kpPhotos[idx] = dataUrl;
+                // в текущий payload / completed
+                try {
+                    if (completedCeilings && completedCeilings[idx]) {
+                        completedCeilings[idx].kp_photo = dataUrl;
+                    }
+                } catch (e3) {}
+                try {
+                    localStorage.setItem('zamer_kp_photos_v1', JSON.stringify(window._kpPhotos));
+                } catch (e4) {
+                    // localStorage может не вместить — ок, держим в памяти
+                    console.warn('kp photo localStorage', e4);
+                }
+                // скачать файл — чтобы точно сохранить для КП
+                try {
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = 'KP_potolok_' + (idx + 1) + '.jpg';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } catch (e5) {}
+                showToast('Фото потолка №' + (idx + 1) + ' сохранено для КП', 3200);
+                kpPhotoBtn.textContent = '📷 Фото ✓ №' + (idx + 1);
+            }
 
             // Мебель — задаёт масштаб: без неё комната читается как коробка
             if (furnitureGroup && furnitureGroup.children.length) {
@@ -7727,6 +7932,11 @@ function getCurrentCeilingPayload() {
             } catch (e) { console.warn('loadCatalogFromUrl', e); }
         }
         loadCatalogFromUrl();
+        try {
+            const rawKp = localStorage.getItem('zamer_kp_photos_v1');
+            if (rawKp) window._kpPhotos = JSON.parse(rawKp) || {};
+        } catch (e) { window._kpPhotos = window._kpPhotos || {}; }
+
 
         // ---- Инициализация ----
         const webApp = getTelegramWebApp();
