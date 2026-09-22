@@ -3702,17 +3702,11 @@
             var current;
             try { current = getCurrentCeilingPayload(); } catch (e) { console.warn(e); return false; }
             if (!current || !current.points || current.points.length < 3) return false;
+            // Только явная правка существующего индекса — обновляем его.
+            // НЕ склеиваем «похожие» потолки: одинаковые комнаты в одном заказе — норма.
             if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
                 completedCeilings[editCeilingIndex] = current;
                 return true;
-            }
-            if (completedCeilings.length) {
-                var last = completedCeilings[completedCeilings.length - 1];
-                if (sameCeilingGeom(last, current)) {
-                    completedCeilings[completedCeilings.length - 1] = current;
-                    editCeilingIndex = completedCeilings.length - 1;
-                    return true;
-                }
             }
             completedCeilings.push(current);
             editCeilingIndex = completedCeilings.length - 1;
@@ -3846,27 +3840,51 @@ function getCurrentCeilingPayload() {
         }
 
         function addCeiling() {
-            if (state === 'INSTALL') {
-                showToast('Нажмите «Готово» или «Пропустить» в монтаже.', 2500);
-                return;
+            // Автозавершение монтажа/материала, чтобы не терять текущий потолок
+            if (state === 'INSTALL' || state === 'SELECT_MATERIAL') {
+                try {
+                    if (state === 'INSTALL' && typeof finishInstall === 'function') {
+                        // сохранить профиль по умолчанию если не красили
+                        try {
+                            if (installMode === 'profile' && !profileEdgesPainted) {
+                                sideProfiles = points.map(function () { return selectedProfileName; });
+                            }
+                        } catch (e0) {}
+                    }
+                } catch (e1) {}
+                // переводим в DONE без показа тостов finishInstall — сохраним ниже
+                state = 'DONE';
             }
             if (state !== 'DONE' && !(isClosed && points.length >= 3 && edges.length)) {
-                showToast('Сначала завершите текущий потолок.', 2500);
+                showToast('Сначала завершите текущий потолок (замкните и введите размеры).', 2500);
                 return;
             }
-            if (!ensureCurrentCeilingSaved()) {
-                showToast('Нет готового потолка.', 2000);
-                return;
+            // Важно: перед новым потолком всегда пушим текущий как отдельную запись
+            if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0) {
+                // обновляем существующий
+                if (!ensureCurrentCeilingSaved()) {
+                    showToast('Нет готового потолка.', 2000);
+                    return;
+                }
+            } else {
+                if (!ensureCurrentCeilingSaved()) {
+                    showToast('Нет готового потолка.', 2000);
+                    return;
+                }
             }
+            // Сброс индекса, чтобы следующий потолок НЕ перезаписал предыдущий
+            editCeilingIndex = -1;
             startNextCeilingDrawing();
         }
 
         function startNextCeilingDrawing() {
+            // full=false — НЕ очищает completedCeilings
             resetCurrentDrawing(false);
+            editCeilingIndex = -1; // новый потолок — всегда новая запись
             updateCeilingsList();
             updateSavedChip();
             showToast(
-                'Потолок №' + completedCeilings.length + ' сохранён. Тапайте углы следующего, затем замкните и введите размеры — как в первый раз.',
+                'Потолок №' + completedCeilings.length + ' сохранён. Тапайте углы следующего (№' + (completedCeilings.length + 1) + '), затем замкните и введите размеры.',
                 4500
             );
         }
@@ -4043,16 +4061,22 @@ function getCurrentCeilingPayload() {
                     } catch (e) { console.warn(e); }
                 }
                 (function () {
+                    // Не удаляем потолки с одинаковой геометрией — в заказе могут быть
+                    // две одинаковые комнаты. Убираем только точные подряд дубли (двойной push).
                     var out = [];
-                    completedCeilings.forEach(function (c) {
-                        var dup = false;
-                        for (var i = 0; i < out.length; i++) {
-                            if (typeof sameCeilingGeom === 'function' && sameCeilingGeom(out[i], c)) { dup = true; break; }
+                    completedCeilings.forEach(function (c, idx) {
+                        if (idx > 0 && out.length) {
+                            var prev = out[out.length - 1];
+                            if (prev === c) return;
+                            // идентичный JSON подряд — случайный двойной save
+                            try {
+                                if (JSON.stringify(prev) === JSON.stringify(c)) return;
+                            } catch (e) {}
                         }
-                        if (!dup) out.push(c);
+                        out.push(c);
                     });
                     if (out.length !== completedCeilings.length) {
-                        console.warn('[sendToBot] dedupe', completedCeilings.length, '->', out.length);
+                        console.warn('[sendToBot] dedupe consecutive', completedCeilings.length, '->', out.length);
                         completedCeilings = out;
                     }
                 })();
@@ -4091,10 +4115,11 @@ function getCurrentCeilingPayload() {
                         var fx = [];
                         if (level < 6) {
                             var list = (c.fixtures || []).slice();
+                            // Споты и светильники (light_point) — разные объекты; режем только споты при нехватке места
                             var spots = list.filter(function (f) { return f.type === 'spot'; });
                             var rest = list.filter(function (f) { return f.type !== 'spot'; });
                             if (level >= 5) {
-                                list = rest;
+                                list = rest; // без спотов, light_point/люстры/полосы/карнизы остаются
                             } else if (level >= 4) {
                                 list = rest.concat(spots.slice(0, 20));
                             } else if (level >= 3) {
@@ -4131,9 +4156,18 @@ function getCurrentCeilingPayload() {
                                 if (f.type === 'chandelier') {
                                     return { t: 'c', x: asM(f.x), y: asM(f.y) };
                                 }
+                                if (f.type === 'light_point') {
+                                    var lp = { t: 't', x: asM(f.x), y: asM(f.y) };
+                                    if (level < 1 && f.offset_wall_a_cm != null) lp.a = r(f.offset_wall_a_cm, 0);
+                                    if (level < 1 && f.offset_wall_b_cm != null) lp.b = r(f.offset_wall_b_cm, 0);
+                                    if (f.material || f.name) lp.n = (f.material || f.name || '').toString();
+                                    return lp;
+                                }
+                                // spot (и только spot)
                                 var s = { t: 's', x: asM(f.x), y: asM(f.y) };
                                 if (level < 1 && f.offset_wall_a_cm != null) s.a = r(f.offset_wall_a_cm, 0);
                                 if (level < 1 && f.offset_wall_b_cm != null) s.b = r(f.offset_wall_b_cm, 0);
+                                if (f.material || f.name) s.n = (f.material || f.name || '').toString();
                                 return s;
                             });
                         }
