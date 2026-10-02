@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20261002kp33</title>
+    <title>ПРО Замер потолков v20261002kp43</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -4172,7 +4172,7 @@ function getCurrentCeilingPayload() {
                                 } else if (kpRaw.indexOf('data:image/') === 0) {
                                     // вшиваем прямо в пакет, если влезает в лимит Telegram (4096)
                                     // сильно сжатый JPEG ~2–3КБ base64 часто проходит
-                                    if (kpRaw.length < 3200) {
+                                    if (kpRaw.length < 3600) {
                                         outC.kp = kpRaw;
                                     }
                                 }
@@ -4196,69 +4196,74 @@ function getCurrentCeilingPayload() {
                 }
 
 
-                // Перед отправкой: dataURL → хостинг (иначе фото НЕ попадёт в бот, лимит 4096)
-                try {
+                
+                // ===== КП-фото: впихнуть в лимит 4096 =====
+                async function fitKpIntoCeilings() {
                     if (typeof window._kpPhotos !== 'object' || !window._kpPhotos) window._kpPhotos = {};
-                    for (var _ki = 0; _ki < completedCeilings.length; _ki++) {
-                        var _cc = completedCeilings[_ki];
-                        var _raw = (_cc && (_cc.kp_photo || _cc.kp_photo_url)) || window._kpPhotos[_ki] || window._kpPhotos[String(_ki)];
-                        if (!_raw || typeof _raw !== 'string') continue;
-                        if (/^https?:\/\//i.test(_raw) && _raw.length < 300) {
-                            window._kpPhotos[_ki] = _raw;
-                            if (_cc) { _cc.kp_photo = _raw; _cc.kp_photo_url = _raw; }
+                    for (var i = 0; i < completedCeilings.length; i++) {
+                        var cc = completedCeilings[i];
+                        var raw = (cc && (cc.kp_photo || cc.kp_photo_url))
+                            || window._kpPhotos[i] || window._kpPhotos[String(i)] || null;
+                        if (!raw || typeof raw !== 'string') continue;
+
+                        // выкинуть tmpfiles
+                        if (raw.indexOf('tmpfiles') >= 0) {
+                            raw = null;
+                            if (cc) { delete cc.kp_photo; delete cc.kp_photo_url; }
+                            delete window._kpPhotos[i];
                             continue;
                         }
-                        if (_raw.indexOf('data:') === 0) {
-                            note('Загружаю фото КП потолка №' + (_ki + 1) + '…');
-                            var _url = await uploadKpImage(_raw);
-                            if (_url) {
-                                window._kpPhotos[_ki] = _url;
-                                if (_cc) { _cc.kp_photo = _url; _cc.kp_photo_url = _url; }
-                                note('Фото КП №' + (_ki + 1) + ' загружено');
-                            } else {
-                                note('⚠ Фото КП №' + (_ki + 1) + ' не загрузилось — в КП может не попасть');
-                            }
+
+                        // уже короткий http (не tmpfiles)
+                        if (/^https?:\/\//i.test(raw) && raw.length < 300) {
+                            window._kpPhotos[i] = raw;
+                            if (cc) { cc.kp_photo = raw; cc.kp_photo_url = raw; }
+                            continue;
+                        }
+
+                        // dataURL или нужно перезалить
+                        var dataUrl = raw.indexOf('data:') === 0 ? raw : null;
+                        if (!dataUrl) {
+                            // http но длинный/плохой — пропускаем
+                            continue;
+                        }
+
+                        // 1) попробовать хостинг
+                        note('КП-фото №' + (i + 1) + ': загрузка…');
+                        var url = null;
+                        try { url = await uploadKpImage(dataUrl); } catch (eU) {}
+                        if (url && url.indexOf('tmpfiles') < 0) {
+                            window._kpPhotos[i] = url;
+                            if (cc) { cc.kp_photo = url; cc.kp_photo_url = url; }
+                            note('КП-фото №' + (i + 1) + ': ссылка OK');
+                            continue;
+                        }
+
+                        // 2) вшить dataURL, поджимая пока не влезет
+                        var sides = [720, 560, 480, 400, 320];
+                        var quals = [0.55, 0.45, 0.4, 0.35, 0.3];
+                        var fitted = null;
+                        for (var s = 0; s < sides.length; s++) {
+                            try {
+                                fitted = await compressDataUrl(dataUrl, sides[s], quals[s]);
+                            } catch (eC) { fitted = null; }
+                            if (fitted && fitted.length < 3000) break;
+                        }
+                        if (fitted && fitted.length < 3000) {
+                            window._kpPhotos[i] = fitted;
+                            if (cc) { cc.kp_photo = fitted; cc.kp_photo_url = fitted; }
+                            note('КП-фото №' + (i + 1) + ': вшито ' + fitted.length + ' симв.');
+                        } else {
+                            note('⚠ КП-фото №' + (i + 1) + ' не влезло в лимит Telegram');
+                            if (cc) { delete cc.kp_photo; delete cc.kp_photo_url; }
+                            delete window._kpPhotos[i];
                         }
                     }
-                } catch (eUp) { console.warn('kp upload before send', eUp); }
-
-
-                // Сжать dataURL-фото до лимита sendData
-                try {
-                    for (var _ki2 = 0; _ki2 < completedCeilings.length; _ki2++) {
-                        var _cc2 = completedCeilings[_ki2];
-                        var _r2 = (_cc2 && (_cc2.kp_photo || _cc2.kp_photo_url)) || (window._kpPhotos && (window._kpPhotos[_ki2] || window._kpPhotos[String(_ki2)]));
-                        if (_r2 && typeof _r2 === 'string' && _r2.indexOf('data:') === 0 && _r2.length >= 3200) {
-                            note('Сжимаю фото КП №' + (_ki2 + 1) + ' под лимит…');
-                            var _tiny = await compressDataUrl(_r2, 560, 0.5);
-                            if (_tiny && _tiny.length < 3200) {
-                                window._kpPhotos[_ki2] = _tiny;
-                                if (_cc2) { _cc2.kp_photo = _tiny; _cc2.kp_photo_url = _tiny; }
-                            }
-                        }
-                        // выкинуть tmpfiles — бот получит HTML
-                        if (_r2 && typeof _r2 === 'string' && _r2.indexOf('tmpfiles') >= 0) {
-                            note('tmpfiles не подходит, сжимаю фото локально…');
-                            var _src = (_cc2 && _cc2.kp_photo && _cc2.kp_photo.indexOf('data:') === 0) ? _cc2.kp_photo : null;
-                            // если только tmpfiles URL — нечего сжимать, фото потеряно
-                            if (!_src && window._kpPhotos) {
-                                // already lost
-                            }
-                            if (_src) {
-                                var _t2 = await compressDataUrl(_src, 560, 0.5);
-                                if (_t2) {
-                                    window._kpPhotos[_ki2] = _t2;
-                                    if (_cc2) { _cc2.kp_photo = _t2; _cc2.kp_photo_url = _t2; }
-                                }
-                            } else {
-                                if (_cc2) { delete _cc2.kp_photo; delete _cc2.kp_photo_url; }
-                                if (window._kpPhotos) delete window._kpPhotos[_ki2];
-                            }
-                        }
-                    }
-                } catch (eTiny) { console.warn(eTiny); }
+                }
+                await fitKpIntoCeilings();
 
                 var LIMIT = 4096;
+
                 var toSend = null;
                 var usedLevel = 0;
                 var noteExtra = '';
@@ -4303,7 +4308,30 @@ function getCurrentCeilingPayload() {
                 } catch (e) {}
 
                 try {
-                    webApp.sendData(toSend);
+                    
+                // проверка: ушло ли КП-фото
+                try {
+                    var _chk = JSON.parse(toSend.indexOf('"drawing_set_z"') >= 0
+                        ? makePayload(usedLevel) : toSend);
+                    if (toSend.indexOf('drawing_set_z') >= 0) _chk = JSON.parse(makePayload(usedLevel));
+                    var _hasKp = false;
+                    (_chk.ceilings || []).forEach(function (c) {
+                        if (c.kp) _hasKp = true;
+                    });
+                    if (!_hasKp) {
+                        var anyKp = false;
+                        for (var _zi = 0; _zi < completedCeilings.length; _zi++) {
+                            if ((completedCeilings[_zi] || {}).kp_photo || (window._kpPhotos || {})[_zi]) anyKp = true;
+                        }
+                        if (anyKp) {
+                            note('⚠ Фото КП не влезло в пакет (' + byteLen(toSend) + ' б). Уберите лишние светильники и повторите.');
+                        }
+                    } else {
+                        note('✓ Фото КП в пакете');
+                    }
+                } catch (eChk) {}
+
+                webApp.sendData(toSend);
                 } catch (sendErr) {
                     var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
                     note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате.');
@@ -7840,8 +7868,14 @@ async function captureCeilingPhotoForKP() {
                     : (completedCeilings && completedCeilings.length) || 0;
 
                 if (typeof window._kpPhotos !== 'object' || !window._kpPhotos) window._kpPhotos = {};
-                // Сразу кладём dataURL — попадёт в КП даже без хостинга
+                // Сразу кладём (полное + потом подожмём при отправке)
                 window._kpPhotos[idx] = dataUrl;
+                try {
+                    if (typeof dataUrlTiny === 'string' && dataUrlTiny.length > 100) {
+                        // tiny как запасной
+                        window._kpPhotos['t' + idx] = dataUrlTiny;
+                    }
+                } catch (eTinyStore) {}
                 try {
                     if (completedCeilings && completedCeilings[idx]) {
                         completedCeilings[idx].kp_photo = dataUrl;
