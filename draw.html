@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20261002kp2</title>
+    <title>ПРО Замер потолков v20261002kp33</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -4166,8 +4166,16 @@ function getCurrentCeilingPayload() {
                                 if (_ix < 0) _ix = 0;
                                 kpRaw = window._kpPhotos[_ix] || window._kpPhotos[String(_ix)] || null;
                             }
-                            if (kpRaw && typeof kpRaw === 'string' && /^https?:\/\//i.test(kpRaw) && kpRaw.length < 300) {
-                                outC.kp = kpRaw;
+                                                        if (kpRaw && typeof kpRaw === 'string') {
+                                if (/^https?:\/\//i.test(kpRaw) && kpRaw.length < 300 && kpRaw.indexOf('tmpfiles') < 0) {
+                                    outC.kp = kpRaw;
+                                } else if (kpRaw.indexOf('data:image/') === 0) {
+                                    // вшиваем прямо в пакет, если влезает в лимит Telegram (4096)
+                                    // сильно сжатый JPEG ~2–3КБ base64 часто проходит
+                                    if (kpRaw.length < 3200) {
+                                        outC.kp = kpRaw;
+                                    }
+                                }
                             }
                         } catch (eKp) {}
                         return outC;
@@ -4213,6 +4221,42 @@ function getCurrentCeilingPayload() {
                         }
                     }
                 } catch (eUp) { console.warn('kp upload before send', eUp); }
+
+
+                // Сжать dataURL-фото до лимита sendData
+                try {
+                    for (var _ki2 = 0; _ki2 < completedCeilings.length; _ki2++) {
+                        var _cc2 = completedCeilings[_ki2];
+                        var _r2 = (_cc2 && (_cc2.kp_photo || _cc2.kp_photo_url)) || (window._kpPhotos && (window._kpPhotos[_ki2] || window._kpPhotos[String(_ki2)]));
+                        if (_r2 && typeof _r2 === 'string' && _r2.indexOf('data:') === 0 && _r2.length >= 3200) {
+                            note('Сжимаю фото КП №' + (_ki2 + 1) + ' под лимит…');
+                            var _tiny = await compressDataUrl(_r2, 560, 0.5);
+                            if (_tiny && _tiny.length < 3200) {
+                                window._kpPhotos[_ki2] = _tiny;
+                                if (_cc2) { _cc2.kp_photo = _tiny; _cc2.kp_photo_url = _tiny; }
+                            }
+                        }
+                        // выкинуть tmpfiles — бот получит HTML
+                        if (_r2 && typeof _r2 === 'string' && _r2.indexOf('tmpfiles') >= 0) {
+                            note('tmpfiles не подходит, сжимаю фото локально…');
+                            var _src = (_cc2 && _cc2.kp_photo && _cc2.kp_photo.indexOf('data:') === 0) ? _cc2.kp_photo : null;
+                            // если только tmpfiles URL — нечего сжимать, фото потеряно
+                            if (!_src && window._kpPhotos) {
+                                // already lost
+                            }
+                            if (_src) {
+                                var _t2 = await compressDataUrl(_src, 560, 0.5);
+                                if (_t2) {
+                                    window._kpPhotos[_ki2] = _t2;
+                                    if (_cc2) { _cc2.kp_photo = _t2; _cc2.kp_photo_url = _t2; }
+                                }
+                            } else {
+                                if (_cc2) { delete _cc2.kp_photo; delete _cc2.kp_photo_url; }
+                                if (window._kpPhotos) delete window._kpPhotos[_ki2];
+                            }
+                        }
+                    }
+                } catch (eTiny) { console.warn(eTiny); }
 
                 var LIMIT = 4096;
                 var toSend = null;
@@ -7714,49 +7758,48 @@ function getCurrentCeilingPayload() {
 
             async function uploadKpImage(dataUrl) {
                 var blob = dataUrlToBlob(dataUrl);
-                // 1) catbox.moe
-                try {
-                    var fd = new FormData();
-                    fd.append('reqtype', 'fileupload');
-                    fd.append('fileToUpload', blob, 'kp_potolok.jpg');
-                    var r = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd });
-                    var t = (await r.text()).trim();
-                    if (t && /^https?:\/\//i.test(t) && t.length < 300) return t;
-                } catch (e1) { console.warn('catbox', e1); }
-                // 2) litterbox 72h
-                try {
-                    var fd2 = new FormData();
-                    fd2.append('reqtype', 'fileupload');
-                    fd2.append('time', '72h');
-                    fd2.append('fileToUpload', blob, 'kp_potolok.jpg');
-                    var r2 = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd2 });
-                    var t2 = (await r2.text()).trim();
-                    if (t2 && /^https?:\/\//i.test(t2) && t2.length < 300) return t2;
-                } catch (e2) { console.warn('litterbox', e2); }
-                // 3) tmpfiles.org
-                try {
-                    var fd3 = new FormData();
-                    fd3.append('file', blob, 'kp.jpg');
-                    var r3 = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd3 });
-                    var j3 = await r3.json();
-                    var u3 = (j3 && j3.data && (j3.data.url || j3.data.download)) || '';
-                    if (u3) {
-                        u3 = String(u3).replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-                        if (/^https?:\/\//i.test(u3)) return u3;
+                // Только хосты, которые отдают ПРЯМУЮ ссылку на файл (не HTML-страницу).
+                // tmpfiles.org убран — отдаёт HTML, бот не может вставить в КП.
+                var hosts = [
+                    async function () {
+                        var fd = new FormData();
+                        fd.append('reqtype', 'fileupload');
+                        fd.append('fileToUpload', blob, 'kp_potolok.jpg');
+                        var r = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd });
+                        var t = (await r.text()).trim();
+                        if (t && /^https?:\/\/files\.catbox\.moe\//i.test(t)) return t;
+                        if (t && /^https?:\/\//i.test(t) && t.length < 200 && t.indexOf('tmpfiles') < 0) return t;
+                        return null;
+                    },
+                    async function () {
+                        var fd = new FormData();
+                        fd.append('reqtype', 'fileupload');
+                        fd.append('time', '72h');
+                        fd.append('fileToUpload', blob, 'kp_potolok.jpg');
+                        var r = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd });
+                        var t = (await r.text()).trim();
+                        if (t && /^https?:\/\//i.test(t) && t.length < 200 && t.indexOf('tmpfiles') < 0) return t;
+                        return null;
+                    },
+                    async function () {
+                        var fd = new FormData();
+                        fd.append('file', blob, 'kp.jpg');
+                        var r = await fetch('https://0x0.st', { method: 'POST', body: fd });
+                        var t = (await r.text()).trim();
+                        if (t && /^https?:\/\//i.test(t) && t.length < 200) return t;
+                        return null;
                     }
-                } catch (e3) { console.warn('tmpfiles', e3); }
-                // 4) 0x0.st
-                try {
-                    var fd4 = new FormData();
-                    fd4.append('file', blob, 'kp.jpg');
-                    var r4 = await fetch('https://0x0.st', { method: 'POST', body: fd4 });
-                    var t4 = (await r4.text()).trim();
-                    if (t4 && /^https?:\/\//i.test(t4) && t4.length < 300) return t4;
-                } catch (e4) { console.warn('0x0', e4); }
+                ];
+                for (var i = 0; i < hosts.length; i++) {
+                    try {
+                        var u = await hosts[i]();
+                        if (u) return u;
+                    } catch (e) { console.warn('upload host', i, e); }
+                }
                 return null;
             }
 
-            async function captureCeilingPhotoForKP() {
+async function captureCeilingPhotoForKP() {
                 if (!renderer || !scene || !camera) {
                     showToast('3D не готово', 2000);
                     return;
@@ -7790,6 +7833,8 @@ function getCurrentCeilingPayload() {
                 }
                 // Сжимаем (не сохраняем на телефон — только в память для КП)
                 dataUrl = await compressDataUrl(dataUrl, 1200, 0.75);
+                // ультра-сжатие для встраивания в sendData (если хостинг недоступен)
+                var dataUrlTiny = await compressDataUrl(dataUrl, 640, 0.55);
                 var idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
                     ? editCeilingIndex
                     : (completedCeilings && completedCeilings.length) || 0;
@@ -7826,7 +7871,16 @@ function getCurrentCeilingPayload() {
                     showToast('✅ Фото потолка №' + (idx + 1) + ' в КП (не на телефон)', 3500);
                 } else {
                     // dataURL остаётся в памяти и уйдёт в бот вместе с чертежом
-                    showToast('✅ Фото №' + (idx + 1) + ' сохранено для КП (уйдёт с замером)', 4000);
+                    if (typeof dataUrlTiny === 'string' && dataUrlTiny.length < 3200) {
+                        window._kpPhotos[idx] = dataUrlTiny;
+                        try {
+                            if (completedCeilings && completedCeilings[idx]) {
+                                completedCeilings[idx].kp_photo = dataUrlTiny;
+                                completedCeilings[idx].kp_photo_url = dataUrlTiny;
+                            }
+                        } catch (eT) {}
+                    }
+                    showToast('✅ Фото №' + (idx + 1) + ' в КП (без хостинга, сжато)', 4000);
                 }
                 kpPhotoBtn.disabled = false;
                 kpPhotoBtn.textContent = '📷 Фото ✓ №' + (idx + 1);
