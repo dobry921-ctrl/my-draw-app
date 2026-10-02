@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20261002kp</title>
+    <title>ПРО Замер потолков v20261002kp2</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -4186,6 +4186,33 @@ function getCurrentCeilingPayload() {
                     if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
                     return JSON.stringify(payload);
                 }
+
+
+                // Перед отправкой: dataURL → хостинг (иначе фото НЕ попадёт в бот, лимит 4096)
+                try {
+                    if (typeof window._kpPhotos !== 'object' || !window._kpPhotos) window._kpPhotos = {};
+                    for (var _ki = 0; _ki < completedCeilings.length; _ki++) {
+                        var _cc = completedCeilings[_ki];
+                        var _raw = (_cc && (_cc.kp_photo || _cc.kp_photo_url)) || window._kpPhotos[_ki] || window._kpPhotos[String(_ki)];
+                        if (!_raw || typeof _raw !== 'string') continue;
+                        if (/^https?:\/\//i.test(_raw) && _raw.length < 300) {
+                            window._kpPhotos[_ki] = _raw;
+                            if (_cc) { _cc.kp_photo = _raw; _cc.kp_photo_url = _raw; }
+                            continue;
+                        }
+                        if (_raw.indexOf('data:') === 0) {
+                            note('Загружаю фото КП потолка №' + (_ki + 1) + '…');
+                            var _url = await uploadKpImage(_raw);
+                            if (_url) {
+                                window._kpPhotos[_ki] = _url;
+                                if (_cc) { _cc.kp_photo = _url; _cc.kp_photo_url = _url; }
+                                note('Фото КП №' + (_ki + 1) + ' загружено');
+                            } else {
+                                note('⚠ Фото КП №' + (_ki + 1) + ' не загрузилось — в КП может не попасть');
+                            }
+                        }
+                    }
+                } catch (eUp) { console.warn('kp upload before send', eUp); }
 
                 var LIMIT = 4096;
                 var toSend = null;
