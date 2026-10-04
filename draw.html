@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20261002kp43</title>
+    <title>ПРО Замер потолков v20261004track3</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -4634,8 +4634,8 @@ function getCurrentCeilingPayload() {
                             const pk = toScreen(f.points[k].x, f.points[k].y);
                             ctx.lineTo(pk.x, pk.y);
                         }
-                        ctx.strokeStyle = isTrack ? '#9b59b6' : '#f1c40f';
-                        ctx.lineWidth = isTrack ? 5 : 4;
+                        ctx.strokeStyle = isTrack ? '#1a1a1a' : '#f1c40f';
+                        ctx.lineWidth = isTrack ? 6 : 4;
                         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
                         ctx.stroke();
                         if (isTrack) {
@@ -5265,8 +5265,8 @@ function getCurrentCeilingPayload() {
                         const s = toS(p.x, p.y);
                         if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
                     });
-                    ctx.strokeStyle = isTrack ? '#9b59b6' : '#f1c40f';
-                    ctx.lineWidth = isTrack ? 5 : 4;
+                    ctx.strokeStyle = isTrack ? '#1a1a1a' : '#f1c40f';
+                    ctx.lineWidth = isTrack ? 6 : 4;
                     ctx.lineCap = 'round';
                     ctx.stroke();
                 } else if (f.x != null) {
@@ -6789,16 +6789,138 @@ function getCurrentCeilingPayload() {
                 }
 
                 if (t === 'strip' && f.points && f.points.length >= 2) {
-                    const isTrack = /трек|track/i.test((f.material || '').toString());
+                    const isTrack = /трек|track/i.test((f.material || f.name || '').toString());
                     const sk = isTrack ? 'track' : 'strip';
-                    const r = isTrack ? 0.022 : 0.016;
+                    const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
+
+                    if (isTrack) {
+                        // ===== Трековая система =====
+                        // Шина = чёрный «теневой» профиль на потолке, СВЕТА НЕ ДАЁТ.
+                        // Источник света — только споты, висящие на шине (чёрные/белые).
+                        const railMat = new THREE.MeshLambertMaterial({
+                            color: 0x1a1a1a,
+                            emissive: 0x000000,
+                            emissiveIntensity: 0,
+                            side: THREE.DoubleSide
+                        });
+                        // профиль шины: узкий «теневой» канал (~2.2 см)
+                        const railW = 0.022;
+                        const railH = 0.014;
+                        let totalLen = 0;
+                        const segs = [];
+                        for (let i = 0; i < ptsM.length - 1; i++) {
+                            const a = ptsM[i], b = ptsM[i + 1];
+                            const dx = b.x - a.x, dz = b.z - a.z;
+                            const len = Math.hypot(dx, dz) || 0.01;
+                            segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
+                            totalLen += len;
+                            // прямоугольная шина
+                            const geom = new THREE.BoxGeometry(len, railH, railW);
+                            const mesh = new THREE.Mesh(geom, railMat);
+                            mesh.position.set((a.x + b.x) / 2, roomH - railH * 0.5 - 0.01, (a.z + b.z) / 2);
+                            // ориентация вдоль сегмента (ось X геометрии → вдоль dx,dz)
+                            mesh.rotation.y = -Math.atan2(dz, dx);
+                            scene.add(mesh);
+                            ceilingLights.push({
+                                kind: sk, light: null, mesh: mesh,
+                                baseIntensity: 0, baseEmissive: 0,
+                                onColor: 0x1a1a1a, offColor: 0x1a1a1a
+                            });
+                        }
+                        // угловые соединители шины
+                        for (let i = 0; i < ptsM.length; i++) {
+                            const joint = new THREE.Mesh(
+                                new THREE.BoxGeometry(railW * 1.15, railH, railW * 1.15),
+                                railMat
+                            );
+                            joint.position.set(ptsM[i].x, roomH - railH * 0.5 - 0.01, ptsM[i].z);
+                            scene.add(joint);
+                            ceilingLights.push({
+                                kind: sk, light: null, mesh: joint,
+                                baseIntensity: 0, baseEmissive: 0,
+                                onColor: 0x1a1a1a, offColor: 0x1a1a1a
+                            });
+                        }
+
+                        // Цвет корпуса спотов: белый если в названии «бел», иначе чёрный
+                        const matName = (f.material || f.name || '').toString().toLowerCase();
+                        const spotBodyWhite = /бел|white/i.test(matName);
+                        const bodyCol = spotBodyWhite ? 0xf0f0f0 : 0x1a1a1a;
+                        const bodyMat = new THREE.MeshPhongMaterial({
+                            color: bodyCol,
+                            shininess: 40,
+                            specular: 0x333333
+                        });
+                        // Споты вдоль шины каждые ~0.55 м (как на реальной трековой системе)
+                        const spacing = 0.55;
+                        const nSpots = Math.max(2, Math.min(14, Math.round(totalLen / spacing) || 2));
+                        const spotWatts = 12; // типичный трековый спот
+                        for (let k = 0; k < nSpots; k++) {
+                            const dist = ((k + 0.5) / nSpots) * totalLen;
+                            let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
+                            let segDx = 1, segDz = 0;
+                            for (let s = 0; s < segs.length; s++) {
+                                if (acc + segs[s].len >= dist) {
+                                    const tseg = (dist - acc) / segs[s].len;
+                                    px = segs[s].a.x + segs[s].dx * tseg;
+                                    pz = segs[s].a.z + segs[s].dz * tseg;
+                                    segDx = segs[s].dx; segDz = segs[s].dz;
+                                    break;
+                                }
+                                acc += segs[s].len;
+                            }
+                            // корпус спота — цилиндр, висит под шиной
+                            const bodyLen = 0.09;
+                            const bodyR = 0.022;
+                            const body = new THREE.Mesh(
+                                new THREE.CylinderGeometry(bodyR, bodyR * 0.85, bodyLen, 12),
+                                bodyMat
+                            );
+                            // «смотрит вниз» — ось цилиндра по Y
+                            const by = roomH - railH - 0.02 - bodyLen * 0.5;
+                            body.position.set(px, by, pz);
+                            scene.add(body);
+                            // линза / отверстие снизу
+                            const lens = new THREE.Mesh(
+                                new THREE.CircleGeometry(bodyR * 0.7, 12),
+                                new THREE.MeshBasicMaterial({ color: 0xfff4d0 })
+                            );
+                            lens.rotation.x = -Math.PI / 2;
+                            lens.position.set(px, by - bodyLen * 0.5 - 0.001, pz);
+                            scene.add(lens);
+
+                            // свет ТОЛЬКО от спота (направленный конус вниз)
+                            const intensity = Math.max(0.7, wattsToIntensity(spotWatts) * 7);
+                            const sl = addCappedSpotLight(0xfff6e8, intensity, 5.5, 0.42, 0.45);
+                            if (sl) {
+                                sl.position.set(px, by - bodyLen * 0.45, pz);
+                                sl.target.position.set(px, 0.05, pz);
+                                sl.target.updateMatrixWorld();
+                            }
+                            // без ореола на потолке — только конус спота вниз
+                            ceilingLights.push({
+                                kind: sk, light: sl, mesh: body, halo: null,
+                                baseIntensity: intensity, baseEmissive: 0,
+                                onColor: bodyCol, offColor: bodyCol
+                            });
+                            // линза: при выкл. — тёмная, без «горящего» жёлтого
+                            ceilingLights.push({
+                                kind: sk, light: null, mesh: lens, halo: null,
+                                baseIntensity: 0, baseEmissive: 0,
+                                onColor: 0xfff4d0, offColor: 0x1a1a1a
+                            });
+                        }
+                        return;
+                    }
+
+                    // ===== Обычная световая полоса (светит сама) =====
+                    const r = 0.016;
                     const stripMat = new THREE.MeshLambertMaterial({
-                        color: isTrack ? 0x333333 : 0xfff2aa,
-                        emissive: isTrack ? 0x222222 : 0xffe08a,
-                        emissiveIntensity: isTrack ? 0.4 : 1.2,
+                        color: 0xfff2aa,
+                        emissive: 0xffe08a,
+                        emissiveIntensity: 1.2,
                         side: THREE.DoubleSide
                     });
-                    const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
                     for (let i = 0; i < ptsM.length - 1; i++) {
                         const a = ptsM[i], b = ptsM[i + 1];
                         const dx = b.x - a.x, dz = b.z - a.z;
@@ -6812,14 +6934,13 @@ function getCurrentCeilingPayload() {
                         mesh.rotation.y = -Math.atan2(dz, dx);
                         scene.add(mesh);
                         ceilingLights.push({
-                            kind: sk, light: null, mesh,
+                            kind: sk, light: null, mesh: mesh,
                             baseIntensity: 0,
                             baseEmissive: stripMat.emissiveIntensity,
-                            onColor: isTrack ? 0x333333 : 0xfff2aa,
-                            offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
+                            onColor: 0xfff2aa,
+                            offColor: 0xb8b8b8
                         });
                     }
-                    // равномерный свет вдоль полосы — реально освещает комнату
                     let totalLen = 0;
                     const segs = [];
                     for (let i = 0; i < ptsM.length - 1; i++) {
@@ -6829,7 +6950,6 @@ function getCurrentCeilingPayload() {
                         segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
                         totalLen += len;
                     }
-                    // Световая полоса 15 Вт/м (трек — та же шкала)
                     const nWant = Math.max(2, Math.min(6, Math.ceil(totalLen / 1.2)));
                     const stripWatts = totalLen * LIGHT_WATTS.strip_per_m;
                     const baseI = wattsToIntensity(stripWatts) / nWant;
@@ -6838,28 +6958,21 @@ function getCurrentCeilingPayload() {
                         let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
                         for (let s = 0; s < segs.length; s++) {
                             if (acc + segs[s].len >= dist) {
-                                const t = (dist - acc) / segs[s].len;
-                                px = segs[s].a.x + segs[s].dx * t;
-                                pz = segs[s].a.z + segs[s].dz * t;
+                                const tseg = (dist - acc) / segs[s].len;
+                                px = segs[s].a.x + segs[s].dx * tseg;
+                                pz = segs[s].a.z + segs[s].dz * tseg;
                                 break;
                             }
                             acc += segs[s].len;
                         }
-                        // большой радиус, слабая яркость, сильное затухание → без «бликов» на стенах
-                        const pl = addStripPointLight(isTrack ? 0xe8e0ff : 0xfff2d0, baseI, 6.5, 2.4);
+                        const pl = addStripPointLight(0xfff2d0, baseI, 6.5, 2.4);
                         pl.position.set(px, roomH - 0.35, pz);
                         ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
                     }
-                    // общий мягкий fill ~25% мощности полосы
-                    const fillI = wattsToIntensity(stripWatts) * 0.25 * (isTrack ? 0.85 : 1);
-                    const fill = new THREE.HemisphereLight(
-                        isTrack ? 0xe8e0ff : 0xfff5e0,
-                        isTrack ? 0x2a2830 : 0x2a2820,
-                        fillI
-                    );
+                    const fillI = wattsToIntensity(stripWatts) * 0.25;
+                    const fill = new THREE.HemisphereLight(0xfff5e0, 0x2a2820, fillI);
                     scene.add(fill);
                     ceilingLights.push({ kind: sk, light: fill, mesh: null, baseIntensity: fillI, baseEmissive: 0, onColor: 0xfff8e0 });
-                    // шары на углах — плавная стыковка сегментов
                     for (let i = 0; i < ptsM.length; i++) {
                         const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.05, 10, 10), stripMat);
                         j.position.set(ptsM[i].x, roomH - 0.04, ptsM[i].z);
@@ -6868,8 +6981,8 @@ function getCurrentCeilingPayload() {
                             kind: sk, light: null, mesh: j,
                             baseIntensity: 0,
                             baseEmissive: stripMat.emissiveIntensity,
-                            onColor: isTrack ? 0x333333 : 0xfff2aa,
-                            offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
+                            onColor: 0xfff2aa,
+                            offColor: 0xb8b8b8
                         });
                     }
                     return;
@@ -7307,7 +7420,10 @@ function getCurrentCeilingPayload() {
                 // Выкл. свет = гасим излучение, корпус/трек/полоса ОСТАЮТСЯ видимыми
                 ceilingLights.forEach(item => {
                     const on = lightKindState[item.kind] !== false;
-                    if (item.light) item.light.intensity = on ? item.baseIntensity : 0;
+                    if (item.light) {
+                        item.light.intensity = on ? item.baseIntensity : 0;
+                        item.light.visible = on;
+                    }
                     if (item.halo) item.halo.visible = on;
                     if (item.mesh) {
                         item.mesh.visible = true;
