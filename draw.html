@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-    <title>ПРО Замер потолков v20261004track3</title>
+    <title>ПРО Замер потолков v20261002kp43</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <style>
@@ -265,13 +265,23 @@
         <button id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
         <input type="file" id="plan-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="onPlanPhotoSelected(event)">
         <!-- Плавающая панель управления фото-планом (масштаб/калибровка/удаление) -->
-        <div id="plan-photo-toolbar" style="display:none;position:absolute;left:8px;top:8px;z-index:6;flex-direction:column;gap:5px;background:rgba(20,22,28,0.72);padding:8px;border-radius:10px;max-width:200px;box-shadow:0 4px 14px rgba(0,0,0,0.3);">
-            <div style="color:#fff;font-size:0.72rem;line-height:1.35;">Обведите контур комнаты по фото, тапая углы. Сначала откалибруйте масштаб.</div>
+        <div id="plan-photo-toolbar" style="display:none;position:absolute;left:8px;top:8px;z-index:6;flex-direction:column;gap:5px;background:rgba(20,22,28,0.72);padding:8px;border-radius:10px;max-width:220px;box-shadow:0 4px 14px rgba(0,0,0,0.3);">
+            <div id="plan-toolbar-hint" style="color:#fff;font-size:0.72rem;line-height:1.35;">Сначала откалибруйте масштаб. Затем рисуйте комнаты, внутренние стены и двери.</div>
             <button type="button" class="btn btn-outline" style="padding:6px;font-size:0.78rem;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="startPlanCalibration()">📏 Откалибровать масштаб</button>
             <div style="display:flex;align-items:center;gap:6px;">
                 <span style="color:#ddd;font-size:0.7rem;">Прозрачность</span>
                 <input type="range" min="0.15" max="1" step="0.05" value="0.6" style="flex:1;" oninput="setPlanPhotoOpacity(this.value)">
             </div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;">
+                <button type="button" class="btn plan-mode-btn active" id="pmode-room" style="flex:1;min-width:60px;padding:5px 3px;font-size:0.68rem;background:rgba(0,102,204,0.85);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="setPlanDrawMode('room')">🏠 Комната</button>
+                <button type="button" class="btn plan-mode-btn" id="pmode-internal" style="flex:1;min-width:60px;padding:5px 3px;font-size:0.68rem;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="setPlanDrawMode('internal')">🧱 Стена</button>
+                <button type="button" class="btn plan-mode-btn" id="pmode-door" style="flex:1;min-width:60px;padding:5px 3px;font-size:0.68rem;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="setPlanDrawMode('door')">🚪 Дверь</button>
+            </div>
+            <div style="display:flex;gap:4px;">
+                <button type="button" class="btn btn-outline" style="flex:1;padding:5px;font-size:0.72rem;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="undoPlanElement()">↩ Отмена</button>
+                <button type="button" class="btn btn-outline" style="flex:1;padding:5px;font-size:0.72rem;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="finishCurrentRoom()">✅ Комната</button>
+            </div>
+            <button type="button" class="btn btn-success" style="padding:7px;font-size:0.8rem;width:100%;" onclick="finishApartmentPlan()">🏘 План готов → свет</button>
             <button type="button" class="btn btn-outline" style="padding:6px;font-size:0.78rem;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.35);" onclick="clearPlanPhoto()">✕ Убрать план</button>
         </div>
         <!-- Мини-панель для световой полосы -->
@@ -581,6 +591,16 @@
         let planCalibMode = false;
         let planCalibPts = [];     // до 2 точек в мировых координатах (см)
 
+        // ===== План всей квартиры: комнаты + внутренние стены + двери =====
+        let planDrawMode = 'room';   // 'room' | 'internal' | 'door'
+        let aptRooms = [];          // { id, name, points:[{x,y,letter}], closed:true }
+        let aptInternalWalls = [];  // { a:{x,y}, b:{x,y} }
+        let aptDoors = [];          // { a:{x,y}, b:{x,y}, widthCm }
+        let aptWallDraft = [];      // 0–2 точки для текущей стены/двери
+        let aptNextRoomId = 1;
+        let isApartmentPlan = false; // true после «План готов»
+        let activeAptRoomIdx = -1;   // текущая комната для размеров/света
+
         function triggerPlanPhotoUpload() {
             if (state !== 'DRAWING' || points.length > 0) return;
             const inp = document.getElementById('plan-photo-input');
@@ -620,6 +640,13 @@
             planPhotoImg = null;
             planCalibMode = false;
             planCalibPts = [];
+            aptRooms = [];
+            aptInternalWalls = [];
+            aptDoors = [];
+            aptWallDraft = [];
+            isApartmentPlan = false;
+            activeAptRoomIdx = -1;
+            planDrawMode = 'room';
             const tb = document.getElementById('plan-photo-toolbar');
             if (tb) tb.style.display = 'none';
             draw();
@@ -679,9 +706,528 @@
             _planCalibPending = null;
             planCalibPts = [];
             if (modal) modal.style.display = 'none';
-            showToast('Масштаб применён (' + val + ' см). Теперь обведите контур комнаты, тапая углы прямо по фото.', 5000);
+            showToast('Масштаб применён (' + val + ' см). Рисуйте комнаты (тап углов), внутренние стены и двери.', 5000);
             draw();
         }
+
+        function setPlanDrawMode(mode) {
+            // При переходе к стенам/дверям — автоматически сохраняем замкнутый наружный контур
+            if ((mode === 'internal' || mode === 'door') && points.length >= 3 && isClosed) {
+                var already = false;
+                if (aptRooms.length) {
+                    // не дублируем, если последняя комната совпадает по числу точек
+                    var last = aptRooms[aptRooms.length - 1];
+                    if (last && last.points && last.points.length === points.length) already = true;
+                }
+                if (!already) {
+                    aptRooms.push({
+                        id: aptNextRoomId++,
+                        name: aptRooms.length === 0 ? 'Наружный контур' : ('Комната ' + (aptRooms.length + 1)),
+                        points: clonePoints(points),
+                        closed: true
+                    });
+                    showToast('Наружный контур сохранён — рисуйте внутренние стены от стены к стене', 2800);
+                }
+                // оставляем points как есть для отображения, но контур уже в aptRooms для snap
+            }
+            planDrawMode = mode || 'room';
+            aptWallDraft = [];
+            document.querySelectorAll('.plan-mode-btn').forEach(function (b) {
+                b.style.background = 'rgba(255,255,255,0.12)';
+                b.classList.remove('active');
+            });
+            var btn = document.getElementById('pmode-' + planDrawMode);
+            if (btn) {
+                btn.style.background = 'rgba(0,102,204,0.85)';
+                btn.classList.add('active');
+            }
+            var hint = document.getElementById('plan-toolbar-hint');
+            if (hint) {
+                if (planDrawMode === 'room') hint.textContent = '1) Наружный контур: тапайте углы, замкните. 2) Затем «🧱 Стена».';
+                else if (planDrawMode === 'internal') hint.textContent = 'Внутренняя стена: тап на наружной стене → тап на другой стене. Концы приклеятся.';
+                else hint.textContent = 'Дверь: один тап на стене — проём 90 см (можно менять).';
+            }
+            updateUI();
+            draw();
+        }
+
+        function undoPlanElement() {
+            if (aptWallDraft.length) {
+                aptWallDraft.pop();
+                draw();
+                return;
+            }
+            if (planDrawMode === 'room' && points.length > 0) {
+                points.pop();
+                updateUI();
+                draw();
+                return;
+            }
+            if (planDrawMode === 'internal' && aptInternalWalls.length) {
+                aptInternalWalls.pop();
+                showToast('Удалена внутренняя стена', 1500);
+                draw();
+                return;
+            }
+            if (planDrawMode === 'door' && aptDoors.length) {
+                aptDoors.pop();
+                showToast('Удалён дверной проём', 1500);
+                draw();
+                return;
+            }
+            if (aptRooms.length) {
+                aptRooms.pop();
+                showToast('Удалена комната', 1500);
+                draw();
+                return;
+            }
+            showToast('Нечего отменять', 1200);
+        }
+
+        function finishCurrentRoom() {
+            if (points.length < 3) {
+                showToast('Нужно минимум 3 угла для комнаты', 2200);
+                return;
+            }
+            if (!isClosed) {
+                if (!checkIntersectionValid(points[0], true)) {
+                    showToast('Линии пересекаются — исправьте контур', 2500);
+                    return;
+                }
+                isClosed = true;
+            }
+            var roomPts = clonePoints(points);
+            aptRooms.push({
+                id: aptNextRoomId++,
+                name: 'Комната ' + (aptRooms.length + 1),
+                points: roomPts,
+                closed: true
+            });
+            points = [];
+            edges = [];
+            isClosed = false;
+            sketchPoints = [];
+            sketchTurnSigns = [];
+            showToast('Комната ' + aptRooms.length + ' сохранена. Рисуйте следующую или стены/двери.', 3000);
+            setPlanDrawMode('room');
+            updateUI();
+            draw();
+        }
+
+        /** Собирает все «несущие» сегменты: контуры комнат + уже нарисованные внутренние стены. */
+        function collectSnapSegments() {
+            var segs = [];
+            function addSeg(a, b, kind, roomIdx) {
+                segs.push({ a: a, b: b, kind: kind || 'wall', roomIdx: roomIdx });
+            }
+            aptRooms.forEach(function (room, ri) {
+                if (!room.points || room.points.length < 2) return;
+                for (var i = 0; i < room.points.length; i++) {
+                    var p0 = room.points[i], p1 = room.points[(i + 1) % room.points.length];
+                    addSeg({ x: p0.x, y: p0.y }, { x: p1.x, y: p1.y }, 'room', ri);
+                }
+            });
+            if (points.length >= 2) {
+                for (var j = 0; j < points.length - 1; j++) {
+                    addSeg({ x: points[j].x, y: points[j].y }, { x: points[j + 1].x, y: points[j + 1].y }, 'draft');
+                }
+                if (isClosed && points.length >= 3) {
+                    addSeg({ x: points[points.length - 1].x, y: points[points.length - 1].y },
+                           { x: points[0].x, y: points[0].y }, 'draft');
+                }
+            }
+            aptInternalWalls.forEach(function (w) {
+                addSeg({ x: w.a.x, y: w.a.y }, { x: w.b.x, y: w.b.y }, 'internal');
+            });
+            return segs;
+        }
+
+        /**
+         * Привязка точки к ближайшей стене/углу.
+         * snapPx — порог в пикселях экрана.
+         * force — если true, всегда возвращает ближайшую точку на стене (даже далеко).
+         */
+        function snapToWalls(worldPos, snapPx, force) {
+            snapPx = snapPx == null ? 36 : snapPx;
+            var thresh = snapPx / Math.max(camera.zoom, 0.01);
+            // минимальный порог в см — чтобы на сильном зуме всё равно «липло»
+            if (thresh < 12) thresh = 12;
+            if (force) thresh = Math.max(thresh, 80);
+            var segs = collectSnapSegments();
+            var bestV = null, bestVD = Infinity;
+            var bestE = null, bestED = Infinity, bestT = 0, bestSeg = null;
+
+            segs.forEach(function (seg) {
+                [[seg.a], [seg.b]].forEach(function (pair) {
+                    var p = pair[0];
+                    var d = Math.hypot(worldPos.x - p.x, worldPos.y - p.y);
+                    if (d < bestVD) {
+                        bestVD = d;
+                        bestV = { x: p.x, y: p.y };
+                        bestSeg = seg;
+                    }
+                });
+                var dx = seg.b.x - seg.a.x, dy = seg.b.y - seg.a.y;
+                var len2 = dx * dx + dy * dy || 1e-9;
+                var t = ((worldPos.x - seg.a.x) * dx + (worldPos.y - seg.a.y) * dy) / len2;
+                t = Math.max(0, Math.min(1, t));
+                var px = seg.a.x + t * dx, py = seg.a.y + t * dy;
+                var d2 = Math.hypot(worldPos.x - px, worldPos.y - py);
+                if (d2 < bestED) {
+                    bestED = d2;
+                    bestE = { x: px, y: py };
+                    bestT = t;
+                    bestSeg = seg;
+                }
+            });
+
+            // Углы приоритетнее, но только если близко
+            if (bestV && bestVD <= Math.min(thresh, bestED + 3)) {
+                return { x: bestV.x, y: bestV.y, snapped: true, onVertex: true, seg: bestSeg };
+            }
+            if (bestE && bestED <= thresh) {
+                return { x: bestE.x, y: bestE.y, snapped: true, onVertex: false, seg: bestSeg, t: bestT };
+            }
+            return { x: worldPos.x, y: worldPos.y, snapped: false, onVertex: false, seg: null };
+        }
+
+        /**
+         * Пересечение двух отрезков. Возвращает {x,y,t,u} или null.
+         * t вдоль A1→A2 (0..1 на отрезке), u вдоль B1→B2.
+         */
+        function segmentIntersection(a1, a2, b1, b2) {
+            var x1 = a1.x, y1 = a1.y, x2 = a2.x, y2 = a2.y;
+            var x3 = b1.x, y3 = b1.y, x4 = b2.x, y4 = b2.y;
+            var den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+            if (Math.abs(den) < 1e-9) return null;
+            var t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+            var u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+            if (u < -0.001 || u > 1.001) return null;
+            return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1), t: t, u: u };
+        }
+
+        /**
+         * Дотягивает конец внутренней стены до пересечения с наружной/другой стеной.
+         * Всегда ищет вдоль оси стены в обе стороны — стена обязана «прилипнуть».
+         */
+        function extendWallEndToJunction(endPt, otherPt, maxExtendCm) {
+            maxExtendCm = maxExtendCm == null ? 500 : maxExtendCm;
+            var segs = collectSnapSegments();
+            var dirX = endPt.x - otherPt.x, dirY = endPt.y - otherPt.y;
+            var dirLen = Math.hypot(dirX, dirY) || 1;
+            dirX /= dirLen; dirY /= dirLen;
+
+            // 1) Уже почти на стене — проекция
+            var onWall = snapToWalls(endPt, 28);
+            if (onWall.snapped) {
+                return { x: onWall.x, y: onWall.y, snapped: true };
+            }
+
+            // 2) Луч от середины через endPt далеко вперёд — первое пересечение со стеной
+            var origin = { x: otherPt.x, y: otherPt.y };
+            var far = { x: endPt.x + dirX * maxExtendCm, y: endPt.y + dirY * maxExtendCm };
+            var best = null, bestT = Infinity;
+            segs.forEach(function (seg) {
+                var sdx = seg.b.x - seg.a.x, sdy = seg.b.y - seg.a.y;
+                var slen = Math.hypot(sdx, sdy) || 1;
+                // почти параллельные — не считаем пересечением
+                var cross = Math.abs(dirX * (sdy / slen) - dirY * (sdx / slen));
+                if (cross < 0.08) return;
+                var hit = segmentIntersection(origin, far, seg.a, seg.b);
+                if (!hit) return;
+                // нужно пересечение «впереди» otherPt и желательно около/за endPt
+                if (hit.t < 0.15) return;
+                if (hit.t < bestT) {
+                    bestT = hit.t;
+                    best = { x: hit.x, y: hit.y };
+                }
+            });
+            if (best) return { x: best.x, y: best.y, snapped: true };
+
+            // 3) Ближайшая точка на любой стене (до 2 м)
+            var forced = snapToWalls(endPt, 80, true);
+            if (forced.snapped) return { x: forced.x, y: forced.y, snapped: true };
+
+            return { x: endPt.x, y: endPt.y, snapped: false };
+        }
+
+        /**
+         * После двух тапов — оба конца стены жёстко сажаем на наружные стены.
+         * Если тап был «внутри» — лучом находим стену.
+         */
+        function connectInternalWall(a, b) {
+            var aExt = extendWallEndToJunction(a, b, 800);
+            var bExt = extendWallEndToJunction(b, a, 800);
+            // Если всё ещё не привязались — принудительно к ближайшему сегменту
+            if (!aExt.snapped) {
+                var fa = snapToWalls(a, 120, true);
+                if (fa.snapped) aExt = { x: fa.x, y: fa.y, snapped: true };
+            }
+            if (!bExt.snapped) {
+                var fb = snapToWalls(b, 120, true);
+                if (fb.snapped) bExt = { x: fb.x, y: fb.y, snapped: true };
+            }
+            return { a: aExt, b: bExt };
+        }
+
+        var DEFAULT_DOOR_WIDTH_CM = 90;
+
+        /**
+         * Ближайшее ребро стены к точке (ТОЛЬКО рёбра, без вершин).
+         * Возвращает { seg, t, px, py, dist } или null.
+         */
+        function nearestWallEdge(worldPos, maxDistCm) {
+            maxDistCm = maxDistCm == null ? 50 : maxDistCm;
+            var segs = collectSnapSegments();
+            var best = null, bestD = maxDistCm;
+            for (var i = 0; i < segs.length; i++) {
+                var seg = segs[i];
+                var dx = seg.b.x - seg.a.x, dy = seg.b.y - seg.a.y;
+                var len2 = dx * dx + dy * dy || 1e-9;
+                var t = ((worldPos.x - seg.a.x) * dx + (worldPos.y - seg.a.y) * dy) / len2;
+                t = Math.max(0, Math.min(1, t));
+                var px = seg.a.x + t * dx, py = seg.a.y + t * dy;
+                var d = Math.hypot(worldPos.x - px, worldPos.y - py);
+                if (d < bestD) {
+                    bestD = d;
+                    best = { seg: seg, t: t, px: px, py: py, dist: d };
+                }
+            }
+            return best;
+        }
+
+        function placeDoorAt(worldPos) {
+            var hit = nearestWallEdge(worldPos, 45);
+            if (!hit) {
+                showToast('Тапните ближе к стене', 2000);
+                return false;
+            }
+            var seg = hit.seg;
+            var sdx = seg.b.x - seg.a.x, sdy = seg.b.y - seg.a.y;
+            var slen = Math.hypot(sdx, sdy) || 1;
+            var tMid = hit.t;
+            // 90 см вдоль стены, центр = точка тапа
+            var halfT = (DEFAULT_DOOR_WIDTH_CM / 2) / slen;
+            var t0 = tMid - halfT;
+            var t1 = tMid + halfT;
+            if (t0 < 0.01) { t0 = 0.01; t1 = Math.min(0.99, t0 + DEFAULT_DOOR_WIDTH_CM / slen); }
+            if (t1 > 0.99) { t1 = 0.99; t0 = Math.max(0.01, t1 - DEFAULT_DOOR_WIDTH_CM / slen); }
+            var pa = { x: seg.a.x + t0 * sdx, y: seg.a.y + t0 * sdy };
+            var pb = { x: seg.a.x + t1 * sdx, y: seg.a.y + t1 * sdy };
+            var doorW = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+            aptDoors.push({
+                a: { x: pa.x, y: pa.y },
+                b: { x: pb.x, y: pb.y },
+                widthCm: Math.round(doorW * 10) / 10,
+                onSeg: {
+                    a: { x: seg.a.x, y: seg.a.y },
+                    b: { x: seg.b.x, y: seg.b.y },
+                    kind: seg.kind || 'wall',
+                    roomIdx: seg.roomIdx,
+                    t0: t0,
+                    t1: t1
+                }
+            });
+            showToast('🚪 Дверь ' + Math.round(doorW) + ' см', 1600);
+            draw();
+            return true;
+        }
+
+        function handleAptWallOrDoorTap(worldPos) {
+            if (planDrawMode === 'door') {
+                placeDoorAt(worldPos);
+                return;
+            }
+
+            // ===== Внутренняя стена: два тапа =====
+            var snW = snapToWalls(worldPos, 48);
+            aptWallDraft.push({ x: snW.x, y: snW.y, snapped: snW.snapped, seg: snW.seg });
+            if (aptWallDraft.length < 2) {
+                showToast(snW.snapped ? '✓ На стене — укажите второй конец' : 'Тапните ближе к стене', 1800);
+                draw();
+                return;
+            }
+            var a = aptWallDraft[0], b = aptWallDraft[1];
+            var len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (len < 5) {
+                showToast('Слишком короткий сегмент', 1800);
+                aptWallDraft = [];
+                draw();
+                return;
+            }
+            var conn = connectInternalWall(a, b);
+            var aExt = conn.a, bExt = conn.b;
+            len = Math.hypot(bExt.x - aExt.x, bExt.y - aExt.y);
+            if (len < 8) {
+                showToast('Стена слишком короткая — тапайте от стены к стене', 2200);
+                aptWallDraft = [];
+                draw();
+                return;
+            }
+            if (!aExt.snapped || !bExt.snapped) {
+                showToast('Не удалось привязать к стенам. Замкните наружный контур.', 3000);
+                aptWallDraft = [];
+                draw();
+                return;
+            }
+            aptInternalWalls.push({
+                a: { x: aExt.x, y: aExt.y },
+                b: { x: bExt.x, y: bExt.y },
+                aSnapped: true,
+                bSnapped: true,
+                anchorA: attachPointToOuter(aExt),
+                anchorB: attachPointToOuter(bExt)
+            });
+            showToast('✓ Стена ' + Math.round(len) + ' см', 2000);
+            aptWallDraft = [];
+            draw();
+        }
+
+        /** Наружный контур для якорей: points если замкнут, иначе aptRooms[0]. */
+        function getOuterContourPoints() {
+            if (points && points.length >= 3 && isClosed) return points;
+            if (aptRooms && aptRooms.length && aptRooms[0].points && aptRooms[0].points.length >= 3) {
+                return aptRooms[0].points;
+            }
+            return points || [];
+        }
+
+        /**
+         * Привязка точки к ребру наружного контура: { edgeIdx, t } или null.
+         * t ∈ [0,1] вдоль ребра.
+         */
+        function attachPointToOuter(p) {
+            var outer = getOuterContourPoints();
+            var n = outer.length;
+            if (n < 2) return null;
+            var bestI = 0, bestD = Infinity, bestT = 0;
+            for (var i = 0; i < n; i++) {
+                var a = outer[i], b = outer[(i + 1) % n];
+                var dx = b.x - a.x, dy = b.y - a.y;
+                var len2 = dx * dx + dy * dy || 1e-9;
+                var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+                t = Math.max(0, Math.min(1, t));
+                var px = a.x + t * dx, py = a.y + t * dy;
+                var d = Math.hypot(p.x - px, p.y - py);
+                if (d < bestD) { bestD = d; bestI = i; bestT = t; }
+            }
+            if (bestD > 40) return null; // не на контуре
+            return { edgeIdx: bestI, t: bestT };
+        }
+
+        function pointFromOuterAnchor(anchor) {
+            if (!anchor) return null;
+            var outer = getOuterContourPoints();
+            var n = outer.length;
+            if (!n || anchor.edgeIdx < 0 || anchor.edgeIdx >= n) return null;
+            var a = outer[anchor.edgeIdx], b = outer[(anchor.edgeIdx + 1) % n];
+            return {
+                x: a.x + anchor.t * (b.x - a.x),
+                y: a.y + anchor.t * (b.y - a.y)
+            };
+        }
+
+        /** Пересчитать все внутренние стены из якорей на текущем наружном контуре. */
+        function rebuildInternalWallsFromAnchors() {
+            if (!aptInternalWalls || !aptInternalWalls.length) return;
+            var outer = getOuterContourPoints();
+            if (!outer || outer.length < 3) return;
+            aptInternalWalls.forEach(function (w) {
+                var a = w.anchorA ? pointFromOuterAnchor(w.anchorA) : null;
+                var b = w.anchorB ? pointFromOuterAnchor(w.anchorB) : null;
+                if (a && b) {
+                    w.a = a; w.b = b;
+                    w.aSnapped = true; w.bSnapped = true;
+                    return;
+                }
+                // Нет якорей (старые стены) — заново приклеиваем
+                if (typeof connectInternalWall === 'function') {
+                    var conn = connectInternalWall(w.a, w.b);
+                    w.a = { x: conn.a.x, y: conn.a.y };
+                    w.b = { x: conn.b.x, y: conn.b.y };
+                    w.anchorA = attachPointToOuter(w.a);
+                    w.anchorB = attachPointToOuter(w.b);
+                    w.aSnapped = true; w.bSnapped = true;
+                }
+            });
+        }
+
+        function buildEdgesFromPoints() {
+            edges = [];
+            for (var i = 0; i < points.length; i++) {
+                var j = (i + 1) % points.length;
+                edges.push({
+                    startIdx: i,
+                    endIdx: j,
+                    label: getLetter(i) + '-' + getLetter(j),
+                    lengthCm: null
+                });
+            }
+        }
+
+        function loadAptRoomIntoEditor(idx) {
+            if (idx < 0 || idx >= aptRooms.length) return;
+            activeAptRoomIdx = idx;
+            var r = aptRooms[idx];
+            points = clonePoints(r.points);
+            isClosed = true;
+            sketchPoints = clonePoints(r.points);
+            sketchOrientation = polygonSignedArea(sketchPoints) >= 0 ? 1 : -1;
+            sketchTurnSigns = getTurnSigns(sketchPoints);
+            edges = [];
+            sideProfiles = [];
+            fixtures = (r.fixtures || []).slice();
+            selectedMaterial = r.material || selectedMaterial;
+            selectedColor = r.color || selectedColor;
+            buildEdgesFromPoints();
+            if (r.edgeLengths && r.edgeLengths.length === points.length) {
+                for (var i = 0; i < edges.length; i++) {
+                    if (Number.isFinite(r.edgeLengths[i])) edges[i].lengthCm = r.edgeLengths[i];
+                }
+            }
+        }
+
+        function saveCurrentRoomBackToApt() {
+            if (activeAptRoomIdx < 0 || activeAptRoomIdx >= aptRooms.length) return;
+            var r = aptRooms[activeAptRoomIdx];
+            r.points = clonePoints(points);
+            r.fixtures = fixtures.slice();
+            r.material = selectedMaterial;
+            r.color = selectedColor;
+            r.edgeLengths = edges.map(function (e) { return e.lengthCm; });
+            r.sideProfiles = sideProfiles.slice();
+        }
+
+        function finishApartmentPlan() {
+            if (points.length >= 3) {
+                finishCurrentRoom();
+            }
+            if (aptRooms.length === 0 && points.length >= 3 && isClosed) {
+                aptRooms.push({
+                    id: aptNextRoomId++,
+                    name: 'Комната 1',
+                    points: clonePoints(points),
+                    closed: true
+                });
+            }
+            if (aptRooms.length === 0) {
+                showToast('Нарисуйте и замкните хотя бы одну комнату', 2500);
+                return;
+            }
+            isApartmentPlan = true;
+            activeAptRoomIdx = 0;
+            loadAptRoomIntoEditor(0);
+            state = 'INPUT_SIDES';
+            currentInputEdge = 0;
+            showToast('План квартиры готов: ' + aptRooms.length + ' комн., стен: ' + aptInternalWalls.length + ', дверей: ' + aptDoors.length, 4000);
+            statusText.innerText = 'Ввод размеров · ' + (aptRooms[0] && aptRooms[0].name || 'комната 1');
+            updateUI();
+            draw();
+            showOnlyPanel('bottom-input-bar');
+            if (typeof updateInputUI === 'function') updateInputUI();
+            focusSideInput();
+        }
+
         let stripPreviewLen = 0;
         const PROFILE_COLORS = { 'Стандартный': '#2c3e50', 'Теневой': '#8e44ad', 'Парящий': '#e67e22' };
 
@@ -1601,6 +2147,62 @@
             return work;
         }
 
+        /**
+         * Ставит пересчитанный контур туда же на подложке, где рисовали эскиз:
+         * 1) поворот — первая сторона как на эскизе
+         * 2) перенос — центроид совпадает с центроидом эскиза
+         * Подложка (planPhoto*) не двигается — двигается только чертёж.
+         */
+        function pinReconstructedToSketch(pts) {
+            if (!pts || pts.length < 2 || !sketchPoints || sketchPoints.length < 2) return pts;
+            let work = alignToSketchOrientation(clonePoints(pts));
+            // центроид эскиза (мировые см — там же лежит подложка)
+            var skCx = 0, skCy = 0;
+            sketchPoints.forEach(function (p) { skCx += p.x; skCy += p.y; });
+            skCx /= sketchPoints.length; skCy /= sketchPoints.length;
+            var wCx = 0, wCy = 0;
+            work.forEach(function (p) { wCx += p.x; wCy += p.y; });
+            wCx /= work.length; wCy /= work.length;
+            var dx = skCx - wCx, dy = skCy - wCy;
+            work.forEach(function (p) { p.x += dx; p.y += dy; });
+            // дополнительно: если есть подложка — слегка подгоняем масштаб фото
+            // под среднюю длину сторон эскиза vs введённых (чтобы стены на фото совпали)
+            if (planPhotoImg && planPhotoScale > 0 && edges && edges.length === sketchPoints.length) {
+                var sketchLens = [], realLens = [];
+                for (var i = 0; i < sketchPoints.length; i++) {
+                    var a = sketchPoints[i], b = sketchPoints[(i + 1) % sketchPoints.length];
+                    sketchLens.push(Math.hypot(b.x - a.x, b.y - a.y));
+                    if (edges[i] && Number.isFinite(edges[i].lengthCm) && edges[i].lengthCm > 0) {
+                        realLens.push(edges[i].lengthCm);
+                    }
+                }
+                if (sketchLens.length && realLens.length === sketchLens.length) {
+                    var ratioSum = 0, ratioN = 0;
+                    for (var j = 0; j < sketchLens.length; j++) {
+                        if (sketchLens[j] > 1) {
+                            ratioSum += realLens[j] / sketchLens[j];
+                            ratioN++;
+                        }
+                    }
+                    if (ratioN > 0) {
+                        var avgRatio = ratioSum / ratioN;
+                        // Эскиз уже в «фото-см»; после pin точки в реальных см.
+                        // Масштаб подложки: world_cm_per_px должен стать в avgRatio раз больше,
+                        // а якорь — центроид эскиза (он же центроид нового контура).
+                        if (avgRatio > 0.05 && avgRatio < 50 && Math.abs(avgRatio - 1) > 0.02) {
+                            var anchorX = skCx, anchorY = skCy;
+                            var aPx = (anchorX - planPhotoWorldX) / planPhotoScale;
+                            var aPy = (anchorY - planPhotoWorldY) / planPhotoScale;
+                            planPhotoScale = planPhotoScale * avgRatio;
+                            planPhotoWorldX = anchorX - aPx * planPhotoScale;
+                            planPhotoWorldY = anchorY - aPy * planPhotoScale;
+                        }
+                    }
+                }
+            }
+            return work;
+        }
+
         function solveExactGeometry() {
             if (!allSideLengthsKnown()) return false;
 
@@ -1611,7 +2213,7 @@
             if (preferOrtho) {
                 const ortho = reconstructOrthogonal();
                 if (ortho) {
-                    points = ortho;
+                    points = pinReconstructedToSketch(ortho);
                     usedExactGeometry = false;
                     return true;
                 }
@@ -1627,7 +2229,7 @@
                 if (tris.length === n - 2) {
                     const result = buildExactFromTriangulation(tris, constraints);
                     if (result && verifyConstraints(result, constraints)) {
-                        points = alignToSketchOrientation(result) || result;
+                        points = pinReconstructedToSketch(result);
                         usedExactGeometry = true;
                         return true;
                     }
@@ -1636,14 +2238,14 @@
 
             const fallback = reconstructFromSidesAndSketch();
             if (fallback) {
-                points = fallback;
+                points = pinReconstructedToSketch(fallback);
                 usedExactGeometry = false;
                 return true;
             }
 
             const ortho2 = reconstructOrthogonal();
             if (ortho2) {
-                points = ortho2;
+                points = pinReconstructedToSketch(ortho2);
                 usedExactGeometry = false;
                 return true;
             }
@@ -1657,6 +2259,10 @@
             if (planCalibMode) { handlePlanCalibTap(worldPos); return; }
             if (state === 'INSTALL') {
                 handleInstallTap(worldPos);
+                return;
+            }
+            if (state === 'DRAWING' && (planDrawMode === 'internal' || planDrawMode === 'door')) {
+                handleAptWallOrDoorTap(worldPos);
                 return;
             }
             if (state !== 'DRAWING') return;
@@ -1734,11 +2340,14 @@
                 }
                 return best;
             }
+            function remapPt(p) {
+                const i = nearestOldEdge(p);
+                return reprojectPointAcrossEdge(oldPoints[i], oldPoints[(i + 1) % n], newPoints[i], newPoints[(i + 1) % n], p);
+            }
             (fixtures || []).forEach(function (f) {
                 if (f.type === 'strip' && Array.isArray(f.points)) {
                     f.points = f.points.map(function (pt) {
-                        const i = nearestOldEdge(pt);
-                        return reprojectPointAcrossEdge(oldPoints[i], oldPoints[(i + 1) % n], newPoints[i], newPoints[(i + 1) % n], pt);
+                        return remapPt(pt);
                     });
                     return;
                 }
@@ -1760,6 +2369,114 @@
                     f.length_cm = edges[f.edge_index].lengthCm || f.length_cm;
                 }
             });
+            // Внутренние стены и двери плана квартиры — переносим вместе с контуром
+            remapAptElementsAfterResize(oldPoints, newPoints);
+        }
+
+        /**
+         * После пересчёта наружного контура (ввод длин сторон) —
+         * переносим внутренние стены и двери в новую геометрию и
+         * заново приклеиваем концы к стенам.
+         */
+        function remapAptElementsAfterResize(oldPoints, newPoints) {
+            if (!oldPoints || !newPoints || oldPoints.length < 3 || newPoints.length < 3) return;
+            const n = Math.min(oldPoints.length, newPoints.length);
+
+            // Аффинное подобие по bbox эскиза → новой формы (стабильнее, чем только nearest-edge)
+            function bbox(pts) {
+                var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach(function (p) {
+                    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+                });
+                return { minX: minX, maxX: maxX, minY: minY, maxY: maxY,
+                    cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+                    w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+            }
+            var oldB = bbox(oldPoints), newB = bbox(newPoints);
+            var sx = newB.w / oldB.w, sy = newB.h / oldB.h;
+
+            function transformPt(p) {
+                // 1) масштабирование относительно центра bbox
+                var x = newB.cx + (p.x - oldB.cx) * sx;
+                var y = newB.cy + (p.y - oldB.cy) * sy;
+                // 2) если точка была на старой стене — притягиваем к соответствующей новой
+                var bestI = 0, bestD = Infinity;
+                for (var i = 0; i < n; i++) {
+                    var d = distPointToSegment(p, oldPoints[i], oldPoints[(i + 1) % n]);
+                    if (d < bestD) { bestD = d; bestI = i; }
+                }
+                if (bestD < 25) {
+                    // была почти на стене — сажаем точно на новую стену с тем же t
+                    var oa = oldPoints[bestI], ob = oldPoints[(bestI + 1) % n];
+                    var na = newPoints[bestI], nb = newPoints[(bestI + 1) % n];
+                    var odx = ob.x - oa.x, ody = ob.y - oa.y;
+                    var olen2 = odx * odx + ody * ody || 1e-9;
+                    var t = ((p.x - oa.x) * odx + (p.y - oa.y) * ody) / olen2;
+                    t = Math.max(0, Math.min(1, t));
+                    x = na.x + t * (nb.x - na.x);
+                    y = na.y + t * (nb.y - na.y);
+                }
+                return { x: x, y: y };
+            }
+
+            // Обновляем наружный контур в aptRooms
+            if (aptRooms && aptRooms.length) {
+                if (activeAptRoomIdx >= 0 && aptRooms[activeAptRoomIdx]) {
+                    aptRooms[activeAptRoomIdx].points = clonePoints(newPoints);
+                } else {
+                    aptRooms[0].points = clonePoints(newPoints);
+                }
+            }
+
+            // Внутренние стены — ТОЛЬКО из якорей на рёбрах (edgeIdx + t).
+            // Абсолютные координаты эскиза больше не используем — они «съезжают».
+            if (typeof rebuildInternalWallsFromAnchors === 'function') {
+                rebuildInternalWallsFromAnchors();
+            } else if (aptInternalWalls && aptInternalWalls.length) {
+                aptInternalWalls.forEach(function (w) {
+                    var a2 = transformPt(w.a);
+                    var b2 = transformPt(w.b);
+                    if (typeof extendWallEndToJunction === 'function') {
+                        var ae = extendWallEndToJunction(a2, b2, 800);
+                        var be = extendWallEndToJunction(b2, a2, 800);
+                        w.a = { x: ae.x, y: ae.y };
+                        w.b = { x: be.x, y: be.y };
+                    } else {
+                        w.a = a2; w.b = b2;
+                    }
+                });
+            }
+
+            if (aptDoors && aptDoors.length) {
+                aptDoors.forEach(function (d) {
+                    // Предпочтительно: t0/t1 на исходном сегменте → ищем тот же сегмент после трансформа
+                    if (d.onSeg && d.onSeg.t0 != null && d.onSeg.t1 != null) {
+                        var osa = transformPt(d.onSeg.a), osb = transformPt(d.onSeg.b);
+                        // обновим onSeg концы
+                        d.onSeg.a = { x: osa.x, y: osa.y };
+                        d.onSeg.b = { x: osb.x, y: osb.y };
+                        d.a = { x: osa.x + d.onSeg.t0 * (osb.x - osa.x), y: osa.y + d.onSeg.t0 * (osb.y - osa.y) };
+                        d.b = { x: osa.x + d.onSeg.t1 * (osb.x - osa.x), y: osa.y + d.onSeg.t1 * (osb.y - osa.y) };
+                        d.widthCm = Math.round(Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y) * 10) / 10;
+                        return;
+                    }
+                    var a2 = transformPt(d.a);
+                    var b2 = transformPt(d.b);
+                    d.a = a2; d.b = b2;
+                    d.widthCm = Math.round(Math.hypot(b2.x - a2.x, b2.y - a2.y) * 10) / 10;
+                });
+            }
+        }
+
+        /** Решает геометрию с сохранением внутренних стен/дверей. */
+        function solveExactGeometryPreservingApt() {
+            var oldPoints = clonePoints(points);
+            var ok = solveExactGeometry();
+            if (ok) {
+                remapFixturesAfterResize(oldPoints, points);
+            }
+            return ok;
         }
 
         /** Панель ручного изменения длины сторон — доступна на любом этапе после замыкания контура. */
@@ -3194,6 +3911,15 @@
                 return;
             }
             isClosed = true;
+            if (planPhotoImg && !isApartmentPlan) {
+                sketchPoints = clonePoints(points);
+                sketchOrientation = signed >= 0 ? 1 : -1;
+                sketchTurnSigns = getTurnSigns(sketchPoints);
+                showToast('Контур замкнут. «✅ Комната» — сохранить и рисовать дальше, или «План готов» — к размерам/свету.', 4500);
+                updateUI();
+                draw();
+                return;
+            }
             state = 'INPUT_SIDES';
             statusText.innerText = 'Ввод фактических размеров';
             document.getElementById('toast').style.display = 'none';
@@ -3220,7 +3946,11 @@
             const tmplBtn = document.getElementById('room-template-btn');
             if (tmplBtn) tmplBtn.style.display = (state === 'DRAWING' && points.length === 0) ? 'inline-block' : 'none';
             const planBtn = document.getElementById('plan-photo-btn');
-            if (planBtn) planBtn.style.display = (state === 'DRAWING' && points.length === 0) ? 'inline-block' : 'none';
+            if (planBtn) planBtn.style.display = (state === 'DRAWING' && points.length === 0 && !planPhotoImg) ? 'inline-block' : 'none';
+            const planTb = document.getElementById('plan-photo-toolbar');
+            if (planTb) {
+                planTb.style.display = (planPhotoImg && state === 'DRAWING' && !isApartmentPlan) ? 'flex' : 'none';
+            }
             updateSavedChip();
         }
 
@@ -3300,7 +4030,7 @@
         function skipDiagonals() {
             selectedDiagonals = [];
             document.getElementById('diagonals-panel').classList.remove('active');
-            if (!solveExactGeometry()) {
+            if (!solveExactGeometryPreservingApt()) {
                 showToast('Не удалось построить форму. Проверьте размеры сторон.', 4000);
                 document.getElementById('diagonals-panel').classList.add('active');
                 return;
@@ -3311,7 +4041,7 @@
         window.finishDiagonals = function () {
             document.getElementById('diagonals-panel').classList.remove('active');
             if (selectedDiagonals.length === 0) {
-                if (!solveExactGeometry()) {
+                if (!solveExactGeometryPreservingApt()) {
                     showToast('Не удалось построить форму. Проверьте размеры.', 4000);
                     document.getElementById('diagonals-panel').classList.add('active');
                     return;
@@ -3330,7 +4060,7 @@
             const d = selectedDiagonals[currentDiagonalInput];
             d.lengthCm = val;
             if (currentDiagonalInput === selectedDiagonals.length - 1) {
-                if (!solveExactGeometry()) {
+                if (!solveExactGeometryPreservingApt()) {
                     d.lengthCm = null;
                     showToast('Размеры не дают корректную геометрию. Проверьте измерения.', 5000);
                     updateInputUI();
@@ -4386,14 +5116,29 @@ function getCurrentCeilingPayload() {
             let sidesStrArr = edges.map(e => `${e.label} = ${e.lengthCm != null ? e.lengthCm : '?'} см`);
             let diagStrArr = selectedDiagonals.filter(d => d.lengthCm != null).map(d => `${d.label} = ${d.lengthCm} см`);
 
-            let perimeter = edges.reduce((s, e) => s + (e.lengthCm || 0), 0);
+            // Наружный периметр + длина всех внутренних стен (за вычетом дверных проёмов)
+            let outerPerim = edges.reduce((s, e) => s + (e.lengthCm || 0), 0);
+            let internalLen = 0;
+            (aptInternalWalls || []).forEach(function (w) {
+                internalLen += Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+            });
+            let doorsLen = 0;
+            (aptDoors || []).forEach(function (d) {
+                doorsLen += (d.widthCm != null ? d.widthCm : Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y));
+            });
+            // Суммарная длина стен (для сметы профиля): наружные + внутренние − проёмы
+            let wallTotalCm = outerPerim + internalLen - doorsLen;
+            if (wallTotalCm < 0) wallTotalCm = outerPerim + internalLen;
             let areaPx = 0;
             for (let i = 0; i < points.length; i++) {
                 let p1 = points[i], p2 = points[(i + 1) % points.length];
                 areaPx += (p1.x * p2.y - p2.x * p1.y);
             }
             let areaM2 = (Math.abs(areaPx / 2) / 10000).toFixed(2);
-            let totalStr = `Периметр: ${(perimeter / 100).toFixed(2)} м   |   Площадь: ${areaM2} м²`;
+            let totalStr = `Периметр нар.: ${(outerPerim / 100).toFixed(2)} м  |  Стены всего: ${(wallTotalCm / 100).toFixed(2)} м  |  Площадь: ${areaM2} м²`;
+            if ((aptInternalWalls || []).length || (aptDoors || []).length) {
+                totalStr += `  |  внутр. ${(internalLen / 100).toFixed(2)} м, двер. ${Math.round(doorsLen)} см`;
+            }
             if (!usedExactGeometry) totalStr += '   |   (по сторонам + эскиз)';
 
             let screenPos = toScreen(cx, maxY + 40 / camera.zoom);
@@ -4473,6 +5218,108 @@ function getCurrentCeilingPayload() {
             }
         }
 
+        function drawAptPlanOverlay() {
+            aptRooms.forEach(function (room, ri) {
+                if (!room.points || room.points.length < 2) return;
+                ctx.beginPath();
+                var s0 = toScreen(room.points[0].x, room.points[0].y);
+                ctx.moveTo(s0.x, s0.y);
+                for (var i = 1; i < room.points.length; i++) {
+                    var sp = toScreen(room.points[i].x, room.points[i].y);
+                    ctx.lineTo(sp.x, sp.y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = ri === activeAptRoomIdx ? 'rgba(0,102,204,0.12)' : 'rgba(100,120,150,0.06)';
+                ctx.fill();
+                ctx.strokeStyle = ri === activeAptRoomIdx ? '#0066cc' : '#5a6a7a';
+                ctx.lineWidth = ri === activeAptRoomIdx ? 2.5 : 1.8;
+                ctx.stroke();
+                var cx = 0, cy = 0;
+                room.points.forEach(function (p) { cx += p.x; cy += p.y; });
+                cx /= room.points.length; cy /= room.points.length;
+                var sc = toScreen(cx, cy);
+                ctx.font = 'bold 11px Arial';
+                ctx.fillStyle = '#334';
+                ctx.textAlign = 'center';
+                ctx.fillText(room.name || ('К' + (ri + 1)), sc.x, sc.y);
+            });
+            aptInternalWalls.forEach(function (w) {
+                var s1 = toScreen(w.a.x, w.a.y), s2 = toScreen(w.b.x, w.b.y);
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = '#6d4c41';
+                ctx.lineWidth = 3.5;
+                ctx.stroke();
+            });
+            aptDoors.forEach(function (d) {
+                var s1 = toScreen(d.a.x, d.a.y), s2 = toScreen(d.b.x, d.b.y);
+                var dx = s2.x - s1.x, dy = s2.y - s1.y;
+                var len = Math.hypot(dx, dy) || 1;
+                var ux = dx / len, uy = dy / len;
+                var nx = -uy, ny = ux; // нормаль
+                // Проём: белый «разрыв» стены
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 8;
+                ctx.lineCap = 'butt';
+                ctx.stroke();
+                // Зелёная рамка проёма
+                ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = '#1b5e20';
+                ctx.lineWidth = 2.5;
+                ctx.setLineDash([]);
+                ctx.stroke();
+                // Дуга открывания двери (четверть круга)
+                var doorLen = len;
+                var mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+                ctx.beginPath();
+                ctx.strokeStyle = '#2e7d32';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 2]);
+                // дуга от s1 внутрь
+                var ang0 = Math.atan2(uy, ux);
+                ctx.beginPath();
+                ctx.arc(s1.x, s1.y, doorLen * 0.9, ang0 - Math.PI / 2, ang0, false);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                // Подпись «Дверь XX см»
+                var label = '🚪' + Math.round(d.widthCm || doorLen / Math.max(camera.zoom, 0.01));
+                ctx.font = 'bold 11px Arial';
+                ctx.fillStyle = '#1b5e20';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                var lx = mx + nx * 14, ly = my + ny * 14;
+                ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                var tw = ctx.measureText(label).width;
+                ctx.fillRect(lx - tw / 2 - 3, ly - 8, tw + 6, 16);
+                ctx.fillStyle = '#1b5e20';
+                ctx.fillText(label, lx, ly);
+            });
+            if (aptWallDraft.length) {
+                aptWallDraft.forEach(function (p) {
+                    var sp = toScreen(p.x, p.y);
+                    ctx.beginPath(); ctx.arc(sp.x, sp.y, p.snapped ? 9 : 6, 0, Math.PI * 2);
+                    ctx.fillStyle = p.snapped ? '#00c853' : (planDrawMode === 'door' ? '#2e7d32' : '#6d4c41');
+                    ctx.fill();
+                    if (p.snapped) {
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                });
+                if (aptWallDraft.length === 2) {
+                    var a = toScreen(aptWallDraft[0].x, aptWallDraft[0].y);
+                    var b = toScreen(aptWallDraft[1].x, aptWallDraft[1].y);
+                    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+                    var both = aptWallDraft[0].snapped && aptWallDraft[1].snapped;
+                    ctx.strokeStyle = both ? '#00c853' : (planDrawMode === 'door' ? '#2e7d32' : '#6d4c41');
+                    ctx.lineWidth = both ? 3.5 : 2.5;
+                    ctx.setLineDash(both ? [] : [4, 3]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+        }
+
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawPlanPhotoUnderlay();
@@ -4486,6 +5333,9 @@ function getCurrentCeilingPayload() {
                 for (let y = oY; y < canvas.height; y += gridSize) {
                     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
                 }
+            }
+            if (aptRooms.length || aptInternalWalls.length || aptDoors.length || aptWallDraft.length) {
+                drawAptPlanOverlay();
             }
             if (points.length === 0) return;
 
@@ -4634,8 +5484,8 @@ function getCurrentCeilingPayload() {
                             const pk = toScreen(f.points[k].x, f.points[k].y);
                             ctx.lineTo(pk.x, pk.y);
                         }
-                        ctx.strokeStyle = isTrack ? '#1a1a1a' : '#f1c40f';
-                        ctx.lineWidth = isTrack ? 6 : 4;
+                        ctx.strokeStyle = isTrack ? '#9b59b6' : '#f1c40f';
+                        ctx.lineWidth = isTrack ? 5 : 4;
                         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
                         ctx.stroke();
                         if (isTrack) {
@@ -5265,8 +6115,8 @@ function getCurrentCeilingPayload() {
                         const s = toS(p.x, p.y);
                         if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
                     });
-                    ctx.strokeStyle = isTrack ? '#1a1a1a' : '#f1c40f';
-                    ctx.lineWidth = isTrack ? 6 : 4;
+                    ctx.strokeStyle = isTrack ? '#9b59b6' : '#f1c40f';
+                    ctx.lineWidth = isTrack ? 5 : 4;
                     ctx.lineCap = 'round';
                     ctx.stroke();
                 } else if (f.x != null) {
@@ -5316,11 +6166,25 @@ function getCurrentCeilingPayload() {
             const H = host.clientHeight || (window.innerHeight - 100) || 500;
 
             // Координаты комнаты в метрах (из см чертежа)
+            // При плане квартиры — учитываем все комнаты и внутренние стены
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            points.forEach(p => {
-                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-            });
+            function expandBoundsFromPts(pts) {
+                if (!pts) return;
+                pts.forEach(function (p) {
+                    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+                });
+            }
+            expandBoundsFromPts(points);
+            if (typeof isApartmentPlan !== 'undefined' && isApartmentPlan && aptRooms && aptRooms.length) {
+                aptRooms.forEach(function (r) { expandBoundsFromPts(r.points); });
+            }
+            if (typeof aptInternalWalls !== 'undefined' && aptInternalWalls.length) {
+                aptInternalWalls.forEach(function (w) {
+                    expandBoundsFromPts([w.a, w.b]);
+                });
+            }
+            if (!Number.isFinite(minX)) { minX = 0; maxX = 100; minY = 0; maxY = 100; }
             const cx = (minX + maxX) / 2;
             const cy = (minY + maxY) / 2;
             const toM = (x, y) => ({ x: (x - cx) / 100, z: (y - cy) / 100 }); // Y-up в three: высота; план XZ
@@ -5349,15 +6213,16 @@ function getCurrentCeilingPayload() {
             camera.up.set(0, 0, -1);
             camera.lookAt(0, roomH - 0.05, 0);
 
+            const isMobile3d = (W < 700) || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
             const renderer = new THREE.WebGLRenderer({
-                antialias: true,
+                antialias: !isMobile3d,
                 preserveDrawingBuffer: true,
                 powerPreference: 'high-performance'
             });
             renderer.setSize(W, H);
-            // DPR до 1.75: заметно чище края, но без перегрева телефона
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
-            renderer.shadowMap.enabled = true;
+            // Стабильные 60 FPS: DPR ≤ 1.5, на мобиле ≤ 1.25
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile3d ? 1.25 : 1.5));
+            renderer.shadowMap.enabled = !isMobile3d;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.setClearColor(0x1a1a1a, 1);
             if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
@@ -5365,7 +6230,7 @@ function getCurrentCeilingPayload() {
             // Тонмаппинг: светящиеся полосы и споты перестают «выгорать» в белое
             if (THREE.ACESFilmicToneMapping) {
                 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-                renderer.toneMappingExposure = 1.15;
+                renderer.toneMappingExposure = 1.28;
             }
             _maxAniso = 4;
             try { _maxAniso = renderer.capabilities.getMaxAnisotropy() || 4; } catch (e) {}
@@ -5665,15 +6530,15 @@ function getCurrentCeilingPayload() {
             const photoTex = makeTexturesFromRoomPhoto(THREE);
             // Ламинат матовый: небольшой рассеянный блик, без зеркальных отражений сцены
             const floorTexActive = photoTex ? photoTex.floorTex : makeLaminateTexture();
-            const floorMat = new THREE.MeshPhongMaterial({
+            const floorMat = new THREE.MeshStandardMaterial({
                 map: floorTexActive,
                 // цвет палитры умножается на текстуру — текстура почти нейтральная
                 color: preferredFloorColor
                     ? new THREE.Color(preferredFloorColor)
                     : new THREE.Color(0xc9a66b),
-                shininess: 8,
-                specular: 0x0f0f0f,
-                vertexColors: false,
+                roughness: 0.72,
+                metalness: 0.02,
+                envMapIntensity: 0.35,
                 side: THREE.FrontSide
             });
             const floorGeo = makeRoomPlaneGeometry(0, 0);
@@ -5696,11 +6561,12 @@ function getCurrentCeilingPayload() {
             }
 
             // Стены
-            const wallMat = new THREE.MeshPhongMaterial({
+            const wallMat = new THREE.MeshStandardMaterial({
                 map: photoTex ? photoTex.wallTex : makeWallpaperTexture(),
-                specular: 0x141414,
                 color: preferredWallColor ? parseInt(String(preferredWallColor).replace('#', ''), 16) : 0xffffff,
-                shininess: 8,
+                roughness: 0.88,
+                metalness: 0.0,
+                envMapIntensity: 0.25,
                 side: THREE.DoubleSide,
                 polygonOffset: true,
                 polygonOffsetFactor: 1,
@@ -6085,6 +6951,141 @@ function getCurrentCeilingPayload() {
                     }
                 }
             }
+
+            // ===== Внутренние стены и двери плана квартиры (3D) =====
+            (function buildApartmentInternalWalls3D() {
+                if (typeof isApartmentPlan === 'undefined' || !isApartmentPlan) return;
+                if ((!aptInternalWalls || !aptInternalWalls.length) && (!aptRooms || aptRooms.length <= 1)) return;
+
+                // Перед 3D — дотягиваем концы внутренних стен до наружных (исправляет щели)
+                if (aptInternalWalls && aptInternalWalls.length && typeof extendWallEndToJunction === 'function') {
+                    aptInternalWalls.forEach(function (w) {
+                        var a2 = extendWallEndToJunction(w.a, w.b, 100);
+                        var b2 = extendWallEndToJunction(w.b, w.a, 100);
+                        w.a = { x: a2.x, y: a2.y };
+                        w.b = { x: b2.x, y: b2.y };
+                    });
+                }
+
+                const WALL_THK = 0.12; // 12 см — типичная внутренняя перегородка
+                const DOOR_H = 2.1;
+                const intWallMat = wallMat.clone ? wallMat.clone() : wallMat;
+
+                // Двери, лежащие на внутренних стенах — вырезы
+                function doorsOnWall(wa, wb) {
+                    const result = [];
+                    if (!aptDoors || !aptDoors.length) return result;
+                    const wdx = wb.x - wa.x, wdy = wb.y - wa.y;
+                    const wlen = Math.hypot(wdx, wdy) || 1;
+                    aptDoors.forEach(function (d) {
+                        // середина двери должна быть близко к сегменту стены
+                        const mx = (d.a.x + d.b.x) / 2, my = (d.a.y + d.b.y) / 2;
+                        const t = ((mx - wa.x) * wdx + (my - wa.y) * wdy) / (wlen * wlen);
+                        if (t < 0.02 || t > 0.98) return;
+                        const px = wa.x + t * wdx, py = wa.y + t * wdy;
+                        if (Math.hypot(mx - px, my - py) > 15) return; // >15 см от стены — не наша
+                        const dlen = Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y);
+                        result.push({ t: t, wCm: d.widthCm || dlen, halfT: (dlen / 2) / wlen });
+                    });
+                    return result;
+                }
+
+                function addInternalWallSegment(ax, ay, bx, by) {
+                    let aM = toM(ax, ay), bM = toM(bx, by);
+                    let dx = bM.x - aM.x, dz = bM.z - aM.z;
+                    let len = Math.hypot(dx, dz) || 0.01;
+                    // Удлиняем на полтолщины с каждого конца — стык с наружной стеной без щели
+                    const ux0 = dx / len, uz0 = dz / len;
+                    const pad = WALL_THK * 0.55;
+                    aM = { x: aM.x - ux0 * pad, z: aM.z - uz0 * pad };
+                    bM = { x: bM.x + ux0 * pad, z: bM.z + uz0 * pad };
+                    dx = bM.x - aM.x; dz = bM.z - aM.z;
+                    len = Math.hypot(dx, dz) || 0.01;
+                    const ang = -Math.atan2(dz, dx);
+                    const midX = (aM.x + bM.x) / 2, midZ = (aM.z + bM.z) / 2;
+                    const wallH = roomH - 0.004;
+                    const openings = doorsOnWall({ x: ax, y: ay }, { x: bx, y: by });
+
+                    if (!openings.length) {
+                        // Сплошная перегородка (короб с толщиной)
+                        const geo = new THREE.BoxGeometry(len, wallH, WALL_THK);
+                        const mesh = new THREE.Mesh(geo, intWallMat);
+                        mesh.position.set(midX, wallH / 2, midZ);
+                        mesh.rotation.y = ang;
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        scene.add(mesh);
+                        return;
+                    }
+                    // Стена с дверными проёмами: панели слева/справа/сверху
+                    openings.sort(function (u, v) { return u.t - v.t; });
+                    let cursorT = 0;
+                    const ux = Math.cos(ang), uz = Math.sin(ang);
+                    openings.forEach(function (op) {
+                        const leftT = Math.max(cursorT, op.t - op.halfT);
+                        const rightT = Math.min(1, op.t + op.halfT);
+                        // панель слева от двери
+                        const leftLen = (leftT - cursorT) * len;
+                        if (leftLen > 0.03) {
+                            const cT = (cursorT + leftT) / 2;
+                            const cxp = aM.x + (bM.x - aM.x) * cT;
+                            const czp = aM.z + (bM.z - aM.z) * cT;
+                            const panel = new THREE.Mesh(new THREE.BoxGeometry(leftLen, wallH, WALL_THK), intWallMat);
+                            panel.position.set(cxp, wallH / 2, czp);
+                            panel.rotation.y = ang;
+                            panel.castShadow = true;
+                            panel.receiveShadow = true;
+                            scene.add(panel);
+                        }
+                        // перемычка над дверью
+                        const doorW = op.wCm / 100;
+                        const topH = Math.max(0.05, wallH - DOOR_H);
+                        if (topH > 0.02) {
+                            const cxp = aM.x + (bM.x - aM.x) * op.t;
+                            const czp = aM.z + (bM.z - aM.z) * op.t;
+                            const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW, topH, WALL_THK), intWallMat);
+                            lintel.position.set(cxp, DOOR_H + topH / 2, czp);
+                            lintel.rotation.y = ang;
+                            scene.add(lintel);
+                        }
+                        // косяки (тонкие)
+                        const frameMat2 = new THREE.MeshPhongMaterial({ color: 0xc4965a, shininess: 15 });
+                        [-1, 1].forEach(function (sgn) {
+                            const ft = op.t + sgn * op.halfT;
+                            const fx = aM.x + (bM.x - aM.x) * ft;
+                            const fz = aM.z + (bM.z - aM.z) * ft;
+                            const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.04, DOOR_H, WALL_THK + 0.02), frameMat2);
+                            jamb.position.set(fx, DOOR_H / 2, fz);
+                            jamb.rotation.y = ang;
+                            scene.add(jamb);
+                        });
+                        cursorT = rightT;
+                    });
+                    // панель справа после последней двери
+                    const rightLen = (1 - cursorT) * len;
+                    if (rightLen > 0.03) {
+                        const cT = (cursorT + 1) / 2;
+                        const cxp = aM.x + (bM.x - aM.x) * cT;
+                        const czp = aM.z + (bM.z - aM.z) * cT;
+                        const panel = new THREE.Mesh(new THREE.BoxGeometry(rightLen, wallH, WALL_THK), intWallMat);
+                        panel.position.set(cxp, wallH / 2, czp);
+                        panel.rotation.y = ang;
+                        panel.castShadow = true;
+                        panel.receiveShadow = true;
+                        scene.add(panel);
+                    }
+                }
+
+                // Перед 3D — восстановить стены из якорей на актуальном контуре
+                if (typeof rebuildInternalWallsFromAnchors === 'function') {
+                    rebuildInternalWallsFromAnchors();
+                }
+
+                // Только внутренние перегородки (наружный контур уже построен выше как roomContour)
+                (aptInternalWalls || []).forEach(function (w) {
+                    addInternalWallSegment(w.a.x, w.a.y, w.b.x, w.b.y);
+                });
+            })();
 
             // Дверь — в вырезе стены
             if (doorEdge && doorEdge.len > 0.9) {
@@ -6535,7 +7536,7 @@ function getCurrentCeilingPayload() {
                 sun.target.position.set(mx - nx * 1.3 + tx * 1.7, 0.3, mz - nz * 1.3 + tz * 1.7);
                 // единственный источник с тенями — дёшево и сразу «приземляет» предметы
                 sun.castShadow = true;
-                sun.shadow.mapSize.set(1536, 1536); // резче тени при возросшем pixelRatio рендера
+                sun.shadow.mapSize.set(2048, 2048); // резче тени, фото-реализм
                 sun.shadow.camera.near = 0.5;
                 sun.shadow.camera.far = 22;
                 sun.shadow.camera.left = -6;
@@ -6569,15 +7570,24 @@ function getCurrentCeilingPayload() {
             // не должны отражать ни пол, ни светильники.
             const isGlossyCeil = matName.includes('глянец');
             const isSatinCeil = matName.includes('сатин');
-            let ceilShine = 10, ceilSpec = 0x0c0c0c;
-            if (isGlossyCeil) { ceilShine = 70; ceilSpec = 0x333333; }
-            else if (isSatinCeil) { ceilShine = 22; ceilSpec = 0x161616; }
-            const ceilMat = new THREE.MeshPhongMaterial({
+            // Physical: roughness/metalness + clearcoat для глянца — заметно ближе к фото
+            let ceilRough = 0.82, ceilMetal = 0.0, ceilClearcoat = 0.0, ceilClearcoatRough = 0.4;
+            if (isGlossyCeil) {
+                ceilRough = 0.12; ceilMetal = 0.05; ceilClearcoat = 0.85; ceilClearcoatRough = 0.08;
+            } else if (isSatinCeil) {
+                ceilRough = 0.38; ceilMetal = 0.02; ceilClearcoat = 0.25; ceilClearcoatRough = 0.28;
+            }
+            const ceilMat = new THREE.MeshPhysicalMaterial({
                 color: ceilColor,
-                shininess: ceilShine,
-                specular: ceilSpec,
+                roughness: ceilRough,
+                metalness: ceilMetal,
+                clearcoat: ceilClearcoat,
+                clearcoatRoughness: ceilClearcoatRough,
+                envMapIntensity: isGlossyCeil ? 0.9 : (isSatinCeil ? 0.35 : 0.12),
                 vertexColors: true,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                transparent: false,
+                opacity: 1
             });
             const ceilGeo = makeRoomPlaneGeometry(roomH, 0.002, 0.9);
             let ceilMeshRef = null;
@@ -6588,8 +7598,8 @@ function getCurrentCeilingPayload() {
             }
 
             // Дневной общий свет (для режима Ночь гасим)
-            const ambientLight = new THREE.AmbientLight(0x505050, 0.45);
-            const hemiLight = new THREE.HemisphereLight(0xfff5e6, 0x4a4035, 0.3);
+            const ambientLight = new THREE.AmbientLight(0x6a6a78, 0.28);
+            const hemiLight = new THREE.HemisphereLight(0xfff0e0, 0x2a2830, 0.42);
             scene.add(ambientLight);
             scene.add(hemiLight);
             const envLights = [
@@ -6636,7 +7646,8 @@ function getCurrentCeilingPayload() {
                     v.mat.needsUpdate = true;
                 });
                 ceilReflectMats.forEach(function (m) {
-                    m.reflectivity = isNight ? 0.05 : 0.15;
+                    if (m.envMapIntensity !== undefined) m.envMapIntensity = isNight ? 0.25 : 0.95;
+                    else if (m.reflectivity !== undefined) m.reflectivity = isNight ? 0.05 : 0.15;
                     m.needsUpdate = true;
                 });
                 invalidate();
@@ -6644,6 +7655,9 @@ function getCurrentCeilingPayload() {
 
             // Модели: люстра / спот (цилиндр 10см) / светильник (точка)
             const ceilingLights = [];
+            // Группы для перетаскивания приборов в виде «сверху» (реалтайм + синхронизация с fixtures)
+            const movableGroups = [];
+            let topDownOn = false; // объявлен рано — applyCam читает флаг
             let lightsOn = true;
             const lightKindState = { spot: true, light_point: true, chandelier: true, strip: true, track: true, cornice: true, floating: true };
             // Подсветка парящего профиля (накоплена при стенах)
@@ -6768,9 +7782,74 @@ function getCurrentCeilingPayload() {
                 lightKindState.cornice = blOn;
             }
 
-            fxList.forEach(f => {
+            // Индекс в исходном fixtures[] — чтобы движение в 3D писалось обратно
+            const fxEntries = [];
+            (fixtures || []).forEach(function (f, idx) {
+                if (!f) return;
+                if (typeof isFixtureInsideContour === 'function' && f.type !== 'cornice' && !isFixtureInsideContour(f)) return;
+                fxEntries.push({ f: f, idx: idx });
+            });
+            if (!fxEntries.length && fxList && fxList.length) {
+                fxList.forEach(function (f) { fxEntries.push({ f: f, idx: -1 }); });
+            }
+            fxEntries.forEach(function (entry) {
+                const f = entry.f;
+                const fixtureIdx = entry.idx;
                 if (!f) return;
                 const t = (f.type || '').toString();
+                // Набор Object3D этой группы (для перетаскивания целиком)
+                const _moveObjs = [];
+                function _track(obj) { if (obj) _moveObjs.push(obj); }
+                function _registerMoveGroup(kind, anchorX, anchorZ) {
+                    if (!_moveObjs.length) return;
+                    // Хитбокс ОБЯЗАТЕЛЬНО visible=true — Raycaster игнорирует visible:false
+                    const hitR = (kind === 'strip' || kind === 'track') ? 0.35 : 0.28;
+                    const hitGeo = new THREE.SphereGeometry(hitR, 10, 10);
+                    const hitMat = new THREE.MeshBasicMaterial({
+                        color: 0x4da3ff,
+                        transparent: true,
+                        opacity: 0.0, // невидим глазу, но raycast работает
+                        depthWrite: false,
+                        depthTest: false
+                    });
+                    const hit = new THREE.Mesh(hitGeo, hitMat);
+                    hit.position.set(anchorX, roomH - 0.03, anchorZ);
+                    hit.userData.isLightHit = true;
+                    hit.userData.movableIdx = movableGroups.length;
+                    hit.renderOrder = 20;
+                    scene.add(hit);
+                    _track(hit);
+                    // Визуальный маркер (кольцо) — только в режиме сверху включается
+                    const ringMat = new THREE.MeshBasicMaterial({
+                        color: 0x4da3ff,
+                        transparent: true,
+                        opacity: 0,
+                        depthWrite: false,
+                        side: THREE.DoubleSide
+                    });
+                    const ring = new THREE.Mesh(new THREE.RingGeometry(hitR * 0.55, hitR * 0.85, 24), ringMat);
+                    ring.rotation.x = -Math.PI / 2;
+                    ring.position.set(anchorX, roomH - 0.01, anchorZ);
+                    ring.userData.isLightMarker = true;
+                    ring.renderOrder = 21;
+                    scene.add(ring);
+                    _track(ring);
+                    var gi = movableGroups.length;
+                    // Все mesh группы помечаем индексом — чтобы raycast не путал приборы
+                    _moveObjs.forEach(function (o) {
+                        if (o && o.userData) o.userData.movableIdx = gi;
+                    });
+                    hit.userData.movableIdx = gi;
+                    ring.userData.movableIdx = gi;
+                    movableGroups.push({
+                        fixtureIdx: fixtureIdx,
+                        kind: kind,
+                        objs: _moveObjs.slice(),
+                        hit: hit,
+                        marker: ring,
+                        isStrip: kind === 'strip' || kind === 'track'
+                    });
+                }
 
                 if (t === 'cornice' && typeof f.edge_index === 'number' && points[f.edge_index]) {
                     const ei = f.edge_index;
@@ -6789,138 +7868,16 @@ function getCurrentCeilingPayload() {
                 }
 
                 if (t === 'strip' && f.points && f.points.length >= 2) {
-                    const isTrack = /трек|track/i.test((f.material || f.name || '').toString());
+                    const isTrack = /трек|track/i.test((f.material || '').toString());
                     const sk = isTrack ? 'track' : 'strip';
-                    const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
-
-                    if (isTrack) {
-                        // ===== Трековая система =====
-                        // Шина = чёрный «теневой» профиль на потолке, СВЕТА НЕ ДАЁТ.
-                        // Источник света — только споты, висящие на шине (чёрные/белые).
-                        const railMat = new THREE.MeshLambertMaterial({
-                            color: 0x1a1a1a,
-                            emissive: 0x000000,
-                            emissiveIntensity: 0,
-                            side: THREE.DoubleSide
-                        });
-                        // профиль шины: узкий «теневой» канал (~2.2 см)
-                        const railW = 0.022;
-                        const railH = 0.014;
-                        let totalLen = 0;
-                        const segs = [];
-                        for (let i = 0; i < ptsM.length - 1; i++) {
-                            const a = ptsM[i], b = ptsM[i + 1];
-                            const dx = b.x - a.x, dz = b.z - a.z;
-                            const len = Math.hypot(dx, dz) || 0.01;
-                            segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
-                            totalLen += len;
-                            // прямоугольная шина
-                            const geom = new THREE.BoxGeometry(len, railH, railW);
-                            const mesh = new THREE.Mesh(geom, railMat);
-                            mesh.position.set((a.x + b.x) / 2, roomH - railH * 0.5 - 0.01, (a.z + b.z) / 2);
-                            // ориентация вдоль сегмента (ось X геометрии → вдоль dx,dz)
-                            mesh.rotation.y = -Math.atan2(dz, dx);
-                            scene.add(mesh);
-                            ceilingLights.push({
-                                kind: sk, light: null, mesh: mesh,
-                                baseIntensity: 0, baseEmissive: 0,
-                                onColor: 0x1a1a1a, offColor: 0x1a1a1a
-                            });
-                        }
-                        // угловые соединители шины
-                        for (let i = 0; i < ptsM.length; i++) {
-                            const joint = new THREE.Mesh(
-                                new THREE.BoxGeometry(railW * 1.15, railH, railW * 1.15),
-                                railMat
-                            );
-                            joint.position.set(ptsM[i].x, roomH - railH * 0.5 - 0.01, ptsM[i].z);
-                            scene.add(joint);
-                            ceilingLights.push({
-                                kind: sk, light: null, mesh: joint,
-                                baseIntensity: 0, baseEmissive: 0,
-                                onColor: 0x1a1a1a, offColor: 0x1a1a1a
-                            });
-                        }
-
-                        // Цвет корпуса спотов: белый если в названии «бел», иначе чёрный
-                        const matName = (f.material || f.name || '').toString().toLowerCase();
-                        const spotBodyWhite = /бел|white/i.test(matName);
-                        const bodyCol = spotBodyWhite ? 0xf0f0f0 : 0x1a1a1a;
-                        const bodyMat = new THREE.MeshPhongMaterial({
-                            color: bodyCol,
-                            shininess: 40,
-                            specular: 0x333333
-                        });
-                        // Споты вдоль шины каждые ~0.55 м (как на реальной трековой системе)
-                        const spacing = 0.55;
-                        const nSpots = Math.max(2, Math.min(14, Math.round(totalLen / spacing) || 2));
-                        const spotWatts = 12; // типичный трековый спот
-                        for (let k = 0; k < nSpots; k++) {
-                            const dist = ((k + 0.5) / nSpots) * totalLen;
-                            let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
-                            let segDx = 1, segDz = 0;
-                            for (let s = 0; s < segs.length; s++) {
-                                if (acc + segs[s].len >= dist) {
-                                    const tseg = (dist - acc) / segs[s].len;
-                                    px = segs[s].a.x + segs[s].dx * tseg;
-                                    pz = segs[s].a.z + segs[s].dz * tseg;
-                                    segDx = segs[s].dx; segDz = segs[s].dz;
-                                    break;
-                                }
-                                acc += segs[s].len;
-                            }
-                            // корпус спота — цилиндр, висит под шиной
-                            const bodyLen = 0.09;
-                            const bodyR = 0.022;
-                            const body = new THREE.Mesh(
-                                new THREE.CylinderGeometry(bodyR, bodyR * 0.85, bodyLen, 12),
-                                bodyMat
-                            );
-                            // «смотрит вниз» — ось цилиндра по Y
-                            const by = roomH - railH - 0.02 - bodyLen * 0.5;
-                            body.position.set(px, by, pz);
-                            scene.add(body);
-                            // линза / отверстие снизу
-                            const lens = new THREE.Mesh(
-                                new THREE.CircleGeometry(bodyR * 0.7, 12),
-                                new THREE.MeshBasicMaterial({ color: 0xfff4d0 })
-                            );
-                            lens.rotation.x = -Math.PI / 2;
-                            lens.position.set(px, by - bodyLen * 0.5 - 0.001, pz);
-                            scene.add(lens);
-
-                            // свет ТОЛЬКО от спота (направленный конус вниз)
-                            const intensity = Math.max(0.7, wattsToIntensity(spotWatts) * 7);
-                            const sl = addCappedSpotLight(0xfff6e8, intensity, 5.5, 0.42, 0.45);
-                            if (sl) {
-                                sl.position.set(px, by - bodyLen * 0.45, pz);
-                                sl.target.position.set(px, 0.05, pz);
-                                sl.target.updateMatrixWorld();
-                            }
-                            // без ореола на потолке — только конус спота вниз
-                            ceilingLights.push({
-                                kind: sk, light: sl, mesh: body, halo: null,
-                                baseIntensity: intensity, baseEmissive: 0,
-                                onColor: bodyCol, offColor: bodyCol
-                            });
-                            // линза: при выкл. — тёмная, без «горящего» жёлтого
-                            ceilingLights.push({
-                                kind: sk, light: null, mesh: lens, halo: null,
-                                baseIntensity: 0, baseEmissive: 0,
-                                onColor: 0xfff4d0, offColor: 0x1a1a1a
-                            });
-                        }
-                        return;
-                    }
-
-                    // ===== Обычная световая полоса (светит сама) =====
-                    const r = 0.016;
+                    const r = isTrack ? 0.022 : 0.016;
                     const stripMat = new THREE.MeshLambertMaterial({
-                        color: 0xfff2aa,
-                        emissive: 0xffe08a,
-                        emissiveIntensity: 1.2,
+                        color: isTrack ? 0x333333 : 0xfff2aa,
+                        emissive: isTrack ? 0x222222 : 0xffe08a,
+                        emissiveIntensity: isTrack ? 0.4 : 1.2,
                         side: THREE.DoubleSide
                     });
+                    const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
                     for (let i = 0; i < ptsM.length - 1; i++) {
                         const a = ptsM[i], b = ptsM[i + 1];
                         const dx = b.x - a.x, dz = b.z - a.z;
@@ -6934,13 +7891,14 @@ function getCurrentCeilingPayload() {
                         mesh.rotation.y = -Math.atan2(dz, dx);
                         scene.add(mesh);
                         ceilingLights.push({
-                            kind: sk, light: null, mesh: mesh,
+                            kind: sk, light: null, mesh,
                             baseIntensity: 0,
                             baseEmissive: stripMat.emissiveIntensity,
-                            onColor: 0xfff2aa,
-                            offColor: 0xb8b8b8
+                            onColor: isTrack ? 0x333333 : 0xfff2aa,
+                            offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
                         });
                     }
+                    // равномерный свет вдоль полосы — реально освещает комнату
                     let totalLen = 0;
                     const segs = [];
                     for (let i = 0; i < ptsM.length - 1; i++) {
@@ -6950,6 +7908,7 @@ function getCurrentCeilingPayload() {
                         segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
                         totalLen += len;
                     }
+                    // Световая полоса 15 Вт/м (трек — та же шкала)
                     const nWant = Math.max(2, Math.min(6, Math.ceil(totalLen / 1.2)));
                     const stripWatts = totalLen * LIGHT_WATTS.strip_per_m;
                     const baseI = wattsToIntensity(stripWatts) / nWant;
@@ -6958,21 +7917,30 @@ function getCurrentCeilingPayload() {
                         let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
                         for (let s = 0; s < segs.length; s++) {
                             if (acc + segs[s].len >= dist) {
-                                const tseg = (dist - acc) / segs[s].len;
-                                px = segs[s].a.x + segs[s].dx * tseg;
-                                pz = segs[s].a.z + segs[s].dz * tseg;
+                                const t = (dist - acc) / segs[s].len;
+                                px = segs[s].a.x + segs[s].dx * t;
+                                pz = segs[s].a.z + segs[s].dz * t;
                                 break;
                             }
                             acc += segs[s].len;
                         }
-                        const pl = addStripPointLight(0xfff2d0, baseI, 6.5, 2.4);
+                        // большой радиус, слабая яркость, сильное затухание → без «бликов» на стенах
+                        const pl = addStripPointLight(isTrack ? 0xe8e0ff : 0xfff2d0, baseI, 6.5, 2.4);
                         pl.position.set(px, roomH - 0.35, pz);
                         ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
+                        _track(pl);
                     }
-                    const fillI = wattsToIntensity(stripWatts) * 0.25;
-                    const fill = new THREE.HemisphereLight(0xfff5e0, 0x2a2820, fillI);
+                    // общий мягкий fill ~25% мощности полосы
+                    const fillI = wattsToIntensity(stripWatts) * 0.25 * (isTrack ? 0.85 : 1);
+                    const fill = new THREE.HemisphereLight(
+                        isTrack ? 0xe8e0ff : 0xfff5e0,
+                        isTrack ? 0x2a2830 : 0x2a2820,
+                        fillI
+                    );
                     scene.add(fill);
                     ceilingLights.push({ kind: sk, light: fill, mesh: null, baseIntensity: fillI, baseEmissive: 0, onColor: 0xfff8e0 });
+                    // HemisphereLight — глобальный, не трекаем в группу полосы
+                    // шары на углах — плавная стыковка сегментов
                     for (let i = 0; i < ptsM.length; i++) {
                         const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.05, 10, 10), stripMat);
                         j.position.set(ptsM[i].x, roomH - 0.04, ptsM[i].z);
@@ -6981,10 +7949,23 @@ function getCurrentCeilingPayload() {
                             kind: sk, light: null, mesh: j,
                             baseIntensity: 0,
                             baseEmissive: stripMat.emissiveIntensity,
-                            onColor: 0xfff2aa,
-                            offColor: 0xb8b8b8
+                            onColor: isTrack ? 0x333333 : 0xfff2aa,
+                            offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
                         });
+                        _track(j);
                     }
+                    // цилиндры сегментов уже в сцене — подтянем по позиции
+                    scene.children.forEach(function (obj) {
+                        if (!obj || !obj.position || obj.geometry == null) return;
+                        if (Math.abs(obj.position.y - (roomH - 0.04)) > 0.02) return;
+                        for (let i = 0; i < ptsM.length - 1; i++) {
+                            const a = ptsM[i], b = ptsM[i + 1];
+                            const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+                            if (Math.hypot(obj.position.x - mx, obj.position.z - mz) < 0.04) _track(obj);
+                        }
+                    });
+                    const mid = ptsM[Math.floor(ptsM.length / 2)] || ptsM[0];
+                    _registerMoveGroup(sk, mid.x, mid.z);
                     return;
                 }
 
@@ -6993,8 +7974,8 @@ function getCurrentCeilingPayload() {
 
                 if (t === 'chandelier') {
                     const style = 'drum';
-                    const chrome = new THREE.MeshPhongMaterial({ color: 0xb8bcc0, shininess: 90, specular: 0x666666 });
-                    const metal = new THREE.MeshLambertMaterial({ color: 0x9a9a9a, side: THREE.DoubleSide });
+                    const chrome = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.22, metalness: 0.85 });
+                    const metal = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
                     let mainMesh = null;
                     let intensity = wattsToIntensity(LIGHT_WATTS.chandelier);
                     let emissiveI = 0.45;
@@ -7072,13 +8053,24 @@ function getCurrentCeilingPayload() {
                         onColor: onCol,
                         offColor: 0x888880
                     });
+                    // Все части люстры рядом с якорем — для перетаскивания в виде сверху
+                    scene.children.forEach(function (obj) {
+                        if (!obj || !obj.position) return;
+                        if (Math.abs(obj.position.x - m.x) < 0.45 && Math.abs(obj.position.z - m.z) < 0.45
+                            && Math.abs(obj.position.y - (roomH - 0.25)) < 0.55) {
+                            _track(obj);
+                        }
+                    });
+                    _track(pl);
+                    if (mainMesh) _track(mainMesh);
+                    _registerMoveGroup('chandelier', m.x, m.z);
                     return;
                 }
 
                 if (t === 'spot') {
                     // Спот — аккуратный цилиндр; PointLight только в пределах бюджета
                     const bodyLen = 0.09;
-                    const ringMat = new THREE.MeshPhongMaterial({ color: 0xf5f5f5, shininess: 50, specular: 0x888888 });
+                    const ringMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.35, metalness: 0.55 });
                     const body = new THREE.Mesh(
                         new THREE.CylinderGeometry(0.028, 0.022, bodyLen, 8),
                         ringMat
@@ -7111,6 +8103,9 @@ function getCurrentCeilingPayload() {
                     }
                     const halo = addCeilingHalo(m.x, roomH - 0.012, m.z, 0.3, 0.35);
                     ceilingLights.push({ kind: 'spot', light: sl, mesh: glow, halo: halo, baseIntensity: intensity, baseEmissive: 0.14, onColor: 0xfff8e8, offColor: 0x666660 });
+                    _track(body); _track(bezel); _track(glow); _track(sl); _track(halo);
+                    if (sl && sl.target) _track(sl.target);
+                    _registerMoveGroup('spot', m.x, m.z);
                     return;
                 }
 
@@ -7136,6 +8131,8 @@ function getCurrentCeilingPayload() {
                     if (pl) pl.position.set(m.x, roomH - 0.06, m.z);
                     const halo = addCeilingHalo(m.x, roomH - 0.012, m.z, 0.38, 0.3);
                     ceilingLights.push({ kind: 'light_point', light: pl, mesh: disc, halo: halo, baseIntensity: intensity, baseEmissive: 1.9, onColor: 0xfff8e0, offColor: 0x888880 });
+                    _track(disc); _track(ring); _track(pl); _track(halo);
+                    _registerMoveGroup('light_point', m.x, m.z);
                 }
             });
 
@@ -7420,10 +8417,7 @@ function getCurrentCeilingPayload() {
                 // Выкл. свет = гасим излучение, корпус/трек/полоса ОСТАЮТСЯ видимыми
                 ceilingLights.forEach(item => {
                     const on = lightKindState[item.kind] !== false;
-                    if (item.light) {
-                        item.light.intensity = on ? item.baseIntensity : 0;
-                        item.light.visible = on;
-                    }
+                    if (item.light) item.light.intensity = on ? item.baseIntensity : 0;
                     if (item.halo) item.halo.visible = on;
                     if (item.mesh) {
                         item.mesh.visible = true;
@@ -7456,6 +8450,19 @@ function getCurrentCeilingPayload() {
             // === FPS: старт из угла, осмотр + ходьба ===
             // Границы комнаты в метрах (XZ)
             const roomPts = points.map(p => toM(p.x, p.y));
+            // Внутренние стены в метрах (для коллизий)
+            const intWallsM = (typeof aptInternalWalls !== 'undefined' && aptInternalWalls)
+                ? aptInternalWalls.map(function (w) {
+                    return { a: toM(w.a.x, w.a.y), b: toM(w.b.x, w.b.y) };
+                })
+                : [];
+            // Дверные проёмы в метрах — через них можно проходить
+            const doorsM = (typeof aptDoors !== 'undefined' && aptDoors)
+                ? aptDoors.map(function (d) {
+                    return { a: toM(d.a.x, d.a.y), b: toM(d.b.x, d.b.y) };
+                })
+                : [];
+
             function pointInRoomXZ(x, z) {
                 let inside = false;
                 for (let i = 0, j = roomPts.length - 1; i < roomPts.length; j = i++) {
@@ -7469,17 +8476,50 @@ function getCurrentCeilingPayload() {
             }
             // отступ от стен ~28 см — нельзя «провалиться» в стену
             const WALL_MARGIN = 0.28;
+
+            function distPointToSeg2D(x, z, a, b) {
+                const abx = b.x - a.x, abz = b.z - a.z;
+                const len2 = abx * abx + abz * abz || 1e-9;
+                let t = ((x - a.x) * abx + (z - a.z) * abz) / len2;
+                t = Math.max(0, Math.min(1, t));
+                const px = a.x + abx * t, pz = a.z + abz * t;
+                return { d: Math.hypot(x - px, z - pz), t: t, px: px, pz: pz };
+            }
+
+            /** Точка на сегменте стены попадает в дверной проём? */
+            function isInDoorOpening(px, pz, wallA, wallB) {
+                for (let di = 0; di < doorsM.length; di++) {
+                    const d = doorsM[di];
+                    // середина двери близка к этой стене?
+                    const mx = (d.a.x + d.b.x) / 2, mz = (d.a.z + d.b.z) / 2;
+                    const near = distPointToSeg2D(mx, mz, wallA, wallB);
+                    if (near.d > 0.2) continue; // дверь не на этой стене
+                    // точка (px,pz) внутри отрезка двери?
+                    const ddx = d.b.x - d.a.x, ddz = d.b.z - d.a.z;
+                    const dlen2 = ddx * ddx + ddz * ddz || 1e-9;
+                    let td = ((px - d.a.x) * ddx + (pz - d.a.z) * ddz) / dlen2;
+                    if (td < -0.05 || td > 1.05) continue;
+                    const onDoor = Math.hypot(px - (d.a.x + td * ddx), pz - (d.a.z + td * ddz));
+                    if (onDoor < 0.25) return true;
+                }
+                return false;
+            }
+
             function distToWalls(x, z) {
                 let minD = 1e9;
+                // Наружные стены
                 for (let i = 0; i < roomPts.length; i++) {
                     const a = roomPts[i], b = roomPts[(i + 1) % roomPts.length];
-                    const abx = b.x - a.x, abz = b.z - a.z;
-                    const len2 = abx * abx + abz * abz || 1e-9;
-                    let t = ((x - a.x) * abx + (z - a.z) * abz) / len2;
-                    t = Math.max(0, Math.min(1, t));
-                    const px = a.x + abx * t, pz = a.z + abz * t;
-                    const d = Math.hypot(x - px, z - pz);
-                    if (d < minD) minD = d;
+                    const hit = distPointToSeg2D(x, z, a, b);
+                    if (isInDoorOpening(hit.px, hit.pz, a, b)) continue; // проём — не стена
+                    if (hit.d < minD) minD = hit.d;
+                }
+                // Внутренние перегородки
+                for (let i = 0; i < intWallsM.length; i++) {
+                    const a = intWallsM[i].a, b = intWallsM[i].b;
+                    const hit = distPointToSeg2D(x, z, a, b);
+                    if (isInDoorOpening(hit.px, hit.pz, a, b)) continue;
+                    if (hit.d < minD) minD = hit.d;
                 }
                 return minD;
             }
@@ -7515,12 +8555,18 @@ function getCurrentCeilingPayload() {
                 camera.fov = fovS;
                 camera.updateProjectionMatrix();
                 camera.position.set(camXS, eyeHS, camZS);
-                const lookDist = 2;
-                const lx = camXS + Math.sin(yawS) * Math.cos(pitchS) * lookDist;
-                const ly = eyeHS + Math.sin(pitchS) * lookDist;
-                const lz = camZS + Math.cos(yawS) * Math.cos(pitchS) * lookDist;
-                camera.up.set(0, 1, 0);
-                camera.lookAt(lx, ly, lz);
+                if (topDownOn) {
+                    // Строго вниз: up = «север» карты ( -Z ), иначе gimbal lock при pitch≈-90°
+                    camera.up.set(0, 0, -1);
+                    camera.lookAt(camXS, 0, camZS);
+                } else {
+                    const lookDist = 2;
+                    const lx = camXS + Math.sin(yawS) * Math.cos(pitchS) * lookDist;
+                    const ly = eyeHS + Math.sin(pitchS) * lookDist;
+                    const lz = camZS + Math.cos(yawS) * Math.cos(pitchS) * lookDist;
+                    camera.up.set(0, 1, 0);
+                    camera.lookAt(lx, ly, lz);
+                }
                 needsRender = true;
             }
             function stepCam(dt) {
@@ -7852,6 +8898,260 @@ function getCurrentCeilingPayload() {
             };
             lightPanel.appendChild(overviewBtn);
 
+            // ===== Вид сверху: прозрачный потолок + перетаскивание приборов =====
+            let topDownSaved = null;
+            let topDrag = null; // { groupIdx, offsetX, offsetZ } или { pan:true, lastW }
+            let topPanLast = null; // Vector3 последней точки панорамы на плоскости
+            const topRaycaster = new THREE.Raycaster();
+            topRaycaster.params.Points = { threshold: 0.2 };
+            topRaycaster.params.Line = { threshold: 0.15 };
+            const topPointer = new THREE.Vector2();
+            // Плоскость потолка y = roomH (normal вверх → constant = -roomH)
+            const topPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -roomH);
+            // Границы комнаты для клампа камеры
+            let roomBounds = { minX: -5, maxX: 5, minZ: -5, maxZ: 5, cx: 0, cz: 0, maxR: 3 };
+            (function calcRoomBounds() {
+                let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+                roomPts.forEach(function (p) {
+                    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                    minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+                });
+                const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+                let maxR = 1.5;
+                roomPts.forEach(function (p) {
+                    maxR = Math.max(maxR, Math.hypot(p.x - cx, p.z - cz));
+                });
+                const pad = 0.8;
+                roomBounds = {
+                    minX: minX - pad, maxX: maxX + pad,
+                    minZ: minZ - pad, maxZ: maxZ + pad,
+                    cx: cx, cz: cz, maxR: maxR
+                };
+            })();
+            function clampCamToRoom() {
+                camX = Math.max(roomBounds.minX, Math.min(roomBounds.maxX, camX));
+                camZ = Math.max(roomBounds.minZ, Math.min(roomBounds.maxZ, camZ));
+            }
+
+            function setCeilingTransparent(on) {
+                if (!ceilMeshRef || !ceilMat) return;
+                if (on) {
+                    ceilMat.transparent = true;
+                    ceilMat.opacity = 0.12;
+                    ceilMat.depthWrite = false;
+                    ceilMat.side = THREE.DoubleSide;
+                    ceilMat.needsUpdate = true;
+                    ceilMeshRef.renderOrder = 10;
+                } else {
+                    ceilMat.transparent = false;
+                    ceilMat.opacity = 1;
+                    ceilMat.depthWrite = true;
+                    ceilMat.side = THREE.DoubleSide;
+                    ceilMat.needsUpdate = true;
+                    ceilMeshRef.renderOrder = 0;
+                }
+            }
+
+            function goTopDownCam() {
+                camX = roomBounds.cx;
+                camZ = roomBounds.cz;
+                eyeH = Math.max(roomH + 1.4, roomBounds.maxR * 1.5 + 1.0);
+                yaw = 0;
+                pitch = -1.5708; // -90° — строго вниз (applyCam в topDown особый)
+                camFov = 50;
+                // Синхронизируем сглаженные значения сразу — без инерции «уезда»
+                yawS = yaw; pitchS = pitch; camXS = camX; camZS = camZ; eyeHS = eyeH; fovS = camFov;
+                syncZoomSlider();
+                applyCam();
+                invalidate();
+            }
+
+            function showTopMarkers(on) {
+                movableGroups.forEach(function (g) {
+                    if (g.marker && g.marker.material) {
+                        g.marker.material.opacity = on ? 0.55 : 0;
+                        g.marker.material.needsUpdate = true;
+                    }
+                    if (g.hit && g.hit.material) {
+                        // чуть видимый при наведении не нужен — opacity 0, raycast ок
+                        g.hit.material.opacity = 0;
+                    }
+                });
+            }
+
+            function worldFromPointer(clientX, clientY) {
+                const rect = el.getBoundingClientRect();
+                if (!rect.width || !rect.height) return null;
+                topPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+                topPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+                // Камера должна быть актуальной (без лага сглаживания)
+                if (topDownOn) {
+                    camera.position.set(camX, eyeH, camZ);
+                    camera.up.set(0, 0, -1);
+                    camera.lookAt(camX, 0, camZ);
+                    camera.updateMatrixWorld(true);
+                }
+                topRaycaster.setFromCamera(topPointer, camera);
+                const hit = new THREE.Vector3();
+                if (topRaycaster.ray.intersectPlane(topPlane, hit)) return hit;
+                return null;
+            }
+
+            function pointInRoomLoose(x, z) {
+                // чуть мягче canStand — для света у стен
+                if (typeof pointInRoomXZ === 'function' && !pointInRoomXZ(x, z)) return false;
+                return true;
+            }
+
+            /**
+             * Перенос группы светильника в абсолютную позицию (nx, nz) в метрах.
+             * Использует сохранённые basePos при старте drag — без накопления ошибок.
+             */
+            function moveGroupTo(g, nx, nz) {
+                if (!g || !g.objs) return;
+                // Если есть снимок позиций на старте drag — ставим абсолютно
+                if (g._dragBase && g._dragBase.hit) {
+                    var baseHx = g._dragBase.hit.x, baseHz = g._dragBase.hit.z;
+                    var dx = nx - baseHx, dz = nz - baseHz;
+                    var seen = new Set();
+                    g.objs.forEach(function (obj, i) {
+                        if (!obj || !obj.position) return;
+                        if (seen.has(obj)) return;
+                        seen.add(obj);
+                        var bp = g._dragBase.objs[i];
+                        if (bp) {
+                            obj.position.x = bp.x + dx;
+                            obj.position.z = bp.z + dz;
+                        } else {
+                            // fallback
+                            obj.position.x += (nx - (g.hit ? g.hit.position.x : nx));
+                            obj.position.z += (nz - (g.hit ? g.hit.position.z : nz));
+                        }
+                    });
+                    if (g.hit) { g.hit.position.x = nx; g.hit.position.z = nz; }
+                    if (g.marker) { g.marker.position.x = nx; g.marker.position.z = nz; }
+                    // SpotLight target
+                    g.objs.forEach(function (obj) {
+                        if (obj && obj.isSpotLight && obj.target && obj.target.position) {
+                            // target уже в objs и сдвинут выше; доп. синхронизация
+                            try { obj.target.updateMatrixWorld(true); } catch (e) {}
+                        }
+                    });
+                } else {
+                    // Без снимка — относительный сдвиг от текущего hit
+                    var hx = g.hit ? g.hit.position.x : 0;
+                    var hz = g.hit ? g.hit.position.z : 0;
+                    var ddx = nx - hx, ddz = nz - hz;
+                    if (Math.abs(ddx) < 1e-7 && Math.abs(ddz) < 1e-7) return;
+                    var seen2 = new Set();
+                    g.objs.forEach(function (obj) {
+                        if (!obj || !obj.position || seen2.has(obj)) return;
+                        seen2.add(obj);
+                        obj.position.x += ddx;
+                        obj.position.z += ddz;
+                    });
+                    if (g.hit) { g.hit.position.x = nx; g.hit.position.z = nz; }
+                    if (g.marker) { g.marker.position.x = nx; g.marker.position.z = nz; }
+                }
+                // Синхронизация с чертежом (см) — всегда абсолютная позиция якоря
+                if (g.fixtureIdx >= 0 && fixtures[g.fixtureIdx]) {
+                    var fx = fixtures[g.fixtureIdx];
+                    var cmX = nx * 100 + cx, cmY = nz * 100 + cy;
+                    if (g.isStrip && fx.points && fx.points.length && g._dragBase && g._dragBase.fxPoints) {
+                        var dcmX = (nx - g._dragBase.hit.x) * 100;
+                        var dcmY = (nz - g._dragBase.hit.z) * 100;
+                        fx.points = g._dragBase.fxPoints.map(function (p) {
+                            return { x: p.x + dcmX, y: p.y + dcmY };
+                        });
+                        if (fx.x != null) { fx.x = g._dragBase.fxX + dcmX; fx.y = g._dragBase.fxY + dcmY; }
+                    } else if (fx.x != null) {
+                        fx.x = cmX; fx.y = cmY;
+                    }
+                }
+                invalidate();
+            }
+
+            function beginGroupDrag(g) {
+                if (!g) return;
+                g._dragBase = {
+                    hit: g.hit ? { x: g.hit.position.x, z: g.hit.position.z } : { x: 0, z: 0 },
+                    objs: (g.objs || []).map(function (o) {
+                        return o && o.position ? { x: o.position.x, z: o.position.z } : null;
+                    })
+                };
+                if (g.fixtureIdx >= 0 && fixtures[g.fixtureIdx]) {
+                    var fx = fixtures[g.fixtureIdx];
+                    g._dragBase.fxX = fx.x;
+                    g._dragBase.fxY = fx.y;
+                    if (fx.points) {
+                        g._dragBase.fxPoints = fx.points.map(function (p) { return { x: p.x, y: p.y }; });
+                    }
+                }
+            }
+
+            const topDownBtn = document.createElement('button');
+            topDownBtn.type = 'button';
+            topDownBtn.textContent = '📐 Сверху';
+            topDownBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(40,60,100,0.55);color:#fff;font-size:12px;margin-top:4px;';
+            topDownBtn.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!topDownOn) {
+                    topDownSaved = {
+                        camX: camX, camZ: camZ, eyeH: eyeH,
+                        pitch: pitch, yaw: yaw, fov: camFov,
+                        overviewOn: overviewOn
+                    };
+                    if (overviewOn) {
+                        overviewOn = false;
+                        overviewBtn.textContent = '🔝 Весь потолок';
+                    }
+                    topDownOn = true; // ДО goTopDownCam — applyCam читает флаг
+                    setCeilingTransparent(true);
+                    if (furnitureGroup) furnitureGroup.visible = false;
+                    showTopMarkers(true);
+                    goTopDownCam();
+                    topDownBtn.textContent = '🚶 Выйти сверху';
+                    topDownBtn.style.background = 'rgba(20,120,80,0.7)';
+                    showToast('Тяните синие маркеры светильников · пустое место — панорама · ⌖ центр', 4000);
+                } else {
+                    topDownOn = false;
+                    setCeilingTransparent(false);
+                    showTopMarkers(false);
+                    if (furnitureGroup) furnitureGroup.visible = true;
+                    if (topDownSaved) {
+                        camX = topDownSaved.camX; camZ = topDownSaved.camZ;
+                        eyeH = topDownSaved.eyeH; pitch = topDownSaved.pitch;
+                        yaw = topDownSaved.yaw; camFov = topDownSaved.fov;
+                        yawS = yaw; pitchS = pitch; camXS = camX; camZS = camZ; eyeHS = eyeH; fovS = camFov;
+                        syncZoomSlider();
+                        applyCam();
+                    }
+                    topDrag = null;
+                    topPanLast = null;
+                    topDownBtn.textContent = '📐 Сверху';
+                    topDownBtn.style.background = 'rgba(40,60,100,0.55)';
+                    invalidate();
+                }
+            };
+            lightPanel.appendChild(topDownBtn);
+
+            const topCenterBtn = document.createElement('button');
+            topCenterBtn.type = 'button';
+            topCenterBtn.textContent = '⌖ Центр';
+            topCenterBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(40,60,100,0.4);color:#fff;font-size:12px;margin-top:2px;';
+            topCenterBtn.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!topDownOn) {
+                    showToast('Сначала включите «Сверху»', 1800);
+                    return;
+                }
+                goTopDownCam();
+                showToast('Камера по центру комнаты', 1500);
+            };
+            lightPanel.appendChild(topCenterBtn);
+
             // Фото потолка для коммерческого предложения
             // Снимок → загрузка на хостинг → короткая URL в payload (лимит Telegram 4096 байт)
             const kpPhotoBtn = document.createElement('button');
@@ -8081,7 +9381,7 @@ async function captureCeilingPhotoForKP() {
             const hint = document.createElement('div');
             hint.className = 'p3d-hint';
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;font-size:11px;text-align:right;max-width:52%;z-index:5;pointer-events:none;';
-            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Щипок / колёсико — зум · «Сцена» — настройки';
+            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Щипок / колёсико — зум · «Сцена» — настройки<br>📐 Сверху — прозрачный потолок, тяните свет';
             host.style.position = 'relative';
             host.appendChild(pad);
             host.appendChild(zoomWrap);
@@ -8100,23 +9400,148 @@ async function captureCeilingPhotoForKP() {
 
             const el = renderer.domElement;
 
-            // Осмотр (drag по canvas)
+            // Осмотр (drag по canvas) + перетаскивание света в режиме «сверху»
             const onLookDown = (e) => {
-                if (e.target.closest && e.target.closest('div') === pad) return;
-                draggingLook = true;
+                if (e.target.closest && (e.target.closest('.p3d-pad') || e.target.closest('.p3d-panel'))) return;
                 const t = e.touches ? e.touches[0] : e;
+                if (!t) return;
+                if (topDownOn) {
+                    const w0 = worldFromPointer(t.clientX, t.clientY);
+                    // Только хитбоксы (сферы) — не меши, чтобы не путать приборы
+                    const hitObjs = [];
+                    movableGroups.forEach(function (g, i) {
+                        if (g.hit) {
+                            g.hit.userData.movableIdx = i;
+                            hitObjs.push(g.hit);
+                        }
+                    });
+                    topRaycaster.setFromCamera(topPointer, camera);
+                    const inter = topRaycaster.intersectObjects(hitObjs, false);
+                    var mi = -1;
+                    if (inter.length && inter[0].object.userData.movableIdx != null) {
+                        mi = inter[0].object.userData.movableIdx;
+                    } else if (w0) {
+                        // Fallback: ближайший хитбокс в радиусе 0.45 м
+                        var bestD = 0.45;
+                        movableGroups.forEach(function (g, i) {
+                            if (!g.hit) return;
+                            var d = Math.hypot(g.hit.position.x - w0.x, g.hit.position.z - w0.z);
+                            if (d < bestD) { bestD = d; mi = i; }
+                        });
+                    }
+                    if (mi >= 0 && movableGroups[mi]) {
+                        var g = movableGroups[mi];
+                        if (lightKindState[g.kind] === false) {
+                            showToast('Включите этот тип света в панели', 1800);
+                            return;
+                        }
+                        beginGroupDrag(g);
+                        topDrag = {
+                            groupIdx: mi,
+                            offsetX: w0 ? (g.hit.position.x - w0.x) : 0,
+                            offsetZ: w0 ? (g.hit.position.z - w0.z) : 0
+                        };
+                        topPanLast = null;
+                        draggingLook = false;
+                        if (g.marker && g.marker.material) {
+                            g.marker.material.opacity = 0.95;
+                            g.marker.material.color.setHex(0xffcc44);
+                        }
+                        try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch (err) {}
+                        e.preventDefault && e.preventDefault();
+                        return;
+                    }
+                    // Панорама
+                    topDrag = null;
+                    topPanLast = w0;
+                    draggingLook = true;
+                    lx0 = t.clientX; ly0 = t.clientY;
+                    e.preventDefault && e.preventDefault();
+                    return;
+                }
+                draggingLook = true;
                 lx0 = t.clientX; ly0 = t.clientY;
             };
             const onLookMove = (e) => {
-                if (!draggingLook) return;
                 const t = e.touches ? e.touches[0] : e;
+                if (!t) return;
+                if (topDownOn && topDrag && topDrag.groupIdx != null) {
+                    const w = worldFromPointer(t.clientX, t.clientY);
+                    if (w) {
+                        const g = movableGroups[topDrag.groupIdx];
+                        if (g) {
+                            let nx = w.x + topDrag.offsetX;
+                            let nz = w.z + topDrag.offsetZ;
+                            // Мягкий clamp внутрь комнаты
+                            if (typeof pointInRoomXZ === 'function' && !pointInRoomXZ(nx, nz)) {
+                                const cx = roomBounds.cx, cz = roomBounds.cz;
+                                for (let k = 0; k < 8; k++) {
+                                    nx = cx + (nx - cx) * 0.85;
+                                    nz = cz + (nz - cz) * 0.85;
+                                    if (pointInRoomXZ(nx, nz)) break;
+                                }
+                            }
+                            moveGroupTo(g, nx, nz);
+                        }
+                    }
+                    e.preventDefault && e.preventDefault();
+                    return;
+                }
+                if (topDownOn && draggingLook) {
+                    // Панорама без инверсии: точка мира под пальцем остаётся под пальцем
+                    const w = worldFromPointer(t.clientX, t.clientY);
+                    if (w && topPanLast) {
+                        camX -= (w.x - topPanLast.x);
+                        camZ -= (w.z - topPanLast.z);
+                        clampCamToRoom();
+                        // Сразу без сглаживания — иначе «плывёт»
+                        camXS = camX; camZS = camZ;
+                        applyCam();
+                        // После сдвига камеры пересчитываем «захваченную» точку
+                        topPanLast = worldFromPointer(t.clientX, t.clientY);
+                    } else if (w) {
+                        topPanLast = w;
+                    }
+                    e.preventDefault && e.preventDefault();
+                    return;
+                }
+                if (!draggingLook) return;
                 const dx = t.clientX - lx0, dy = t.clientY - ly0;
                 lx0 = t.clientX; ly0 = t.clientY;
                 yaw -= dx * 0.005;
                 pitch = Math.max(-1.2, Math.min(1.35, pitch - dy * 0.004));
                 applyCam();
             };
-            const onLookUp = () => { draggingLook = false; };
+            const onLookUp = () => {
+                if (topDrag && topDrag.groupIdx != null) {
+                    const g = movableGroups[topDrag.groupIdx];
+                    if (g) {
+                        if (g.marker && g.marker.material) {
+                            g.marker.material.opacity = topDownOn ? 0.55 : 0;
+                            g.marker.material.color.setHex(0x4da3ff);
+                        }
+                        // Финальные отступы от стен
+                        if (g.fixtureIdx >= 0 && fixtures[g.fixtureIdx]) {
+                            var fx = fixtures[g.fixtureIdx];
+                            try {
+                                if (g.isStrip && fx.points && typeof stripWallOffsets === 'function') {
+                                    fx.wall_offsets = stripWallOffsets(fx.points);
+                                } else if (fx.x != null && typeof twoNearestEdgeOffsetsCm === 'function') {
+                                    var off = twoNearestEdgeOffsetsCm({ x: fx.x, y: fx.y });
+                                    fx.offset_wall_a_cm = off.offset_wall_a_cm;
+                                    fx.offset_wall_b_cm = off.offset_wall_b_cm;
+                                }
+                            } catch (eOff) {}
+                        }
+                        g._dragBase = null;
+                    }
+                    try { if (typeof updateFixtureList === 'function') updateFixtureList(); } catch (e) {}
+                    try { if (typeof draw === 'function') draw(); } catch (e) {}
+                }
+                draggingLook = false;
+                topDrag = null;
+                topPanLast = null;
+            };
 
             el.addEventListener('mousedown', onLookDown);
             window.addEventListener('mousemove', onLookMove);
@@ -8137,11 +9562,13 @@ async function captureCeilingPhotoForKP() {
                     pinchStartDist = Math.hypot(dx, dy) || 1;
                     pinchStartFov = camFov;
                     draggingLook = false;
+                    topDrag = null;
+                    topPanLast = null;
                     return;
                 }
                 if (padActive) return;
                 onLookDown(e);
-            }, { passive: true });
+            }, { passive: false });
             el.addEventListener('touchmove', (e) => {
                 if (e.touches && e.touches.length === 2) {
                     const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -8149,13 +9576,16 @@ async function captureCeilingPhotoForKP() {
                     const d = Math.hypot(dx, dy) || 1;
                     const scale = pinchStartDist / d;
                     camFov = Math.max(FOV_MIN, Math.min(FOV_MAX, pinchStartFov * scale));
+                    // В top-down зум меняет высоту ощущение — оставляем FOV
                     syncZoomSlider();
                     applyCam();
+                    e.preventDefault();
                     return;
                 }
                 if (padActive) return;
+                if (topDownOn) e.preventDefault();
                 onLookMove(e);
-            }, { passive: true });
+            }, { passive: false });
             el.addEventListener('touchend', onLookUp);
 
             // Джойстик
@@ -8222,20 +9652,30 @@ async function captureCeilingPhotoForKP() {
                 // (иначе он выглядит «мокрым» вместо ламината).
                 if (ceilMat && isGlossyCeil) {
                     ceilMat.envMap = _cubeRT.texture;
-                    ceilMat.combine = THREE.MixOperation;
-                    // Ночью в кадре яркие точечные светильники на почти чёрном
-                    // фоне — даже небольшая доля отражения даёт слишком
-                    // зеркальный, «лаковый» потолок. Днём комната освещена
-                    // ровнее, и то же отражение выглядит естественным глянцем.
-                    ceilMat.reflectivity = isNight ? 0.05 : 0.15;
+                    // PhysicalMaterial: envMapIntensity вместо Phong reflectivity
+                    ceilMat.envMapIntensity = isNight ? 0.25 : 0.95;
                     ceilMat.needsUpdate = true;
                     ceilReflectMats.push(ceilMat);
                 }
+                // Пол и стены — лёгкий envMap для PBR (матовый ламинат / обои)
+                try {
+                    if (floorMat && floorMat.isMeshStandardMaterial) {
+                        floorMat.envMap = _cubeRT.texture;
+                        floorMat.envMapIntensity = isNight ? 0.12 : 0.28;
+                        floorMat.needsUpdate = true;
+                    }
+                    if (wallMat && wallMat.isMeshStandardMaterial) {
+                        wallMat.envMap = _cubeRT.texture;
+                        wallMat.envMapIntensity = isNight ? 0.08 : 0.18;
+                        wallMat.needsUpdate = true;
+                    }
+                } catch (eEnv) {}
                 // Стёкла окон — мягкое отражение комнаты поверх вида снаружи
                 (glassMats || []).forEach(function (gm) {
                     gm.envMap = _cubeRT.texture;
-                    gm.combine = THREE.MixOperation;
-                    gm.reflectivity = 0.3;
+                    if (gm.combine !== undefined) gm.combine = THREE.MixOperation;
+                    if (gm.reflectivity !== undefined) gm.reflectivity = 0.3;
+                    if (gm.envMapIntensity !== undefined) gm.envMapIntensity = 0.45;
                     gm.needsUpdate = true;
                 });
             } catch (e) { _cubeRT = null; }
@@ -8296,7 +9736,7 @@ async function captureCeilingPhotoForKP() {
                         uniforms: {
                             tDiffuse: { value: null },
                             tBloom: { value: null },
-                            uStrength: { value: 0.75 }
+                            uStrength: { value: 0.95 }
                         },
                         vertexShader: vs,
                         fragmentShader: [
@@ -8326,10 +9766,12 @@ async function captureCeilingPhotoForKP() {
                     return null;
                 }
             }
-            post = createPost(W, H);
+            // Bloom/post — только на десктопе; на телефоне съедает FPS
+            post = (!isMobile3d && W * H > 200000) ? createPost(W, H) : null;
 
             function renderFrame() {
-                if (!post) {
+                // В режиме сверху post всегда выкл — критично для плавного drag
+                if (!post || topDownOn) {
                     renderer.setRenderTarget(null);
                     renderer.render(scene, camera);
                     return;
