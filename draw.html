@@ -7683,6 +7683,100 @@ function getCurrentCeilingPayload() {
                 invalidate();
             }
 
+            // ===== Общие загрузчики GLB (Draco) — мебель + люстра =====
+            const FURNITURE_ASSET_CANDIDATES = (function () {
+                var list = [
+                    'https://dobry921-ctrl.github.io/my-draw-app/models/',
+                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/'
+                ];
+                try {
+                    var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
+                    list.push(path + 'models/');
+                } catch (e0) {}
+                list.push('./models/', 'models/');
+                return list;
+            })();
+            var _gltfLoaderShared = null;
+            function getGltfLoader() {
+                if (_gltfLoaderShared) return _gltfLoaderShared;
+                if (!THREE.GLTFLoader || !THREE.DRACOLoader) {
+                    throw new Error('GLTFLoader/DRACOLoader not ready');
+                }
+                var draco = new THREE.DRACOLoader();
+                draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+                draco.setDecoderConfig({ type: 'js' });
+                var loader = new THREE.GLTFLoader();
+                loader.setDRACOLoader(draco);
+                _gltfLoaderShared = loader;
+                return loader;
+            }
+            function loadGltfWithFallback(fileName) {
+                var loader = getGltfLoader();
+                var bases = FURNITURE_ASSET_CANDIDATES.slice();
+                var i = 0;
+                function next() {
+                    if (i >= bases.length) return Promise.reject(new Error('no glb ' + fileName));
+                    var url = bases[i++] + fileName;
+                    return new Promise(function (resolve, reject) {
+                        loader.load(url, function (gltf) {
+                            resolve(gltf.scene || gltf.scenes[0]);
+                        }, undefined, function (err) {
+                            console.warn('GLB fail', url, err && err.message);
+                            reject(err);
+                        });
+                    }).catch(function () { return next(); });
+                }
+                return next();
+            }
+            function prepareHangingModel(root, targetSize) {
+                root.position.set(0, 0, 0);
+                root.rotation.set(0, 0, 0);
+                root.scale.set(1, 1, 1);
+                root.updateMatrixWorld(true);
+                var box = new THREE.Box3().setFromObject(root);
+                var size = new THREE.Vector3();
+                box.getSize(size);
+                var maxD = Math.max(size.x, size.y, size.z) || 1;
+                var scale = (targetSize || 0.55) / maxD;
+                if (!isFinite(scale) || scale <= 0) scale = 1;
+                root.scale.setScalar(scale);
+                root.updateMatrixWorld(true);
+                box.setFromObject(root);
+                var center = new THREE.Vector3();
+                box.getCenter(center);
+                // верх модели в y=0 локально — вешаем под потолок
+                root.position.x -= center.x;
+                root.position.z -= center.z;
+                root.position.y -= box.max.y;
+                root.traverse(function (c) {
+                    if (c.isMesh) {
+                        c.castShadow = true;
+                        c.receiveShadow = true;
+                        if (c.material) {
+                            c.material = c.material.clone ? c.material.clone() : c.material;
+                            var mats = Array.isArray(c.material) ? c.material : [c.material];
+                            mats.forEach(function (m) {
+                                if (m && m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
+                                if (m) m.needsUpdate = true;
+                            });
+                        }
+                    }
+                });
+                return root;
+            }
+            // Предзагрузка люстры: models/lustra.glb (или chandelier.glb)
+            var chandelierTemplate = null;
+            try {
+                chandelierTemplate = await loadGltfWithFallback('lustra.glb').catch(function () {
+                    return loadGltfWithFallback('chandelier.glb');
+                }).catch(function () { return null; });
+                if (chandelierTemplate) console.log('Chandelier GLB loaded');
+                else console.warn('Chandelier GLB not found (models/lustra.glb)');
+            } catch (eCh) {
+                console.warn('Chandelier preload', eCh);
+                chandelierTemplate = null;
+            }
+
             // Модели: люстра / спот (цилиндр 10см) / светильник (точка)
             const ceilingLights = [];
             // Группы для перетаскивания приборов в виде «сверху» (реалтайм + синхронизация с fixtures)
@@ -8003,13 +8097,41 @@ function getCurrentCeilingPayload() {
                 const m = toM(f.x, f.y);
 
                 if (t === 'chandelier') {
-                    const style = 'drum';
-                    const chrome = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.22, metalness: 0.85 });
-                    const metal = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
                     let mainMesh = null;
                     let intensity = wattsToIntensity(LIGHT_WATTS.chandelier);
                     let emissiveI = 0.45;
                     let onCol = 0xf0ebe0;
+
+                    // GLB-люстра с GitHub (models/lustra.glb), иначе процедурная
+                    if (chandelierTemplate) {
+                        try {
+                            var chRoot = prepareHangingModel(chandelierTemplate.clone(true), 0.6);
+                            chRoot.position.set(m.x, roomH - 0.02, m.z);
+                            scene.add(chRoot);
+                            mainMesh = chRoot;
+                            const plG = addCappedPointLight(0xfff5e6, intensity, 5.2, 2);
+                            if (plG) plG.position.set(m.x, roomH - 0.42, m.z);
+                            ceilingLights.push({
+                                kind: 'chandelier',
+                                light: plG,
+                                mesh: mainMesh,
+                                baseIntensity: intensity,
+                                baseEmissive: emissiveI,
+                                onColor: onCol,
+                                offColor: 0x888880
+                            });
+                            _track(chRoot);
+                            _track(plG);
+                            _registerMoveGroup('chandelier', m.x, m.z);
+                            return;
+                        } catch (eChPlace) {
+                            console.warn('chandelier GLB place', eChPlace);
+                        }
+                    }
+
+                    const style = 'drum';
+                    const chrome = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.22, metalness: 0.85 });
+                    const metal = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
 
                     if (style === 'spheres') {
                         // 3 матовых шара на штоке
@@ -8171,20 +8293,6 @@ function getCurrentCeilingPayload() {
             furnitureGroup.visible = true;
             scene.add(furnitureGroup);
 
-            // Базы ассетов: GitHub Pages (главный), jsDelivr, относительные
-            const FURNITURE_ASSET_CANDIDATES = (function () {
-                var list = [
-                    'https://dobry921-ctrl.github.io/my-draw-app/models/',
-                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/'
-                ];
-                try {
-                    var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
-                    list.push(path + 'models/');
-                } catch (e0) {}
-                list.push('./models/', 'models/');
-                return list;
-            })();
-
             var ASSET_NAMES = {
                 sofa: 'sofa.glb',
                 table: 'stol-v1.glb',
@@ -8193,23 +8301,6 @@ function getCurrentCeilingPayload() {
                 painting: 'wall-art.jpg',
                 tvAd: 'tv-ad.jpg'
             };
-
-            // Один общий GLTFLoader с Draco — модели FurniMesh требуют KHR_draco_mesh_compression
-            var _gltfLoaderShared = null;
-            function getGltfLoader() {
-                if (_gltfLoaderShared) return _gltfLoaderShared;
-                if (!THREE.GLTFLoader || !THREE.DRACOLoader) {
-                    throw new Error('GLTFLoader/DRACOLoader not ready');
-                }
-                var draco = new THREE.DRACOLoader();
-                // WASM/JS декодер Google (работает в Telegram WebView)
-                draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-                draco.setDecoderConfig({ type: 'js' }); // js надёжнее wasm в WebView
-                var loader = new THREE.GLTFLoader();
-                loader.setDRACOLoader(draco);
-                _gltfLoaderShared = loader;
-                return loader;
-            }
 
             function tryLoadTexture(url) {
                 return new Promise(function (resolve, reject) {
@@ -8232,25 +8323,6 @@ function getCurrentCeilingPayload() {
                     if (bi >= bases.length) { ni++; bi = 0; return next(); }
                     var url = bases[bi++] + names[ni];
                     return tryLoadTexture(url).catch(function () { return next(); });
-                }
-                return next();
-            }
-
-            function loadGltfWithFallback(fileName) {
-                var loader = getGltfLoader();
-                var bases = FURNITURE_ASSET_CANDIDATES.slice();
-                var i = 0;
-                function next() {
-                    if (i >= bases.length) return Promise.reject(new Error('no glb ' + fileName));
-                    var url = bases[i++] + fileName;
-                    return new Promise(function (resolve, reject) {
-                        loader.load(url, function (gltf) {
-                            resolve(gltf.scene || gltf.scenes[0]);
-                        }, undefined, function (err) {
-                            console.warn('GLB fail', url, err && err.message);
-                            reject(err);
-                        });
-                    }).catch(function () { return next(); });
                 }
                 return next();
             }
@@ -8298,6 +8370,17 @@ function getCurrentCeilingPayload() {
                     }
                 });
                 return root;
+            }
+
+            /** После position.set(...) — прижать низ модели к полу (y=0) */
+            function snapObjectToFloor(obj) {
+                if (!obj) return;
+                obj.updateMatrixWorld(true);
+                var box = new THREE.Box3().setFromObject(obj);
+                if (!isFinite(box.min.y)) return;
+                obj.position.y -= box.min.y;
+                // чуть над полом, чтобы не z-fight
+                obj.position.y += 0.002;
             }
 
             async function buildFurniture() {
@@ -8371,6 +8454,7 @@ function getCurrentCeilingPayload() {
                         // лицом в комнату (nx,nz — внутрь); без +PI — иначе смотрит в стену
                         sofaRoot.rotation.y = ang;
                         sofaRoot.position.set(midX + nx * (depth / 2 + 0.12), 0, midZ + nz * (depth / 2 + 0.12));
+                        snapObjectToFloor(sofaRoot);
                         furnitureGroup.add(sofaRoot);
                     } catch (eS) { console.warn('sofa place', eS); }
                 }
@@ -8381,6 +8465,7 @@ function getCurrentCeilingPayload() {
                         var rugRoot = prepareModel(models.rug, Math.min(2.8, sofaW + 0.8), 1.8, 0.1);
                         rugRoot.rotation.y = ang;
                         rugRoot.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
+                        snapObjectToFloor(rugRoot);
                         furnitureGroup.add(rugRoot);
                     } catch (eR) { console.warn('rug place', eR); }
                 }
@@ -8391,6 +8476,7 @@ function getCurrentCeilingPayload() {
                         var tableRoot = prepareModel(models.table, 1.1, 0.65, 0.5);
                         tableRoot.rotation.y = ang;
                         tableRoot.position.set(midX + nx * 1.45, 0, midZ + nz * 1.45);
+                        snapObjectToFloor(tableRoot);
                         furnitureGroup.add(tableRoot);
                     } catch (eT) { console.warn('table place', eT); }
                 }
@@ -8443,6 +8529,7 @@ function getCurrentCeilingPayload() {
                             var tvRoot = prepareModel(models.tv, tvW + 0.35, 0.55, 1.7);
                             tvRoot.rotation.y = tAng + Math.PI;
                             tvRoot.position.set(tMidX + tnx * 0.18, 0, tMidZ + tnz * 0.18);
+                            snapObjectToFloor(tvRoot);
                             furnitureGroup.add(tvRoot);
                         } catch (eTv) { console.warn('tv place', eTv); }
                     }
@@ -8474,17 +8561,17 @@ function getCurrentCeilingPayload() {
                         const glowMat2 = new THREE.MeshBasicMaterial({
                             map: makeGlowTexture(THREE),
                             transparent: true,
-                            opacity: 0.35,
+                            opacity: 0.175,
                             blending: THREE.AdditiveBlending,
                             depthWrite: false,
                             side: THREE.DoubleSide
                         });
-                        const tvGlow = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 1.5, tvH * 1.5), glowMat2);
+                        const tvGlow = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 1.25, tvH * 1.25), glowMat2);
                         tvGlow.position.set(tMidX + tnx * 0.02, tvY, tMidZ + tnz * 0.02);
                         tvGlow.rotation.y = tAng;
                         tvGlow.renderOrder = 2;
                         furnitureGroup.add(tvGlow);
-                        const tvLight = addCappedPointLight(0xaecbff, 0.16, 2.4, 2);
+                        const tvLight = addCappedPointLight(0xaecbff, 0.08, 2.0, 2);
                         if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
                     })();
                 })();
@@ -8728,7 +8815,7 @@ function getCurrentCeilingPayload() {
             ensure3DStyles();
             const lightPanel = document.createElement('div');
             lightPanel.className = 'p3d-panel';
-            lightPanel.style.cssText = 'position:absolute;left:12px;top:12px;z-index:5;display:flex;flex-direction:column;gap:4px;';
+            lightPanel.style.cssText = 'position:absolute;left:10px;top:10px;z-index:8;display:flex;flex-direction:column;gap:4px;max-width:min(42vw,190px);';
             const panelHead = document.createElement('button');
             panelHead.type = 'button';
             panelHead.className = 'p3d-head';
@@ -8829,7 +8916,7 @@ function getCurrentCeilingPayload() {
             (function addQuickSceneIcons() {
                 var bar = document.createElement('div');
                 bar.id = 'p3d-quick-bar';
-                bar.style.cssText = 'position:absolute;top:8px;right:8px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;max-width:min(96vw,340px);justify-content:flex-end;align-items:center;pointer-events:auto;';
+                bar.style.cssText = 'position:absolute;top:10px;left:48%;right:8px;z-index:6;display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end;align-items:center;pointer-events:auto;';
                 function mkIconBtn(label, title, small) {
                     var b = document.createElement('button');
                     b.type = 'button';
