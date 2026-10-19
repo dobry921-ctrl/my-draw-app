@@ -6243,17 +6243,18 @@ function getCurrentCeilingPayload() {
             camera.up.set(0, 0, -1);
             camera.lookAt(0, roomH - 0.05, 0);
 
-            const isMobile3d = (W < 700) || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+            const isMobile3d = (W < 900) || /Android|iPhone|iPad|Mobile|Telegram/i.test(navigator.userAgent || '');
             const renderer = new THREE.WebGLRenderer({
-                antialias: !isMobile3d,
-                preserveDrawingBuffer: true,
+                antialias: false, // AA очень дорогой; без него FPS заметно выше
+                preserveDrawingBuffer: true, // нужно для «Фото для КП»
                 powerPreference: 'high-performance'
             });
             renderer.setSize(W, H);
-            // Стабильные 60 FPS: DPR ≤ 1.5, на мобиле ≤ 1.25
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile3d ? 1.25 : 1.5));
+            // Жёсткий потолок DPR: 1.0 на мобиле/Telegram, 1.25 на десктопе
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile3d ? 1.0 : 1.25));
+            // Тени только на десктопе и простые (Basic), карта 512 — иначе FPS падает
             renderer.shadowMap.enabled = !isMobile3d;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.type = THREE.BasicShadowMap;
             renderer.setClearColor(0x1a1a1a, 1);
             if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
             if (renderer.outputColorSpace !== undefined) renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -6263,10 +6264,11 @@ function getCurrentCeilingPayload() {
                 renderer.toneMappingExposure = 1.28;
             }
             _maxAniso = 4;
-            try { _maxAniso = renderer.capabilities.getMaxAnisotropy() || 4; } catch (e) {}
+            try { _maxAniso = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); } catch (e) { _maxAniso = 1; }
+            if (isMobile3d) _maxAniso = 1;
 
             // лимит PointLight — иначе большие потолки тормозят
-            let _plBudget = 22;
+            let _plBudget = isMobile3d ? 10 : 16;
             function addCappedPointLight(color, intensity, distance, decay) {
                 if (_plBudget <= 0) return null;
                 _plBudget--;
@@ -6276,6 +6278,11 @@ function getCurrentCeilingPayload() {
             }
             // полосы всегда освещают комнату (без лимита)
             function addStripPointLight(color, intensity, distance, decay) {
+                // на мобиле тоже в бюджете — иначе полосы убивают FPS
+                if (isMobile3d) {
+                    if (_plBudget <= 0) return null;
+                    _plBudget--;
+                }
                 const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
                 scene.add(pl);
                 return pl;
@@ -7565,16 +7572,17 @@ function getCurrentCeilingPayload() {
                 sun.position.set(mx + nx * 4, winY + 1.5, mz + nz * 4);
                 sun.target.position.set(mx - nx * 1.3 + tx * 1.7, 0.3, mz - nz * 1.3 + tz * 1.7);
                 // единственный источник с тенями — дёшево и сразу «приземляет» предметы
-                sun.castShadow = true;
-                sun.shadow.mapSize.set(2048, 2048); // резче тени, фото-реализм
-                sun.shadow.camera.near = 0.5;
-                sun.shadow.camera.far = 22;
-                sun.shadow.camera.left = -6;
-                sun.shadow.camera.right = 6;
-                sun.shadow.camera.top = 6;
-                sun.shadow.camera.bottom = -6;
-                sun.shadow.bias = -0.0008;
-                sun.shadow.radius = 3;
+                sun.castShadow = !isMobile3d;
+                if (sun.castShadow) {
+                    sun.shadow.mapSize.set(512, 512); // 512 вместо 2048 — сильно дешевле
+                    sun.shadow.camera.near = 0.5;
+                    sun.shadow.camera.far = 18;
+                    sun.shadow.camera.left = -5;
+                    sun.shadow.camera.right = 5;
+                    sun.shadow.camera.top = 5;
+                    sun.shadow.camera.bottom = -5;
+                    sun.shadow.bias = -0.001;
+                }
                 scene.add(sun);
                 scene.add(sun.target);
                 const wl = addCappedPointLight(0xffd8a8, 0.14, 4.5, 1.8);
@@ -7750,14 +7758,17 @@ function getCurrentCeilingPayload() {
                 root.position.y -= box.max.y;
                 root.traverse(function (c) {
                     if (c.isMesh) {
-                        c.castShadow = true;
-                        c.receiveShadow = true;
+                        c.castShadow = false;
+                        c.receiveShadow = false;
+                        c.frustumCulled = true;
                         if (c.material) {
                             c.material = c.material.clone ? c.material.clone() : c.material;
                             var mats = Array.isArray(c.material) ? c.material : [c.material];
                             mats.forEach(function (m) {
-                                if (m && m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
-                                if (m) m.needsUpdate = true;
+                                if (!m) return;
+                                if (m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
+                                if (m.envMapIntensity !== undefined) m.envMapIntensity = 0;
+                                m.needsUpdate = true;
                             });
                         }
                     }
@@ -8360,12 +8371,18 @@ function getCurrentCeilingPayload() {
                 root.position.y -= box.min.y;
                 root.traverse(function (c) {
                     if (c.isMesh) {
-                        c.castShadow = true;
-                        c.receiveShadow = true;
+                        // тени на GLB-мебели выкл — главный источник просадки FPS
+                        c.castShadow = false;
+                        c.receiveShadow = false;
+                        c.frustumCulled = true;
                         var mats = Array.isArray(c.material) ? c.material : (c.material ? [c.material] : []);
                         mats.forEach(function (m) {
-                            if (m && m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
-                            if (m) m.needsUpdate = true;
+                            if (!m) return;
+                            if (m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
+                            // дешёвые настройки материалов
+                            if (m.metalness !== undefined) m.metalness = Math.min(m.metalness || 0, 0.35);
+                            if (m.envMapIntensity !== undefined) m.envMapIntensity = 0;
+                            m.needsUpdate = true;
                         });
                     }
                 });
@@ -8558,21 +8575,25 @@ function getCurrentCeilingPayload() {
                         screen.rotation.y = tAng;
                         furnitureGroup.add(screen);
 
-                        const glowMat2 = new THREE.MeshBasicMaterial({
-                            map: makeGlowTexture(THREE),
-                            transparent: true,
-                            opacity: 0.175,
-                            blending: THREE.AdditiveBlending,
-                            depthWrite: false,
-                            side: THREE.DoubleSide
-                        });
-                        const tvGlow = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 1.25, tvH * 1.25), glowMat2);
-                        tvGlow.position.set(tMidX + tnx * 0.02, tvY, tMidZ + tnz * 0.02);
-                        tvGlow.rotation.y = tAng;
-                        tvGlow.renderOrder = 2;
-                        furnitureGroup.add(tvGlow);
-                        const tvLight = addCappedPointLight(0xaecbff, 0.08, 2.0, 2);
-                        if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
+                        if (!isMobile3d) {
+                            const glowMat2 = new THREE.MeshBasicMaterial({
+                                map: makeGlowTexture(THREE),
+                                transparent: true,
+                                opacity: 0.12,
+                                blending: THREE.AdditiveBlending,
+                                depthWrite: false,
+                                side: THREE.DoubleSide
+                            });
+                            const tvGlow = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 1.15, tvH * 1.15), glowMat2);
+                            tvGlow.position.set(tMidX + tnx * 0.02, tvY, tMidZ + tnz * 0.02);
+                            tvGlow.rotation.y = tAng;
+                            tvGlow.renderOrder = 2;
+                            furnitureGroup.add(tvGlow);
+                        }
+                        if (!isMobile3d) {
+                            const tvLight = addCappedPointLight(0xaecbff, 0.06, 1.8, 2);
+                            if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
+                        }
                     })();
                 })();
 
