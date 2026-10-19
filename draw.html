@@ -8152,38 +8152,95 @@ function getCurrentCeilingPayload() {
                 }
             });
 
-            // ===== Мебель: GLB-модели (диван, стол, ковёр, ТВ) + fallback на примитивы =====
+            // ===== Мебель: GLB-модели + картина + реклама на ТВ =====
             const furnitureGroup = new THREE.Group();
             furnitureGroup.visible = true;
             scene.add(furnitureGroup);
 
-            // Базовый путь к моделям: рядом с Draw.html /models/
-            // На GitHub Pages/raw: положите sofa.glb, stol-v1.glb, kover-v1.glb, TV-v1.glb в папку models/
-            const FURNITURE_MODEL_BASE = (function () {
+            // Жёсткий базовый URL репозитория (GitHub Pages) + относительные запасные пути.
+            // Telegram WebApp часто открывает HTML не с github.io, поэтому relative path ломается.
+            const FURNITURE_ASSET_CANDIDATES = (function () {
+                var list = [];
+                // 1) Абсолютный GitHub Pages — главный рабочий путь в проде
+                list.push('https://dobry921-ctrl.github.io/my-draw-app/models/');
+                // 2) jsDelivr CDN (CORS, кэш)
+                list.push('https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/');
+                // 3) Относительно текущего HTML
                 try {
                     var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
-                    return path + 'models/';
-                } catch (e) { return './models/'; }
+                    list.push(path + 'models/');
+                } catch (e0) {}
+                list.push('./models/');
+                list.push('models/');
+                return list;
             })();
 
-            function loadGltfModel(url) {
+            // Имена файлов ассетов на GitHub (models/)
+            var ASSET_NAMES = {
+                sofa: 'sofa.glb',
+                table: 'stol-v1.glb',
+                rug: 'kover-v1.glb',
+                tv: 'TV-v1.glb',
+                // Картина над диваном (положите jpg/png с этим именем)
+                painting: 'wall-art.jpg',
+                // Реклама на экране ТВ (положите jpg/png с этим именем)
+                tvAd: 'tv-ad.jpg'
+            };
+
+            function tryLoadTexture(url) {
                 return new Promise(function (resolve, reject) {
-                    if (!THREE.GLTFLoader) {
-                        reject(new Error('GLTFLoader unavailable'));
-                        return;
-                    }
-                    var loader = new THREE.GLTFLoader();
-                    loader.load(url, function (gltf) {
-                        resolve(gltf.scene || gltf.scenes[0]);
-                    }, undefined, function (err) {
-                        reject(err || new Error('load failed: ' + url));
-                    });
+                    var loader = new THREE.TextureLoader();
+                    loader.load(url, function (tex) {
+                        if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                        tex.needsUpdate = true;
+                        resolve(tex);
+                    }, undefined, function (err) { reject(err || new Error('tex fail ' + url)); });
                 });
             }
 
-            /** Нормализует модель: центр по XZ, низ на y=0, масштаб под targetSize (макс. габарит) */
-            function prepareModel(root, targetW, targetD, targetH, opts) {
-                opts = opts || {};
+            function loadTextureWithFallback(fileName) {
+                var bases = FURNITURE_ASSET_CANDIDATES.slice();
+                var i = 0;
+                function next() {
+                    if (i >= bases.length) return Promise.reject(new Error('no texture: ' + fileName));
+                    var url = bases[i++] + fileName;
+                    return tryLoadTexture(url).catch(function () { return next(); });
+                }
+                // также пробуем .png если .jpg не нашёлся
+                return next().catch(function () {
+                    if (/\.jpe?g$/i.test(fileName)) {
+                        var alt = fileName.replace(/\.jpe?g$/i, '.png');
+                        i = 0;
+                        function nextPng() {
+                            if (i >= bases.length) return Promise.reject(new Error('no texture: ' + alt));
+                            var url = bases[i++] + alt;
+                            return tryLoadTexture(url).catch(function () { return nextPng(); });
+                        }
+                        return nextPng();
+                    }
+                    return Promise.reject(new Error('no texture: ' + fileName));
+                });
+            }
+
+            function loadGltfWithFallback(fileName) {
+                if (!THREE.GLTFLoader) return Promise.reject(new Error('GLTFLoader unavailable'));
+                var bases = FURNITURE_ASSET_CANDIDATES.slice();
+                var i = 0;
+                function next() {
+                    if (i >= bases.length) return Promise.reject(new Error('no glb: ' + fileName));
+                    var url = bases[i++] + fileName;
+                    return new Promise(function (resolve, reject) {
+                        var loader = new THREE.GLTFLoader();
+                        loader.load(url, function (gltf) {
+                            resolve(gltf.scene || gltf.scenes[0]);
+                        }, undefined, function () { reject(new Error('fail ' + url)); });
+                    }).catch(function () { return next(); });
+                }
+                return next();
+            }
+
+            /** Нормализует модель: центр по XZ, низ на y=0, масштаб под target */
+            function prepareModel(root, targetW, targetD, targetH) {
                 root.updateMatrixWorld(true);
                 var box = new THREE.Box3().setFromObject(root);
                 var size = new THREE.Vector3();
@@ -8191,12 +8248,10 @@ function getCurrentCeilingPayload() {
                 var center = new THREE.Vector3();
                 box.getCenter(center);
 
-                // Сдвиг: центр XZ в 0, низ на 0
                 root.position.x -= center.x;
                 root.position.z -= center.z;
                 root.position.y -= box.min.y;
 
-                // Масштаб: вписываем в target (приоритет по ширине/глубине, высота — мягкий лимит)
                 var sx = targetW / (size.x || 1e-6);
                 var sz = targetD / (size.z || 1e-6);
                 var sy = targetH ? (targetH / (size.y || 1e-6)) : Infinity;
@@ -8204,37 +8259,20 @@ function getCurrentCeilingPayload() {
                 if (!isFinite(scale) || scale <= 0) scale = 1;
                 root.scale.setScalar(scale);
 
-                // После scale пересчёт не обязателен для позиции (мы уже сдвинули в локальных)
                 root.traverse(function (c) {
                     if (c.isMesh) {
                         c.castShadow = true;
                         c.receiveShadow = true;
                         if (c.material) {
-                            if (Array.isArray(c.material)) {
-                                c.material.forEach(function (m) {
-                                    if (m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
-                                    m.needsUpdate = true;
-                                });
-                            } else {
-                                if (c.material.map && THREE.sRGBEncoding) c.material.map.encoding = THREE.sRGBEncoding;
-                                c.material.needsUpdate = true;
-                            }
+                            var mats = Array.isArray(c.material) ? c.material : [c.material];
+                            mats.forEach(function (m) {
+                                if (m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
+                                m.needsUpdate = true;
+                            });
                         }
                     }
                 });
                 return root;
-            }
-
-            function placeRoot(root, alongOff, outOff, y, ang, midX, midZ, ux, uz, nx, nz) {
-                root.position.set(
-                    midX + ux * alongOff + nx * outOff,
-                    y,
-                    midZ + uz * alongOff + nz * outOff
-                );
-                root.rotation.y = ang + (Math.PI); // модели часто смотрят «назад» относительно стены
-                // Корректировка: диван/стол обычно лицом от стены (nx,nz — внутрь комнаты)
-                // Если модель ориентирована иначе — пользователь может подкрутить угол ниже
-                furnitureGroup.add(root);
             }
 
             async function buildFurniture() {
@@ -8253,8 +8291,12 @@ function getCurrentCeilingPayload() {
                     if (doorEdge && e.i === doorEdge.i) return false;
                     return !windowEdgesList.some(function (we) { return we.i === e.i; });
                 });
-                const edge = cand.find(function (e) { return e.len >= 1.9; }) || cand[0] || wallEdges[0];
-                if (!edge || edge.len < 1.9) return;
+                // Более мягкий порог: раньше <1.9 м отбрасывал маленькие комнаты целиком
+                const edge = cand.find(function (e) { return e.len >= 1.2; }) || cand[0] || wallEdges[0];
+                if (!edge || edge.len < 0.8) {
+                    console.warn('buildFurniture: no suitable wall edge');
+                    return;
+                }
 
                 const ux = edge.dx / edge.len, uz = edge.dz / edge.len;
                 const ang = edge.ang;
@@ -8262,36 +8304,41 @@ function getCurrentCeilingPayload() {
                 const midX = (edge.a.x + edge.b.x) / 2, midZ = (edge.a.z + edge.b.z) / 2;
                 if (midX * nx + midZ * nz > 0) { nx = -nx; nz = -nz; }
 
-                const sofaW = Math.min(2.1, edge.len * 0.6);
+                const sofaW = Math.min(2.1, Math.max(1.2, edge.len * 0.6));
                 const depth = 0.85;
                 const cxs = midX + nx * (depth / 2 + 0.08);
                 const czs = midZ + nz * (depth / 2 + 0.08);
-                if (!insidePoly(cxs + nx * 0.5, czs + nz * 0.5)) return;
+                // Не выходим молча — пробуем сдвинуть ближе к стене
+                if (!insidePoly(cxs + nx * 0.3, czs + nz * 0.3)) {
+                    console.warn('buildFurniture: sofa point outside poly, still placing near wall');
+                }
 
-                // --- загрузка GLB (параллельно) ---
-                var urls = {
-                    sofa: FURNITURE_MODEL_BASE + 'sofa.glb',
-                    table: FURNITURE_MODEL_BASE + 'stol-v1.glb',
-                    rug: FURNITURE_MODEL_BASE + 'kover-v1.glb',
-                    tv: FURNITURE_MODEL_BASE + 'TV-v1.glb'
-                };
+                // --- параллельная загрузка GLB + текстур ---
                 var models = { sofa: null, table: null, rug: null, tv: null };
+                var paintingTex = null, tvAdTex = null;
                 try {
                     var results = await Promise.allSettled([
-                        loadGltfModel(urls.sofa),
-                        loadGltfModel(urls.table),
-                        loadGltfModel(urls.rug),
-                        loadGltfModel(urls.tv)
+                        loadGltfWithFallback(ASSET_NAMES.sofa),
+                        loadGltfWithFallback(ASSET_NAMES.table),
+                        loadGltfWithFallback(ASSET_NAMES.rug),
+                        loadGltfWithFallback(ASSET_NAMES.tv),
+                        loadTextureWithFallback(ASSET_NAMES.painting),
+                        loadTextureWithFallback(ASSET_NAMES.tvAd)
                     ]);
                     if (results[0].status === 'fulfilled') models.sofa = results[0].value;
                     if (results[1].status === 'fulfilled') models.table = results[1].value;
                     if (results[2].status === 'fulfilled') models.rug = results[2].value;
                     if (results[3].status === 'fulfilled') models.tv = results[3].value;
+                    if (results[4].status === 'fulfilled') paintingTex = results[4].value;
+                    if (results[5].status === 'fulfilled') tvAdTex = results[5].value;
+                    console.log('Furniture load:', {
+                        sofa: !!models.sofa, table: !!models.table, rug: !!models.rug, tv: !!models.tv,
+                        painting: !!paintingTex, tvAd: !!tvAdTex
+                    });
                 } catch (eLoad) {
-                    console.warn('Furniture GLB load error', eLoad);
+                    console.warn('Furniture asset load error', eLoad);
                 }
 
-                // Fallback-материалы (если модель не загрузилась)
                 const fabric = new THREE.MeshPhongMaterial({ color: 0x8c8d86, shininess: 4, specular: 0x111111 });
                 const wood = new THREE.MeshPhongMaterial({ color: 0x6b4c33, shininess: 30, specular: 0x222222 });
                 const rugMat = new THREE.MeshPhongMaterial({ color: 0xb9ab97, shininess: 2, specular: 0x080808 });
@@ -8308,14 +8355,8 @@ function getCurrentCeilingPayload() {
                 if (models.sofa) {
                     try {
                         var sofaRoot = prepareModel(models.sofa, sofaW, depth, 0.95);
-                        // После prepareModel локальный origin в центре XZ, низ=0
-                        // Разворот: лицом в комнату (от стены). Добавляем π если модель смотрит «в стену»
                         sofaRoot.rotation.y = ang + Math.PI;
-                        sofaRoot.position.set(
-                            midX + nx * (depth / 2 + 0.08),
-                            0,
-                            midZ + nz * (depth / 2 + 0.08)
-                        );
+                        sofaRoot.position.set(midX + nx * (depth / 2 + 0.08), 0, midZ + nz * (depth / 2 + 0.08));
                         furnitureGroup.add(sofaRoot);
                     } catch (eS) {
                         console.warn('sofa place', eS);
@@ -8330,7 +8371,7 @@ function getCurrentCeilingPayload() {
                     });
                 }
 
-                // Контактная тень под диваном (общая)
+                // Контактная тень
                 (function contactShadow() {
                     const sc = document.createElement('canvas');
                     sc.width = sc.height = 128;
@@ -8362,11 +8403,9 @@ function getCurrentCeilingPayload() {
                 // ===== Ковёр =====
                 if (models.rug) {
                     try {
-                        var rugRoot = prepareModel(models.rug, Math.min(2.4, sofaW + 0.5), 1.5, 0.05);
+                        var rugRoot = prepareModel(models.rug, Math.min(2.4, sofaW + 0.5), 1.5, 0.08);
                         rugRoot.rotation.y = ang;
                         rugRoot.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
-                        // Ковры часто горизонтальные — если модель стоит вертикально, поворачиваем
-                        // (prepare уже низ на 0; если высота после scale большая — лёгкий clamp уже был)
                         furnitureGroup.add(rugRoot);
                     } catch (eR) {
                         console.warn('rug place', eR);
@@ -8405,7 +8444,7 @@ function getCurrentCeilingPayload() {
                     });
                 }
 
-                // Картина над диваном — изображение выбирается (по умолчанию логотип бота, можно подменить)
+                // ===== Картина над диваном: models/wall-art.jpg (или .png) =====
                 (function addPaintingAboveSofa() {
                     const picW = Math.min(0.9, sofaW * 0.55), picH = picW * 0.72;
                     const frameMat2 = new THREE.MeshPhongMaterial({ color: 0x2a2420, shininess: 25, specular: 0x1a1a1a });
@@ -8414,13 +8453,16 @@ function getCurrentCeilingPayload() {
                     frame.rotation.y = ang;
                     frame.castShadow = true;
                     furnitureGroup.add(frame);
-                    // Источник картинки: window._paintingImageUrl / PAINTING_IMAGE_URL / BOT_LOGO_DATAURL
-                    var paintingSrc = (typeof window._paintingImageUrl === 'string' && window._paintingImageUrl)
-                        || (typeof window.PAINTING_IMAGE_URL === 'string' && window.PAINTING_IMAGE_URL)
-                        || BOT_LOGO_DATAURL;
-                    const canvasTex = new THREE.TextureLoader().load(paintingSrc);
-                    if (THREE.sRGBEncoding) canvasTex.encoding = THREE.sRGBEncoding;
-                    const canvasMat = new THREE.MeshBasicMaterial({ map: canvasTex });
+
+                    var canvasMat;
+                    if (paintingTex) {
+                        canvasMat = new THREE.MeshBasicMaterial({ map: paintingTex });
+                    } else {
+                        // fallback — логотип бота
+                        var fallbackTex = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
+                        if (THREE.sRGBEncoding) fallbackTex.encoding = THREE.sRGBEncoding;
+                        canvasMat = new THREE.MeshBasicMaterial({ map: fallbackTex });
+                    }
                     const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(picW, picH), canvasMat);
                     canvasMesh.position.set(midX + nx * 0.046, 1.72, midZ + nz * 0.046);
                     canvasMesh.rotation.y = ang;
@@ -8438,11 +8480,10 @@ function getCurrentCeilingPayload() {
                         const emx = (e.a.x + e.b.x) / 2, emz = (e.a.z + e.b.z) / 2;
                         if (emx * enx + emz * enz > 0) { enx = -enx; enz = -enz; }
                         const dot = enx * nx + enz * nz;
-                        if (dot < bestDot && e.len >= 1.3) { bestDot = dot; best = { e: e, enx: enx, enz: enz }; }
+                        if (dot < bestDot && e.len >= 1.0) { bestDot = dot; best = { e: e, enx: enx, enz: enz }; }
                     });
                     if (!best) return;
                     const te = best.e, tnx = best.enx, tnz = best.enz;
-                    const tux = te.dx / te.len, tuz = te.dz / te.len;
                     const tAng = te.ang;
                     const tMidX = (te.a.x + te.b.x) / 2, tMidZ = (te.a.z + te.b.z) / 2;
 
@@ -8451,7 +8492,6 @@ function getCurrentCeilingPayload() {
 
                     if (models.tv) {
                         try {
-                            // ТВ-модель: ширина ~tvW, высота ~tvH+подставка, глубина небольшая
                             var tvRoot = prepareModel(models.tv, tvW + 0.25, 0.45, 1.6);
                             tvRoot.rotation.y = tAng + Math.PI;
                             tvRoot.position.set(tMidX + tnx * 0.18, 0, tMidZ + tnz * 0.18);
@@ -8470,116 +8510,66 @@ function getCurrentCeilingPayload() {
                         stand.castShadow = true;
                         stand.receiveShadow = true;
                         furnitureGroup.add(stand);
-                        (function tvContactShadow() {
-                            const sc2 = document.createElement('canvas');
-                            sc2.width = sc2.height = 128;
-                            const sg2 = sc2.getContext('2d');
-                            const grd = sg2.createRadialGradient(64, 64, 4, 64, 64, 62);
-                            grd.addColorStop(0, 'rgba(0,0,0,0.5)');
-                            grd.addColorStop(0.55, 'rgba(0,0,0,0.2)');
-                            grd.addColorStop(1, 'rgba(0,0,0,0)');
-                            sg2.fillStyle = grd;
-                            sg2.fillRect(0, 0, 128, 128);
-                            const shTex2 = new THREE.CanvasTexture(sc2);
-                            const sh = new THREE.Mesh(new THREE.PlaneGeometry(tvW + 0.6, 0.6), new THREE.MeshBasicMaterial({
-                                map: shTex2, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide
-                            }));
-                            sh.position.set(tMidX + tnx * 0.2, 0.006, tMidZ + tnz * 0.2);
-                            sh.rotation.x = -Math.PI / 2;
-                            sh.rotation.z = tAng;
-                            sh.renderOrder = 1;
-                            furnitureGroup.add(sh);
-                        })();
                         const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.05, tvH + 0.05, 0.035), standMat);
                         bezel.position.set(tMidX + tnx * 0.03, tvY, tMidZ + tnz * 0.03);
                         bezel.rotation.y = tAng;
                         furnitureGroup.add(bezel);
+                    }
 
-                        // Экран с рекламой бота
-                        const SW = 960, SH = 540;
-                        const sc = document.createElement('canvas');
-                        sc.width = SW; sc.height = SH;
-                        const sg = sc.getContext('2d');
-                        const bg = sg.createLinearGradient(0, 0, SW * 0.15, SH);
-                        bg.addColorStop(0, '#0e1730');
-                        bg.addColorStop(0.55, '#0a0f24');
-                        bg.addColorStop(1, '#060812');
-                        sg.fillStyle = bg;
-                        sg.fillRect(0, 0, SW, SH);
-                        const spot = sg.createRadialGradient(SW * 0.5, SH * 0.34, 10, SW * 0.5, SH * 0.34, SH * 0.62);
-                        spot.addColorStop(0, 'rgba(120,170,255,0.28)');
-                        spot.addColorStop(0.5, 'rgba(90,130,220,0.10)');
-                        spot.addColorStop(1, 'rgba(90,130,220,0)');
-                        sg.fillStyle = spot;
-                        sg.fillRect(0, 0, SW, SH);
-                        for (let i = 0; i < 26; i++) {
-                            const px = Math.random() * SW, py = Math.random() * SH * 0.75;
-                            const pr = 0.6 + Math.random() * 1.8;
-                            sg.fillStyle = 'rgba(150,190,255,' + (0.08 + Math.random() * 0.16) + ')';
-                            sg.beginPath(); sg.arc(px, py, pr, 0, Math.PI * 2); sg.fill();
+                    // Экран / реклама — models/tv-ad.jpg (всегда, поверх модели или fallback)
+                    (function addTvScreen() {
+                        var screenMat;
+                        if (tvAdTex) {
+                            screenMat = new THREE.MeshBasicMaterial({ map: tvAdTex });
+                        } else {
+                            // fallback: простая тёмная плашка с логотипом
+                            var SW = 640, SH = 360;
+                            var sc = document.createElement('canvas');
+                            sc.width = SW; sc.height = SH;
+                            var sg = sc.getContext('2d');
+                            sg.fillStyle = '#0a0f24';
+                            sg.fillRect(0, 0, SW, SH);
+                            var logoImg = new Image();
+                            logoImg.onload = function () {
+                                try {
+                                    var s = Math.min(SW, SH) * 0.45;
+                                    sg.drawImage(logoImg, (SW - s) / 2, (SH - s) / 2 - 20, s, s);
+                                    screenTex.needsUpdate = true;
+                                    if (typeof invalidate === 'function') invalidate();
+                                } catch (eL) {}
+                            };
+                            logoImg.src = BOT_LOGO_DATAURL;
+                            var screenTex = new THREE.CanvasTexture(sc);
+                            if (THREE.sRGBEncoding) screenTex.encoding = THREE.sRGBEncoding;
+                            screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
                         }
-                        // текст/лого — упрощённо (полный оригинал слишком длинный; сохраняем CTA)
-                        sg.fillStyle = '#e8f0ff';
-                        sg.font = '700 42px Arial, sans-serif';
-                        sg.textAlign = 'center';
-                        sg.fillText('Натяжные потолки', SW / 2, SH * 0.55);
-                        sg.font = '500 28px Arial, sans-serif';
-                        sg.fillStyle = '#a8c0e8';
-                        sg.fillText('Замер и расчёт за 5 минут', SW / 2, SH * 0.64);
-                        const ctaW = 320, ctaH = 48, ctaY = SH * 0.78;
-                        sg.fillStyle = '#1a73e8';
-                        sg.beginPath();
-                        if (sg.roundRect) sg.roundRect(SW / 2 - ctaW / 2, ctaY, ctaW, ctaH, 12);
-                        else sg.rect(SW / 2 - ctaW / 2, ctaY, ctaW, ctaH);
-                        sg.fill();
-                        sg.fillStyle = '#ffffff';
-                        sg.font = '700 22px Arial, sans-serif';
-                        sg.fillText('Напишите нашему боту →', SW / 2, ctaY + ctaH * 0.68);
-
-                        const screenTex = new THREE.CanvasTexture(sc);
-                        if (THREE.sRGBEncoding) screenTex.encoding = THREE.sRGBEncoding;
-                        const screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
-                        const screen = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), screenMat);
-                        screen.position.set(tMidX + tnx * 0.048, tvY, tMidZ + tnz * 0.048);
+                        // Чуть впереди модели ТВ, чтобы реклама была видна
+                        var screen = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 0.92, tvH * 0.92), screenMat);
+                        screen.position.set(tMidX + tnx * 0.06, tvY, tMidZ + tnz * 0.06);
                         screen.rotation.y = tAng;
                         furnitureGroup.add(screen);
 
-                        const logoTex = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
-                        if (THREE.sRGBEncoding) logoTex.encoding = THREE.sRGBEncoding;
-                        const logoSize = tvH * 0.6;
-                        const logoMat = new THREE.MeshBasicMaterial({ map: logoTex, transparent: true });
-                        const logo = new THREE.Mesh(new THREE.PlaneGeometry(logoSize, logoSize), logoMat);
-                        logo.position.set(
-                            tMidX + tnx * 0.05,
-                            tvY + tvH * (0.5 - 0.30),
-                            tMidZ + tnz * 0.05
-                        );
-                        logo.rotation.y = tAng;
-                        furnitureGroup.add(logo);
-                    }
-
-                    // Свечение и свет от ТВ — всегда (и для GLB, и для fallback)
-                    const glowMat2 = new THREE.MeshBasicMaterial({
-                        map: makeGlowTexture(THREE),
-                        transparent: true,
-                        opacity: 0.4,
-                        blending: THREE.AdditiveBlending,
-                        depthWrite: false,
-                        side: THREE.DoubleSide
-                    });
-                    const tvGlow = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 1.6, tvH * 1.6), glowMat2);
-                    tvGlow.position.set(tMidX + tnx * 0.02, tvY, tMidZ + tnz * 0.02);
-                    tvGlow.rotation.y = tAng;
-                    tvGlow.renderOrder = 2;
-                    furnitureGroup.add(tvGlow);
-                    const tvLight = addCappedPointLight(0xaecbff, 0.16, 2.4, 2);
-                    if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
+                        const glowMat2 = new THREE.MeshBasicMaterial({
+                            map: makeGlowTexture(THREE),
+                            transparent: true,
+                            opacity: 0.35,
+                            blending: THREE.AdditiveBlending,
+                            depthWrite: false,
+                            side: THREE.DoubleSide
+                        });
+                        const tvGlow = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 1.5, tvH * 1.5), glowMat2);
+                        tvGlow.position.set(tMidX + tnx * 0.02, tvY, tMidZ + tnz * 0.02);
+                        tvGlow.rotation.y = tAng;
+                        tvGlow.renderOrder = 2;
+                        furnitureGroup.add(tvGlow);
+                        const tvLight = addCappedPointLight(0xaecbff, 0.16, 2.4, 2);
+                        if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
+                    })();
                 })();
 
                 if (typeof invalidate === 'function') invalidate();
             }
 
-            // Запускаем асинхронно; сцена уже рендерится, мебель появится по мере загрузки
             buildFurniture().catch(function (e) {
                 console.warn('buildFurniture failed', e);
             });
