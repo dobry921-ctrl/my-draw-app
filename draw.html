@@ -5901,13 +5901,23 @@ function getCurrentCeilingPayload() {
         }
 
         function loadThreeJs() {
-            if (window.THREE && window.THREE.GLTFLoader) return Promise.resolve(window.THREE);
+            if (window.THREE && window.THREE.GLTFLoader && window.THREE.DRACOLoader) {
+                return Promise.resolve(window.THREE);
+            }
             function loadScript(src) {
                 return new Promise(function (resolve, reject) {
                     var existing = document.querySelector('script[src="' + src + '"]');
                     if (existing) {
-                        if (src.indexOf('three.min') >= 0 && window.THREE) return resolve();
-                        if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve();
+                        // если скрипт уже в DOM — ждём появления глобала чуть-чуть
+                        var tries = 0;
+                        (function waitReady() {
+                            if (src.indexOf('three.min') >= 0 && window.THREE) return resolve();
+                            if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve();
+                            if (src.indexOf('DRACOLoader') >= 0 && window.THREE && window.THREE.DRACOLoader) return resolve();
+                            if (++tries > 40) return resolve(); // не блокируем навсегда
+                            setTimeout(waitReady, 50);
+                        })();
+                        return;
                     }
                     var s = document.createElement('script');
                     s.src = src;
@@ -5917,12 +5927,16 @@ function getCurrentCeilingPayload() {
                 });
             }
             var threeUrl = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-            var loaderUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
+            var gltfUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
+            var dracoUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js';
             return loadScript(threeUrl).then(function () {
                 if (!window.THREE) throw new Error('Three.js не загрузился');
-                return loadScript(loaderUrl);
+                return loadScript(dracoUrl);
+            }).then(function () {
+                return loadScript(gltfUrl);
             }).then(function () {
                 if (!window.THREE.GLTFLoader) throw new Error('GLTFLoader не загрузился');
+                if (!window.THREE.DRACOLoader) throw new Error('DRACOLoader не загрузился');
                 return window.THREE;
             });
         }
@@ -8152,124 +8166,135 @@ function getCurrentCeilingPayload() {
                 }
             });
 
-            // ===== Мебель: GLB-модели + картина + реклама на ТВ =====
+            // ===== Мебель: GLB (Draco) + картина wall-art + реклама tv-ad =====
             const furnitureGroup = new THREE.Group();
             furnitureGroup.visible = true;
             scene.add(furnitureGroup);
 
-            // Жёсткий базовый URL репозитория (GitHub Pages) + относительные запасные пути.
-            // Telegram WebApp часто открывает HTML не с github.io, поэтому relative path ломается.
+            // Базы ассетов: GitHub Pages (главный), jsDelivr, относительные
             const FURNITURE_ASSET_CANDIDATES = (function () {
-                var list = [];
-                // 1) Абсолютный GitHub Pages — главный рабочий путь в проде
-                list.push('https://dobry921-ctrl.github.io/my-draw-app/models/');
-                // 2) jsDelivr CDN (CORS, кэш)
-                list.push('https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/');
-                // 3) Относительно текущего HTML
+                var list = [
+                    'https://dobry921-ctrl.github.io/my-draw-app/models/',
+                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/'
+                ];
                 try {
                     var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
                     list.push(path + 'models/');
                 } catch (e0) {}
-                list.push('./models/');
-                list.push('models/');
+                list.push('./models/', 'models/');
                 return list;
             })();
 
-            // Имена файлов ассетов на GitHub (models/)
             var ASSET_NAMES = {
                 sofa: 'sofa.glb',
                 table: 'stol-v1.glb',
                 rug: 'kover-v1.glb',
                 tv: 'TV-v1.glb',
-                // Картина над диваном (положите jpg/png с этим именем)
                 painting: 'wall-art.jpg',
-                // Реклама на экране ТВ (положите jpg/png с этим именем)
                 tvAd: 'tv-ad.jpg'
             };
 
+            // Один общий GLTFLoader с Draco — модели FurniMesh требуют KHR_draco_mesh_compression
+            var _gltfLoaderShared = null;
+            function getGltfLoader() {
+                if (_gltfLoaderShared) return _gltfLoaderShared;
+                if (!THREE.GLTFLoader || !THREE.DRACOLoader) {
+                    throw new Error('GLTFLoader/DRACOLoader not ready');
+                }
+                var draco = new THREE.DRACOLoader();
+                // WASM/JS декодер Google (работает в Telegram WebView)
+                draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+                draco.setDecoderConfig({ type: 'js' }); // js надёжнее wasm в WebView
+                var loader = new THREE.GLTFLoader();
+                loader.setDRACOLoader(draco);
+                _gltfLoaderShared = loader;
+                return loader;
+            }
+
             function tryLoadTexture(url) {
                 return new Promise(function (resolve, reject) {
-                    var loader = new THREE.TextureLoader();
-                    loader.load(url, function (tex) {
+                    new THREE.TextureLoader().load(url, function (tex) {
                         if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
                         tex.needsUpdate = true;
                         resolve(tex);
-                    }, undefined, function (err) { reject(err || new Error('tex fail ' + url)); });
+                    }, undefined, function () { reject(new Error('tex ' + url)); });
                 });
             }
 
             function loadTextureWithFallback(fileName) {
-                var bases = FURNITURE_ASSET_CANDIDATES.slice();
-                var i = 0;
+                var names = [fileName];
+                if (/\.jpe?g$/i.test(fileName)) names.push(fileName.replace(/\.jpe?g$/i, '.png'));
+                else if (/\.png$/i.test(fileName)) names.push(fileName.replace(/\.png$/i, '.jpg'));
+                var bases = FURNITURE_ASSET_CANDIDATES;
+                var ni = 0, bi = 0;
                 function next() {
-                    if (i >= bases.length) return Promise.reject(new Error('no texture: ' + fileName));
-                    var url = bases[i++] + fileName;
+                    if (ni >= names.length) return Promise.reject(new Error('no tex ' + fileName));
+                    if (bi >= bases.length) { ni++; bi = 0; return next(); }
+                    var url = bases[bi++] + names[ni];
                     return tryLoadTexture(url).catch(function () { return next(); });
                 }
-                // также пробуем .png если .jpg не нашёлся
-                return next().catch(function () {
-                    if (/\.jpe?g$/i.test(fileName)) {
-                        var alt = fileName.replace(/\.jpe?g$/i, '.png');
-                        i = 0;
-                        function nextPng() {
-                            if (i >= bases.length) return Promise.reject(new Error('no texture: ' + alt));
-                            var url = bases[i++] + alt;
-                            return tryLoadTexture(url).catch(function () { return nextPng(); });
-                        }
-                        return nextPng();
-                    }
-                    return Promise.reject(new Error('no texture: ' + fileName));
-                });
+                return next();
             }
 
             function loadGltfWithFallback(fileName) {
-                if (!THREE.GLTFLoader) return Promise.reject(new Error('GLTFLoader unavailable'));
+                var loader = getGltfLoader();
                 var bases = FURNITURE_ASSET_CANDIDATES.slice();
                 var i = 0;
                 function next() {
-                    if (i >= bases.length) return Promise.reject(new Error('no glb: ' + fileName));
+                    if (i >= bases.length) return Promise.reject(new Error('no glb ' + fileName));
                     var url = bases[i++] + fileName;
                     return new Promise(function (resolve, reject) {
-                        var loader = new THREE.GLTFLoader();
                         loader.load(url, function (gltf) {
                             resolve(gltf.scene || gltf.scenes[0]);
-                        }, undefined, function () { reject(new Error('fail ' + url)); });
+                        }, undefined, function (err) {
+                            console.warn('GLB fail', url, err && err.message);
+                            reject(err);
+                        });
                     }).catch(function () { return next(); });
                 }
                 return next();
             }
 
-            /** Нормализует модель: центр по XZ, низ на y=0, масштаб под target */
             function prepareModel(root, targetW, targetD, targetH) {
+                // сброс локальных трансформаций меша, полный пересчёт bbox
+                root.position.set(0, 0, 0);
+                root.rotation.set(0, 0, 0);
+                root.scale.set(1, 1, 1);
                 root.updateMatrixWorld(true);
                 var box = new THREE.Box3().setFromObject(root);
                 var size = new THREE.Vector3();
                 box.getSize(size);
                 var center = new THREE.Vector3();
                 box.getCenter(center);
-
+                // Если модель в см/мм — габарит будет >> 10; если в метрах — порядка 1–3
+                // Масштаб по ширине (главная ось мебели), с мягкими лимитами по глубине/высоте
+                var sx = targetW / (size.x || 1e-6);
+                var scale = sx;
+                if (size.z * scale > targetD * 1.5) scale = targetD / (size.z || 1e-6);
+                if (targetH && size.y * scale > targetH * 1.5) scale = targetH / (size.y || 1e-6);
+                // если модель уже в метрах и bbox крошечный (<0.05) — вероятно единицы сломаны, разгоняем
+                if (Math.max(size.x, size.y, size.z) < 0.05) {
+                    scale = targetW / Math.max(size.x, 1e-6);
+                }
+                if (!isFinite(scale) || scale <= 0) scale = 1;
+                root.scale.setScalar(scale);
+                root.updateMatrixWorld(true);
+                box.setFromObject(root);
+                box.getCenter(center);
+                box.getSize(size);
+                // низ на y=0, центр XZ в нуле локально
                 root.position.x -= center.x;
                 root.position.z -= center.z;
                 root.position.y -= box.min.y;
-
-                var sx = targetW / (size.x || 1e-6);
-                var sz = targetD / (size.z || 1e-6);
-                var sy = targetH ? (targetH / (size.y || 1e-6)) : Infinity;
-                var scale = Math.min(sx, sz, sy);
-                if (!isFinite(scale) || scale <= 0) scale = 1;
-                root.scale.setScalar(scale);
-
                 root.traverse(function (c) {
                     if (c.isMesh) {
                         c.castShadow = true;
                         c.receiveShadow = true;
-                        if (c.material) {
-                            var mats = Array.isArray(c.material) ? c.material : [c.material];
-                            mats.forEach(function (m) {
-                                if (m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
-                                m.needsUpdate = true;
-                            });
-                        }
+                        var mats = Array.isArray(c.material) ? c.material : (c.material ? [c.material] : []);
+                        mats.forEach(function (m) {
+                            if (m && m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
+                            if (m) m.needsUpdate = true;
+                        });
                     }
                 });
                 return root;
@@ -8291,10 +8316,9 @@ function getCurrentCeilingPayload() {
                     if (doorEdge && e.i === doorEdge.i) return false;
                     return !windowEdgesList.some(function (we) { return we.i === e.i; });
                 });
-                // Более мягкий порог: раньше <1.9 м отбрасывал маленькие комнаты целиком
                 const edge = cand.find(function (e) { return e.len >= 1.2; }) || cand[0] || wallEdges[0];
                 if (!edge || edge.len < 0.8) {
-                    console.warn('buildFurniture: no suitable wall edge');
+                    console.warn('buildFurniture: no wall edge');
                     return;
                 }
 
@@ -8306,17 +8330,11 @@ function getCurrentCeilingPayload() {
 
                 const sofaW = Math.min(2.1, Math.max(1.2, edge.len * 0.6));
                 const depth = 0.85;
-                const cxs = midX + nx * (depth / 2 + 0.08);
-                const czs = midZ + nz * (depth / 2 + 0.08);
-                // Не выходим молча — пробуем сдвинуть ближе к стене
-                if (!insidePoly(cxs + nx * 0.3, czs + nz * 0.3)) {
-                    console.warn('buildFurniture: sofa point outside poly, still placing near wall');
-                }
 
-                // --- параллельная загрузка GLB + текстур ---
                 var models = { sofa: null, table: null, rug: null, tv: null };
                 var paintingTex = null, tvAdTex = null;
                 try {
+                    showToast('Загрузка мебели…', 2000);
                     var results = await Promise.allSettled([
                         loadGltfWithFallback(ASSET_NAMES.sofa),
                         loadGltfWithFallback(ASSET_NAMES.table),
@@ -8331,120 +8349,53 @@ function getCurrentCeilingPayload() {
                     if (results[3].status === 'fulfilled') models.tv = results[3].value;
                     if (results[4].status === 'fulfilled') paintingTex = results[4].value;
                     if (results[5].status === 'fulfilled') tvAdTex = results[5].value;
-                    console.log('Furniture load:', {
+                    console.log('Furniture GLB:', {
                         sofa: !!models.sofa, table: !!models.table, rug: !!models.rug, tv: !!models.tv,
                         painting: !!paintingTex, tvAd: !!tvAdTex
                     });
+                    var loadedN = [models.sofa, models.table, models.rug, models.tv].filter(Boolean).length;
+                    if (loadedN === 0) {
+                        showToast('Мебель не загрузилась (проверьте models/*.glb)', 4000);
+                    } else {
+                        showToast('Мебель: ' + loadedN + '/4', 1800);
+                    }
                 } catch (eLoad) {
-                    console.warn('Furniture asset load error', eLoad);
+                    console.warn('Furniture load error', eLoad);
+                    showToast('Ошибка загрузки мебели', 3000);
                 }
 
-                const fabric = new THREE.MeshPhongMaterial({ color: 0x8c8d86, shininess: 4, specular: 0x111111 });
-                const wood = new THREE.MeshPhongMaterial({ color: 0x6b4c33, shininess: 30, specular: 0x222222 });
-                const rugMat = new THREE.MeshPhongMaterial({ color: 0xb9ab97, shininess: 2, specular: 0x080808 });
-
-                function placePrim(mesh, alongOff, outOff, y) {
-                    mesh.position.set(midX + ux * alongOff + nx * outOff, y, midZ + uz * alongOff + nz * outOff);
-                    mesh.rotation.y = ang;
-                    mesh.castShadow = true;
-                    mesh.receiveShadow = true;
-                    furnitureGroup.add(mesh);
-                }
-
-                // ===== Диван =====
+                // Диван
                 if (models.sofa) {
                     try {
-                        var sofaRoot = prepareModel(models.sofa, sofaW, depth, 0.95);
-                        sofaRoot.rotation.y = ang + Math.PI;
-                        sofaRoot.position.set(midX + nx * (depth / 2 + 0.08), 0, midZ + nz * (depth / 2 + 0.08));
+                        var sofaRoot = prepareModel(models.sofa, sofaW, depth, 1.05);
+                        // лицом в комнату (nx,nz — внутрь); без +PI — иначе смотрит в стену
+                        sofaRoot.rotation.y = ang;
+                        sofaRoot.position.set(midX + nx * (depth / 2 + 0.12), 0, midZ + nz * (depth / 2 + 0.12));
                         furnitureGroup.add(sofaRoot);
-                    } catch (eS) {
-                        console.warn('sofa place', eS);
-                        models.sofa = null;
-                    }
-                }
-                if (!models.sofa) {
-                    placePrim(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.36, depth), fabric), 0, depth / 2 + 0.08, 0.22);
-                    placePrim(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.5, 0.16), fabric), 0, 0.16, 0.55);
-                    [-1, 1].forEach(function (sgn) {
-                        placePrim(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, depth), fabric), sgn * (sofaW / 2 - 0.08), depth / 2 + 0.08, 0.52);
-                    });
+                    } catch (eS) { console.warn('sofa place', eS); }
                 }
 
-                // Контактная тень
-                (function contactShadow() {
-                    const sc = document.createElement('canvas');
-                    sc.width = sc.height = 128;
-                    const sg = sc.getContext('2d');
-                    const grd = sg.createRadialGradient(64, 64, 4, 64, 64, 62);
-                    grd.addColorStop(0, 'rgba(0,0,0,0.55)');
-                    grd.addColorStop(0.55, 'rgba(0,0,0,0.22)');
-                    grd.addColorStop(1, 'rgba(0,0,0,0)');
-                    sg.fillStyle = grd;
-                    sg.fillRect(0, 0, 128, 128);
-                    const shTex = new THREE.CanvasTexture(sc);
-                    const shMat = new THREE.MeshBasicMaterial({
-                        map: shTex, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide
-                    });
-                    const sh = new THREE.Mesh(new THREE.PlaneGeometry(sofaW + 0.5, depth + 0.5), shMat);
-                    sh.position.set(midX + nx * (depth / 2 + 0.08), 0.004, midZ + nz * (depth / 2 + 0.08));
-                    sh.rotation.x = -Math.PI / 2;
-                    sh.rotation.z = ang;
-                    sh.renderOrder = 1;
-                    furnitureGroup.add(sh);
-                    const sh2 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.95), shMat);
-                    sh2.position.set(midX + nx * 1.45, 0.009, midZ + nz * 1.45);
-                    sh2.rotation.x = -Math.PI / 2;
-                    sh2.rotation.z = ang;
-                    sh2.renderOrder = 1;
-                    furnitureGroup.add(sh2);
-                })();
-
-                // ===== Ковёр =====
+                // Ковёр
                 if (models.rug) {
                     try {
-                        var rugRoot = prepareModel(models.rug, Math.min(2.4, sofaW + 0.5), 1.5, 0.08);
+                        var rugRoot = prepareModel(models.rug, Math.min(2.8, sofaW + 0.8), 1.8, 0.1);
                         rugRoot.rotation.y = ang;
                         rugRoot.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
                         furnitureGroup.add(rugRoot);
-                    } catch (eR) {
-                        console.warn('rug place', eR);
-                        models.rug = null;
-                    }
-                }
-                if (!models.rug) {
-                    const rug = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.4, sofaW + 0.5), 1.5), rugMat);
-                    rug.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
-                    rug.rotation.x = -Math.PI / 2;
-                    rug.rotation.z = ang;
-                    rug.receiveShadow = true;
-                    furnitureGroup.add(rug);
+                    } catch (eR) { console.warn('rug place', eR); }
                 }
 
-                // ===== Столик =====
+                // Стол
                 if (models.table) {
                     try {
-                        var tableRoot = prepareModel(models.table, 0.95, 0.55, 0.45);
+                        var tableRoot = prepareModel(models.table, 1.1, 0.65, 0.5);
                         tableRoot.rotation.y = ang;
                         tableRoot.position.set(midX + nx * 1.45, 0, midZ + nz * 1.45);
                         furnitureGroup.add(tableRoot);
-                    } catch (eT) {
-                        console.warn('table place', eT);
-                        models.table = null;
-                    }
-                }
-                if (!models.table) {
-                    placePrim(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.5), wood), 0, 1.45, 0.4);
-                    [[-0.42, -0.2], [0.42, -0.2], [-0.42, 0.2], [0.42, 0.2]].forEach(function (o) {
-                        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.05), wood);
-                        leg.position.set(midX + ux * o[0] + nx * (1.45 + o[1]), 0.19, midZ + uz * o[0] + nz * (1.45 + o[1]));
-                        leg.rotation.y = ang;
-                        leg.castShadow = true;
-                        furnitureGroup.add(leg);
-                    });
+                    } catch (eT) { console.warn('table place', eT); }
                 }
 
-                // ===== Картина над диваном: models/wall-art.jpg (или .png) =====
+                // Картина: models/wall-art.jpg|.png  (fallback — логотип)
                 (function addPaintingAboveSofa() {
                     const picW = Math.min(0.9, sofaW * 0.55), picH = picW * 0.72;
                     const frameMat2 = new THREE.MeshPhongMaterial({ color: 0x2a2420, shininess: 25, specular: 0x1a1a1a });
@@ -8453,15 +8404,13 @@ function getCurrentCeilingPayload() {
                     frame.rotation.y = ang;
                     frame.castShadow = true;
                     furnitureGroup.add(frame);
-
                     var canvasMat;
                     if (paintingTex) {
                         canvasMat = new THREE.MeshBasicMaterial({ map: paintingTex });
                     } else {
-                        // fallback — логотип бота
-                        var fallbackTex = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
-                        if (THREE.sRGBEncoding) fallbackTex.encoding = THREE.sRGBEncoding;
-                        canvasMat = new THREE.MeshBasicMaterial({ map: fallbackTex });
+                        var fb = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
+                        if (THREE.sRGBEncoding) fb.encoding = THREE.sRGBEncoding;
+                        canvasMat = new THREE.MeshBasicMaterial({ map: fb });
                     }
                     const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(picW, picH), canvasMat);
                     canvasMesh.position.set(midX + nx * 0.046, 1.72, midZ + nz * 0.046);
@@ -8469,7 +8418,7 @@ function getCurrentCeilingPayload() {
                     furnitureGroup.add(canvasMesh);
                 })();
 
-                // ===== ТВ на противоположной стене =====
+                // ТВ
                 (function addTVOpposite() {
                     let best = null, bestDot = 1;
                     wallEdges.forEach(function (e) {
@@ -8486,66 +8435,39 @@ function getCurrentCeilingPayload() {
                     const te = best.e, tnx = best.enx, tnz = best.enz;
                     const tAng = te.ang;
                     const tMidX = (te.a.x + te.b.x) / 2, tMidZ = (te.a.z + te.b.z) / 2;
-
                     const tvW = Math.min(1.15, te.len * 0.5), tvH = tvW * 9 / 16;
                     const tvY = 1.35;
 
                     if (models.tv) {
                         try {
-                            var tvRoot = prepareModel(models.tv, tvW + 0.25, 0.45, 1.6);
+                            var tvRoot = prepareModel(models.tv, tvW + 0.35, 0.55, 1.7);
                             tvRoot.rotation.y = tAng + Math.PI;
                             tvRoot.position.set(tMidX + tnx * 0.18, 0, tMidZ + tnz * 0.18);
                             furnitureGroup.add(tvRoot);
-                        } catch (eTv) {
-                            console.warn('tv place', eTv);
-                            models.tv = null;
-                        }
+                        } catch (eTv) { console.warn('tv place', eTv); }
                     }
 
-                    if (!models.tv) {
-                        const standMat = new THREE.MeshPhongMaterial({ color: 0x1c1c1e, shininess: 40, specular: 0x2a2a2a });
-                        const stand = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.3, 0.42, 0.32), standMat);
-                        stand.position.set(tMidX + tnx * 0.18, 0.21, tMidZ + tnz * 0.18);
-                        stand.rotation.y = tAng;
-                        stand.castShadow = true;
-                        stand.receiveShadow = true;
-                        furnitureGroup.add(stand);
-                        const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.05, tvH + 0.05, 0.035), standMat);
-                        bezel.position.set(tMidX + tnx * 0.03, tvY, tMidZ + tnz * 0.03);
-                        bezel.rotation.y = tAng;
-                        furnitureGroup.add(bezel);
-                    }
-
-                    // Экран / реклама — models/tv-ad.jpg (всегда, поверх модели или fallback)
+                    // Экран рекламы + тонкая рамка
                     (function addTvScreen() {
                         var screenMat;
                         if (tvAdTex) {
                             screenMat = new THREE.MeshBasicMaterial({ map: tvAdTex });
                         } else {
-                            // fallback: простая тёмная плашка с логотипом
-                            var SW = 640, SH = 360;
-                            var sc = document.createElement('canvas');
-                            sc.width = SW; sc.height = SH;
-                            var sg = sc.getContext('2d');
-                            sg.fillStyle = '#0a0f24';
-                            sg.fillRect(0, 0, SW, SH);
-                            var logoImg = new Image();
-                            logoImg.onload = function () {
-                                try {
-                                    var s = Math.min(SW, SH) * 0.45;
-                                    sg.drawImage(logoImg, (SW - s) / 2, (SH - s) / 2 - 20, s, s);
-                                    screenTex.needsUpdate = true;
-                                    if (typeof invalidate === 'function') invalidate();
-                                } catch (eL) {}
-                            };
-                            logoImg.src = BOT_LOGO_DATAURL;
-                            var screenTex = new THREE.CanvasTexture(sc);
-                            if (THREE.sRGBEncoding) screenTex.encoding = THREE.sRGBEncoding;
-                            screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
+                            var fb2 = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
+                            if (THREE.sRGBEncoding) fb2.encoding = THREE.sRGBEncoding;
+                            screenMat = new THREE.MeshBasicMaterial({ map: fb2 });
                         }
-                        // Чуть впереди модели ТВ, чтобы реклама была видна
-                        var screen = new THREE.Mesh(new THREE.PlaneGeometry(tvW * 0.92, tvH * 0.92), screenMat);
-                        screen.position.set(tMidX + tnx * 0.06, tvY, tMidZ + tnz * 0.06);
+                        var sw = tvW * 0.92, sh = tvH * 0.92;
+                        // тонкая тёмная рамка вокруг экрана
+                        var frameMat = new THREE.MeshPhongMaterial({ color: 0x111113, shininess: 40, specular: 0x222222 });
+                        var bezelW = sw + 0.04, bezelH = sh + 0.04;
+                        var bezel = new THREE.Mesh(new THREE.BoxGeometry(bezelW, bezelH, 0.028), frameMat);
+                        bezel.position.set(tMidX + tnx * 0.05, tvY, tMidZ + tnz * 0.05);
+                        bezel.rotation.y = tAng;
+                        bezel.castShadow = true;
+                        furnitureGroup.add(bezel);
+                        var screen = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
+                        screen.position.set(tMidX + tnx * 0.066, tvY, tMidZ + tnz * 0.066);
                         screen.rotation.y = tAng;
                         furnitureGroup.add(screen);
 
@@ -8572,6 +8494,7 @@ function getCurrentCeilingPayload() {
 
             buildFurniture().catch(function (e) {
                 console.warn('buildFurniture failed', e);
+                showToast('Мебель: ' + (e && e.message ? e.message : 'ошибка'), 3500);
             });
 
             function applyLightKindVisibility() {
@@ -8873,6 +8796,9 @@ function getCurrentCeilingPayload() {
                     b.textContent = (lightKindState[k] ? '💡 ' : '💤 ') + lab;
                 });
                 allBtn.textContent = Object.values(lightKindState).some(Boolean) ? 'Все выкл' : 'Все вкл';
+                if (window._p3dQuickLightIcon) {
+                    window._p3dQuickLightIcon.textContent = Object.values(lightKindState).some(Boolean) ? '💡' : '💤';
+                }
             };
             lightPanel.appendChild(allBtn);
 
@@ -8889,11 +8815,140 @@ function getCurrentCeilingPayload() {
                 applyDayNight();
                 nightBtn.textContent = isNight ? '☀️ День' : '🌙 Ночь';
                 nightBtn.style.background = isNight ? 'rgba(60,40,10,0.7)' : 'rgba(20,30,60,0.65)';
+                if (window._p3dQuickDayIcon) {
+                    window._p3dQuickDayIcon.textContent = isNight ? '☀️' : '🌙';
+                    window._p3dQuickDayIcon.title = isNight ? 'Включить день' : 'Включить ночь';
+                }
             };
             lightPanel.appendChild(nightBtn);
             // Применяем день/ночь сразу при открытии (по умолчанию — день)
             applyDayNight();
             invalidate();
+
+            // === Быстрые иконки сверху (день/ночь + свет), дублируют панель ===
+            (function addQuickSceneIcons() {
+                var bar = document.createElement('div');
+                bar.id = 'p3d-quick-bar';
+                bar.style.cssText = 'position:absolute;top:8px;right:8px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;max-width:min(96vw,340px);justify-content:flex-end;align-items:center;pointer-events:auto;';
+                function mkIconBtn(label, title, small) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.title = title;
+                    b.textContent = label;
+                    var sz = small ? 34 : 40;
+                    var fs = small ? 11 : 18;
+                    b.style.cssText = 'min-width:' + sz + 'px;height:' + sz + 'px;border-radius:' + (small ? '10px' : '50%') + ';' +
+                        'border:1px solid rgba(255,255,255,0.35);background:rgba(20,22,28,0.78);color:#fff;' +
+                        'font-size:' + fs + 'px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;' +
+                        'padding:0 6px;box-shadow:0 2px 10px rgba(0,0,0,0.35);backdrop-filter:blur(4px);white-space:nowrap;';
+                    return b;
+                }
+                function syncKindPanel() {
+                    try {
+                        if (typeof kindLabels !== 'undefined' && typeof kindBtns !== 'undefined') {
+                            kindLabels.forEach(function (item) {
+                                var b = kindBtns[item.k];
+                                if (!b) return;
+                                b.style.opacity = lightKindState[item.k] ? '1' : '0.45';
+                                b.textContent = (lightKindState[item.k] ? '💡 ' : '💤 ') + item.lab;
+                            });
+                        }
+                        if (typeof allBtn !== 'undefined' && allBtn) {
+                            allBtn.textContent = Object.values(lightKindState).some(Boolean) ? 'Все выкл' : 'Все вкл';
+                        }
+                        if (window._p3dQuickLightIcon) {
+                            window._p3dQuickLightIcon.textContent = Object.values(lightKindState).some(Boolean) ? '💡' : '💤';
+                        }
+                        if (window._p3dQuickKindIcons) {
+                            Object.keys(window._p3dQuickKindIcons).forEach(function (k) {
+                                var ic = window._p3dQuickKindIcons[k];
+                                if (!ic) return;
+                                ic.style.opacity = lightKindState[k] ? '1' : '0.45';
+                            });
+                        }
+                    } catch (eSync) {}
+                }
+
+                var dayIcon = mkIconBtn(isNight ? '☀️' : '🌙', isNight ? 'Включить день' : 'Включить ночь', false);
+                var lightIcon = mkIconBtn(
+                    Object.values(lightKindState).some(Boolean) ? '💡' : '💤',
+                    'Вкл/выкл всё освещение', false
+                );
+                dayIcon.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    isNight = !isNight;
+                    applyDayNight();
+                    dayIcon.textContent = isNight ? '☀️' : '🌙';
+                    dayIcon.title = isNight ? 'Включить день' : 'Включить ночь';
+                    if (typeof nightBtn !== 'undefined' && nightBtn) {
+                        nightBtn.textContent = isNight ? '☀️ День' : '🌙 Ночь';
+                        nightBtn.style.background = isNight ? 'rgba(60,40,10,0.7)' : 'rgba(20,30,60,0.65)';
+                    }
+                    invalidate();
+                };
+                lightIcon.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var anyOn = Object.values(lightKindState).some(Boolean);
+                    setCeilingLights(!anyOn);
+                    lightIcon.textContent = Object.values(lightKindState).some(Boolean) ? '💡' : '💤';
+                    syncKindPanel();
+                    invalidate();
+                };
+                bar.appendChild(dayIcon);
+                bar.appendChild(lightIcon);
+                window._p3dQuickDayIcon = dayIcon;
+                window._p3dQuickLightIcon = lightIcon;
+
+                // Категории света — те же, что в панели
+                var quickKinds = [
+                    { k: 'spot', lab: 'Споты', icon: '🔵' },
+                    { k: 'light_point', lab: 'Свет.', icon: '⚪' },
+                    { k: 'chandelier', lab: 'Люстр', icon: 'chandelier' },
+                    { k: 'strip', lab: 'Полос', icon: '▬' },
+                    { k: 'track', lab: 'Трек', icon: '📎' },
+                    { k: 'cornice', lab: 'Карниз', icon: '▭' },
+                    { k: 'floating', lab: 'Парящ', icon: '✨' }
+                ];
+                // фильтр: только реально присутствующие виды
+                quickKinds = quickKinds.filter(function (item) {
+                    if (item.k === 'floating') return ceilingLights.some(function (c) { return c.kind === 'floating'; });
+                    if (item.k === 'cornice') return ceilingLights.some(function (c) { return c.kind === 'cornice'; });
+                    return ceilingLights.some(function (c) { return c.kind === item.k; }) || item.k === 'spot' || item.k === 'light_point';
+                });
+                window._p3dQuickKindIcons = {};
+                quickKinds.forEach(function (item) {
+                    var emoji = ({
+                        spot: '🔵', light_point: '⚪', chandelier: 'chandelier'.length ? '💡' : '💡',
+                        strip: '▬', track: '📎', cornice: '▭', floating: '✨'
+                    })[item.k] || '💡';
+                    // разные эмодзи по типам
+                    if (item.k === 'chandelier') emoji = '🕯';
+                    if (item.k === 'spot') emoji = '🔵';
+                    if (item.k === 'light_point') emoji = '⚪';
+                    if (item.k === 'strip') emoji = '➖';
+                    if (item.k === 'track') emoji = '📎';
+                    if (item.k === 'cornice') emoji = '🪟';
+                    if (item.k === 'floating') emoji = '✨';
+                    var b = mkIconBtn(emoji, item.lab, true);
+                    b.style.opacity = lightKindState[item.k] ? '1' : '0.45';
+                    b.onclick = function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        lightKindState[item.k] = !lightKindState[item.k];
+                        applyLightKindVisibility();
+                        syncKindPanel();
+                        invalidate();
+                    };
+                    window._p3dQuickKindIcons[item.k] = b;
+                    bar.appendChild(b);
+                });
+
+                host.appendChild(bar);
+            })();
+
+
 
             // Температура света — тёплый / нейтральный / холодный
             const tempRow = document.createElement('div');
