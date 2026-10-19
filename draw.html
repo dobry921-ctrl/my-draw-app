@@ -5901,13 +5901,29 @@ function getCurrentCeilingPayload() {
         }
 
         function loadThreeJs() {
-            if (window.THREE) return Promise.resolve(window.THREE);
-            return new Promise((resolve, reject) => {
-                const s = document.createElement('script');
-                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-                s.onload = () => resolve(window.THREE);
-                s.onerror = () => reject(new Error('Three.js не загрузился'));
-                document.head.appendChild(s);
+            if (window.THREE && window.THREE.GLTFLoader) return Promise.resolve(window.THREE);
+            function loadScript(src) {
+                return new Promise(function (resolve, reject) {
+                    var existing = document.querySelector('script[src="' + src + '"]');
+                    if (existing) {
+                        if (src.indexOf('three.min') >= 0 && window.THREE) return resolve();
+                        if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve();
+                    }
+                    var s = document.createElement('script');
+                    s.src = src;
+                    s.onload = function () { resolve(); };
+                    s.onerror = function () { reject(new Error('Не загрузился: ' + src)); };
+                    document.head.appendChild(s);
+                });
+            }
+            var threeUrl = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+            var loaderUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
+            return loadScript(threeUrl).then(function () {
+                if (!window.THREE) throw new Error('Three.js не загрузился');
+                return loadScript(loaderUrl);
+            }).then(function () {
+                if (!window.THREE.GLTFLoader) throw new Error('GLTFLoader не загрузился');
+                return window.THREE;
             });
         }
 
@@ -6505,20 +6521,20 @@ function getCurrentCeilingPayload() {
                 return tex;
             }
             function makeWallpaperTexture() {
+                // Однотонные сероватые стены — без полос/обоев
                 const c = document.createElement('canvas');
-                c.width = 512; c.height = 512;
+                c.width = 64; c.height = 64;
                 const g = c.getContext('2d');
-                g.fillStyle = '#ece7de';
-                g.fillRect(0, 0, 512, 512);
-                for (let x = 0; x < 512; x += 24) {
-                    g.fillStyle = (x / 24) % 2 ? 'rgba(255,255,255,0.28)' : 'rgba(198,188,172,0.1)';
-                    g.fillRect(x, 0, 12, 512);
-                }
-                const img = g.getImageData(0, 0, 512, 512);
+                g.fillStyle = '#c4c6c9';
+                g.fillRect(0, 0, 64, 64);
+                // лёгкий шум, чтобы не было «пластикового» плоского цвета
+                const img = g.getImageData(0, 0, 64, 64);
                 const d = img.data;
                 for (let i = 0; i < d.length; i += 4) {
-                    const n = (Math.random() - 0.5) * 9;
-                    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+                    const n = (Math.random() - 0.5) * 6;
+                    d[i] = Math.max(0, Math.min(255, d[i] + n));
+                    d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + n));
+                    d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + n));
                 }
                 g.putImageData(img, 0, 0);
                 const tex = new THREE.CanvasTexture(c);
@@ -6562,8 +6578,8 @@ function getCurrentCeilingPayload() {
 
             // Стены
             const wallMat = new THREE.MeshStandardMaterial({
-                map: photoTex ? photoTex.wallTex : makeWallpaperTexture(),
-                color: preferredWallColor ? parseInt(String(preferredWallColor).replace('#', ''), 16) : 0xffffff,
+                map: makeWallpaperTexture(), // всегда однотонные сероватые стены (без полос/фото-обоев)
+                color: preferredWallColor ? parseInt(String(preferredWallColor).replace('#', ''), 16) : 0xc8cacd,
                 roughness: 0.88,
                 metalness: 0.0,
                 envMapIntensity: 0.25,
@@ -7426,7 +7442,7 @@ function getCurrentCeilingPayload() {
                 const dayViewTex = makeEveningViewTexture();
                 const nightViewTex = makeNightViewTexture();
                 const viewMat = new THREE.MeshBasicMaterial({
-                    map: nightViewTex, // сцена по умолчанию открывается ночью
+                    map: dayViewTex, // сцена по умолчанию открывается днём
                     side: THREE.DoubleSide,
                     depthWrite: true
                 });
@@ -7626,7 +7642,7 @@ function getCurrentCeilingPayload() {
                 }
             });
 
-            let isNight = true; // по умолчанию открываем 3D в ночном режиме
+            let isNight = false; // по умолчанию открываем 3D днём
             // Явно гасим свет окна ночью (не должен светить)
             (window._windowDayLights || []).forEach(function (L) {
                 if (!L) return;
@@ -7658,8 +7674,8 @@ function getCurrentCeilingPayload() {
             // Группы для перетаскивания приборов в виде «сверху» (реалтайм + синхронизация с fixtures)
             const movableGroups = [];
             let topDownOn = false; // объявлен рано — applyCam читает флаг
-            let lightsOn = true;
-            const lightKindState = { spot: true, light_point: true, chandelier: true, strip: true, track: true, cornice: true, floating: true };
+            let lightsOn = false;
+            const lightKindState = { spot: false, light_point: false, chandelier: false, strip: false, track: false, cornice: false, floating: false };
             // Подсветка парящего профиля (накоплена при стенах)
             if (pendingFloatingLights.length) {
                 pendingFloatingLights.forEach(function (item) {
@@ -8136,11 +8152,92 @@ function getCurrentCeilingPayload() {
                 }
             });
 
-            // ===== Мебель: стандартный диванчик со столиком у свободной стены =====
+            // ===== Мебель: GLB-модели (диван, стол, ковёр, ТВ) + fallback на примитивы =====
             const furnitureGroup = new THREE.Group();
             furnitureGroup.visible = true;
             scene.add(furnitureGroup);
-            (function buildFurniture() {
+
+            // Базовый путь к моделям: рядом с Draw.html /models/
+            // На GitHub Pages/raw: положите sofa.glb, stol-v1.glb, kover-v1.glb, TV-v1.glb в папку models/
+            const FURNITURE_MODEL_BASE = (function () {
+                try {
+                    var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
+                    return path + 'models/';
+                } catch (e) { return './models/'; }
+            })();
+
+            function loadGltfModel(url) {
+                return new Promise(function (resolve, reject) {
+                    if (!THREE.GLTFLoader) {
+                        reject(new Error('GLTFLoader unavailable'));
+                        return;
+                    }
+                    var loader = new THREE.GLTFLoader();
+                    loader.load(url, function (gltf) {
+                        resolve(gltf.scene || gltf.scenes[0]);
+                    }, undefined, function (err) {
+                        reject(err || new Error('load failed: ' + url));
+                    });
+                });
+            }
+
+            /** Нормализует модель: центр по XZ, низ на y=0, масштаб под targetSize (макс. габарит) */
+            function prepareModel(root, targetW, targetD, targetH, opts) {
+                opts = opts || {};
+                root.updateMatrixWorld(true);
+                var box = new THREE.Box3().setFromObject(root);
+                var size = new THREE.Vector3();
+                box.getSize(size);
+                var center = new THREE.Vector3();
+                box.getCenter(center);
+
+                // Сдвиг: центр XZ в 0, низ на 0
+                root.position.x -= center.x;
+                root.position.z -= center.z;
+                root.position.y -= box.min.y;
+
+                // Масштаб: вписываем в target (приоритет по ширине/глубине, высота — мягкий лимит)
+                var sx = targetW / (size.x || 1e-6);
+                var sz = targetD / (size.z || 1e-6);
+                var sy = targetH ? (targetH / (size.y || 1e-6)) : Infinity;
+                var scale = Math.min(sx, sz, sy);
+                if (!isFinite(scale) || scale <= 0) scale = 1;
+                root.scale.setScalar(scale);
+
+                // После scale пересчёт не обязателен для позиции (мы уже сдвинули в локальных)
+                root.traverse(function (c) {
+                    if (c.isMesh) {
+                        c.castShadow = true;
+                        c.receiveShadow = true;
+                        if (c.material) {
+                            if (Array.isArray(c.material)) {
+                                c.material.forEach(function (m) {
+                                    if (m.map && THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
+                                    m.needsUpdate = true;
+                                });
+                            } else {
+                                if (c.material.map && THREE.sRGBEncoding) c.material.map.encoding = THREE.sRGBEncoding;
+                                c.material.needsUpdate = true;
+                            }
+                        }
+                    }
+                });
+                return root;
+            }
+
+            function placeRoot(root, alongOff, outOff, y, ang, midX, midZ, ux, uz, nx, nz) {
+                root.position.set(
+                    midX + ux * alongOff + nx * outOff,
+                    y,
+                    midZ + uz * alongOff + nz * outOff
+                );
+                root.rotation.y = ang + (Math.PI); // модели часто смотрят «назад» относительно стены
+                // Корректировка: диван/стол обычно лицом от стены (nx,nz — внутрь комнаты)
+                // Если модель ориентирована иначе — пользователь может подкрутить угол ниже
+                furnitureGroup.add(root);
+            }
+
+            async function buildFurniture() {
                 function insidePoly(x, z) {
                     let inside = false;
                     for (let i = 0, j = roomContour.length - 1; i < roomContour.length; j = i++) {
@@ -8171,22 +8268,69 @@ function getCurrentCeilingPayload() {
                 const czs = midZ + nz * (depth / 2 + 0.08);
                 if (!insidePoly(cxs + nx * 0.5, czs + nz * 0.5)) return;
 
+                // --- загрузка GLB (параллельно) ---
+                var urls = {
+                    sofa: FURNITURE_MODEL_BASE + 'sofa.glb',
+                    table: FURNITURE_MODEL_BASE + 'stol-v1.glb',
+                    rug: FURNITURE_MODEL_BASE + 'kover-v1.glb',
+                    tv: FURNITURE_MODEL_BASE + 'TV-v1.glb'
+                };
+                var models = { sofa: null, table: null, rug: null, tv: null };
+                try {
+                    var results = await Promise.allSettled([
+                        loadGltfModel(urls.sofa),
+                        loadGltfModel(urls.table),
+                        loadGltfModel(urls.rug),
+                        loadGltfModel(urls.tv)
+                    ]);
+                    if (results[0].status === 'fulfilled') models.sofa = results[0].value;
+                    if (results[1].status === 'fulfilled') models.table = results[1].value;
+                    if (results[2].status === 'fulfilled') models.rug = results[2].value;
+                    if (results[3].status === 'fulfilled') models.tv = results[3].value;
+                } catch (eLoad) {
+                    console.warn('Furniture GLB load error', eLoad);
+                }
+
+                // Fallback-материалы (если модель не загрузилась)
                 const fabric = new THREE.MeshPhongMaterial({ color: 0x8c8d86, shininess: 4, specular: 0x111111 });
                 const wood = new THREE.MeshPhongMaterial({ color: 0x6b4c33, shininess: 30, specular: 0x222222 });
                 const rugMat = new THREE.MeshPhongMaterial({ color: 0xb9ab97, shininess: 2, specular: 0x080808 });
 
-                function place(mesh, alongOff, outOff, y) {
+                function placePrim(mesh, alongOff, outOff, y) {
                     mesh.position.set(midX + ux * alongOff + nx * outOff, y, midZ + uz * alongOff + nz * outOff);
                     mesh.rotation.y = ang;
                     mesh.castShadow = true;
                     mesh.receiveShadow = true;
                     furnitureGroup.add(mesh);
                 }
-                place(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.36, depth), fabric), 0, depth / 2 + 0.08, 0.22);
-                place(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.5, 0.16), fabric), 0, 0.16, 0.55);
-                [-1, 1].forEach(function (sgn) {
-                    place(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, depth), fabric), sgn * (sofaW / 2 - 0.08), depth / 2 + 0.08, 0.52);
-                });
+
+                // ===== Диван =====
+                if (models.sofa) {
+                    try {
+                        var sofaRoot = prepareModel(models.sofa, sofaW, depth, 0.95);
+                        // После prepareModel локальный origin в центре XZ, низ=0
+                        // Разворот: лицом в комнату (от стены). Добавляем π если модель смотрит «в стену»
+                        sofaRoot.rotation.y = ang + Math.PI;
+                        sofaRoot.position.set(
+                            midX + nx * (depth / 2 + 0.08),
+                            0,
+                            midZ + nz * (depth / 2 + 0.08)
+                        );
+                        furnitureGroup.add(sofaRoot);
+                    } catch (eS) {
+                        console.warn('sofa place', eS);
+                        models.sofa = null;
+                    }
+                }
+                if (!models.sofa) {
+                    placePrim(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.36, depth), fabric), 0, depth / 2 + 0.08, 0.22);
+                    placePrim(new THREE.Mesh(new THREE.BoxGeometry(sofaW, 0.5, 0.16), fabric), 0, 0.16, 0.55);
+                    [-1, 1].forEach(function (sgn) {
+                        placePrim(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, depth), fabric), sgn * (sofaW / 2 - 0.08), depth / 2 + 0.08, 0.52);
+                    });
+                }
+
+                // Контактная тень под диваном (общая)
                 (function contactShadow() {
                     const sc = document.createElement('canvas');
                     sc.width = sc.height = 128;
@@ -8214,22 +8358,54 @@ function getCurrentCeilingPayload() {
                     sh2.renderOrder = 1;
                     furnitureGroup.add(sh2);
                 })();
-                const rug = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.4, sofaW + 0.5), 1.5), rugMat);
-                rug.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
-                rug.rotation.x = -Math.PI / 2;
-                rug.rotation.z = ang;
-                rug.receiveShadow = true;
-                furnitureGroup.add(rug);
-                place(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.5), wood), 0, 1.45, 0.4);
-                [[-0.42, -0.2], [0.42, -0.2], [-0.42, 0.2], [0.42, 0.2]].forEach(function (o) {
-                    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.05), wood);
-                    leg.position.set(midX + ux * o[0] + nx * (1.45 + o[1]), 0.19, midZ + uz * o[0] + nz * (1.45 + o[1]));
-                    leg.rotation.y = ang;
-                    leg.castShadow = true;
-                    furnitureGroup.add(leg);
-                });
 
-                // Картина над диваном
+                // ===== Ковёр =====
+                if (models.rug) {
+                    try {
+                        var rugRoot = prepareModel(models.rug, Math.min(2.4, sofaW + 0.5), 1.5, 0.05);
+                        rugRoot.rotation.y = ang;
+                        rugRoot.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
+                        // Ковры часто горизонтальные — если модель стоит вертикально, поворачиваем
+                        // (prepare уже низ на 0; если высота после scale большая — лёгкий clamp уже был)
+                        furnitureGroup.add(rugRoot);
+                    } catch (eR) {
+                        console.warn('rug place', eR);
+                        models.rug = null;
+                    }
+                }
+                if (!models.rug) {
+                    const rug = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.4, sofaW + 0.5), 1.5), rugMat);
+                    rug.position.set(midX + nx * 1.45, 0.006, midZ + nz * 1.45);
+                    rug.rotation.x = -Math.PI / 2;
+                    rug.rotation.z = ang;
+                    rug.receiveShadow = true;
+                    furnitureGroup.add(rug);
+                }
+
+                // ===== Столик =====
+                if (models.table) {
+                    try {
+                        var tableRoot = prepareModel(models.table, 0.95, 0.55, 0.45);
+                        tableRoot.rotation.y = ang;
+                        tableRoot.position.set(midX + nx * 1.45, 0, midZ + nz * 1.45);
+                        furnitureGroup.add(tableRoot);
+                    } catch (eT) {
+                        console.warn('table place', eT);
+                        models.table = null;
+                    }
+                }
+                if (!models.table) {
+                    placePrim(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.5), wood), 0, 1.45, 0.4);
+                    [[-0.42, -0.2], [0.42, -0.2], [-0.42, 0.2], [0.42, 0.2]].forEach(function (o) {
+                        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.05), wood);
+                        leg.position.set(midX + ux * o[0] + nx * (1.45 + o[1]), 0.19, midZ + uz * o[0] + nz * (1.45 + o[1]));
+                        leg.rotation.y = ang;
+                        leg.castShadow = true;
+                        furnitureGroup.add(leg);
+                    });
+                }
+
+                // Картина над диваном — изображение выбирается (по умолчанию логотип бота, можно подменить)
                 (function addPaintingAboveSofa() {
                     const picW = Math.min(0.9, sofaW * 0.55), picH = picW * 0.72;
                     const frameMat2 = new THREE.MeshPhongMaterial({ color: 0x2a2420, shininess: 25, specular: 0x1a1a1a });
@@ -8238,7 +8414,11 @@ function getCurrentCeilingPayload() {
                     frame.rotation.y = ang;
                     frame.castShadow = true;
                     furnitureGroup.add(frame);
-                    const canvasTex = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
+                    // Источник картинки: window._paintingImageUrl / PAINTING_IMAGE_URL / BOT_LOGO_DATAURL
+                    var paintingSrc = (typeof window._paintingImageUrl === 'string' && window._paintingImageUrl)
+                        || (typeof window.PAINTING_IMAGE_URL === 'string' && window.PAINTING_IMAGE_URL)
+                        || BOT_LOGO_DATAURL;
+                    const canvasTex = new THREE.TextureLoader().load(paintingSrc);
                     if (THREE.sRGBEncoding) canvasTex.encoding = THREE.sRGBEncoding;
                     const canvasMat = new THREE.MeshBasicMaterial({ map: canvasTex });
                     const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(picW, picH), canvasMat);
@@ -8247,11 +8427,10 @@ function getCurrentCeilingPayload() {
                     furnitureGroup.add(canvasMesh);
                 })();
 
-                // Телевизор на стене напротив дивана — рекламный экран
+                // ===== ТВ на противоположной стене =====
                 (function addTVOpposite() {
                     let best = null, bestDot = 1;
                     wallEdges.forEach(function (e) {
-                        if (e.i === edge.i) return;
                         if (doorEdge && e.i === doorEdge.i) return;
                         if (windowEdgesList.some(function (we) { return we.i === e.i; })) return;
                         const eAng = e.ang;
@@ -8267,134 +8446,119 @@ function getCurrentCeilingPayload() {
                     const tAng = te.ang;
                     const tMidX = (te.a.x + te.b.x) / 2, tMidZ = (te.a.z + te.b.z) / 2;
 
-                    const tvW = Math.min(1.15, te.len * 0.5), tvH = tvW * 9 / 16; // честные 16:9
+                    const tvW = Math.min(1.15, te.len * 0.5), tvH = tvW * 9 / 16;
                     const tvY = 1.35;
-                    const standMat = new THREE.MeshPhongMaterial({ color: 0x1c1c1e, shininess: 40, specular: 0x2a2a2a });
-                    const stand = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.3, 0.42, 0.32), standMat);
-                    stand.position.set(tMidX + tnx * 0.18, 0.21, tMidZ + tnz * 0.18);
-                    stand.rotation.y = tAng;
-                    stand.castShadow = true;
-                    stand.receiveShadow = true;
-                    furnitureGroup.add(stand);
-                    // Контактная тень под тумбой — без неё ТВ-тумба выглядела
-                    // «приклеенной» к полу без веса, в отличие от дивана рядом
-                    (function tvContactShadow() {
-                        const sc2 = document.createElement('canvas');
-                        sc2.width = sc2.height = 128;
-                        const sg2 = sc2.getContext('2d');
-                        const grd = sg2.createRadialGradient(64, 64, 4, 64, 64, 62);
-                        grd.addColorStop(0, 'rgba(0,0,0,0.5)');
-                        grd.addColorStop(0.55, 'rgba(0,0,0,0.2)');
-                        grd.addColorStop(1, 'rgba(0,0,0,0)');
-                        sg2.fillStyle = grd;
-                        sg2.fillRect(0, 0, 128, 128);
-                        const shTex2 = new THREE.CanvasTexture(sc2);
-                        const sh = new THREE.Mesh(new THREE.PlaneGeometry(tvW + 0.6, 0.6), new THREE.MeshBasicMaterial({
-                            map: shTex2, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide
-                        }));
-                        sh.position.set(tMidX + tnx * 0.2, 0.006, tMidZ + tnz * 0.2);
-                        sh.rotation.x = -Math.PI / 2;
-                        sh.rotation.z = tAng;
-                        sh.renderOrder = 1;
-                        furnitureGroup.add(sh);
-                    })();
-                    const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.05, tvH + 0.05, 0.035), standMat);
-                    bezel.position.set(tMidX + tnx * 0.03, tvY, tMidZ + tnz * 0.03);
-                    bezel.rotation.y = tAng;
-                    furnitureGroup.add(bezel);
 
-                    // Экран: полноценный рекламный ролик на весь кадр — фирменный
-                    // градиент, свечение по центру, логотип, заголовок и CTA-плашка.
-                    // Раньше почти весь экран оставался пустым тёмным полем с
-                    // мелким текстом внизу — теперь макет использует всю высоту.
-                    const SW = 960, SH = 540; // честные 16:9, с запасом по качеству текста
-                    const sc = document.createElement('canvas');
-                    sc.width = SW; sc.height = SH;
-                    const sg = sc.getContext('2d');
-                    const bg = sg.createLinearGradient(0, 0, SW * 0.15, SH);
-                    bg.addColorStop(0, '#0e1730');
-                    bg.addColorStop(0.55, '#0a0f24');
-                    bg.addColorStop(1, '#060812');
-                    sg.fillStyle = bg;
-                    sg.fillRect(0, 0, SW, SH);
-
-                    // мягкое свечение-прожектор за логотипом
-                    const spot = sg.createRadialGradient(SW * 0.5, SH * 0.34, 10, SW * 0.5, SH * 0.34, SH * 0.62);
-                    spot.addColorStop(0, 'rgba(120,170,255,0.28)');
-                    spot.addColorStop(0.5, 'rgba(90,130,220,0.10)');
-                    spot.addColorStop(1, 'rgba(90,130,220,0)');
-                    sg.fillStyle = spot;
-                    sg.fillRect(0, 0, SW, SH);
-
-                    // рассеянные светящиеся частицы — перекликаются со стилем логотипа
-                    for (let i = 0; i < 26; i++) {
-                        const px = Math.random() * SW, py = Math.random() * SH * 0.75;
-                        const pr = 0.6 + Math.random() * 1.8;
-                        sg.fillStyle = 'rgba(150,190,255,' + (0.08 + Math.random() * 0.16) + ')';
-                        sg.beginPath(); sg.arc(px, py, pr, 0, Math.PI * 2); sg.fill();
+                    if (models.tv) {
+                        try {
+                            // ТВ-модель: ширина ~tvW, высота ~tvH+подставка, глубина небольшая
+                            var tvRoot = prepareModel(models.tv, tvW + 0.25, 0.45, 1.6);
+                            tvRoot.rotation.y = tAng + Math.PI;
+                            tvRoot.position.set(tMidX + tnx * 0.18, 0, tMidZ + tnz * 0.18);
+                            furnitureGroup.add(tvRoot);
+                        } catch (eTv) {
+                            console.warn('tv place', eTv);
+                            models.tv = null;
+                        }
                     }
 
-                    // тонкая рамка-виньетка по краям экрана
-                    const vg = sg.createRadialGradient(SW / 2, SH / 2, SH * 0.35, SW / 2, SH / 2, SH * 0.75);
-                    vg.addColorStop(0, 'rgba(0,0,0,0)');
-                    vg.addColorStop(1, 'rgba(0,0,0,0.38)');
-                    sg.fillStyle = vg;
-                    sg.fillRect(0, 0, SW, SH);
+                    if (!models.tv) {
+                        const standMat = new THREE.MeshPhongMaterial({ color: 0x1c1c1e, shininess: 40, specular: 0x2a2a2a });
+                        const stand = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.3, 0.42, 0.32), standMat);
+                        stand.position.set(tMidX + tnx * 0.18, 0.21, tMidZ + tnz * 0.18);
+                        stand.rotation.y = tAng;
+                        stand.castShadow = true;
+                        stand.receiveShadow = true;
+                        furnitureGroup.add(stand);
+                        (function tvContactShadow() {
+                            const sc2 = document.createElement('canvas');
+                            sc2.width = sc2.height = 128;
+                            const sg2 = sc2.getContext('2d');
+                            const grd = sg2.createRadialGradient(64, 64, 4, 64, 64, 62);
+                            grd.addColorStop(0, 'rgba(0,0,0,0.5)');
+                            grd.addColorStop(0.55, 'rgba(0,0,0,0.2)');
+                            grd.addColorStop(1, 'rgba(0,0,0,0)');
+                            sg2.fillStyle = grd;
+                            sg2.fillRect(0, 0, 128, 128);
+                            const shTex2 = new THREE.CanvasTexture(sc2);
+                            const sh = new THREE.Mesh(new THREE.PlaneGeometry(tvW + 0.6, 0.6), new THREE.MeshBasicMaterial({
+                                map: shTex2, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide
+                            }));
+                            sh.position.set(tMidX + tnx * 0.2, 0.006, tMidZ + tnz * 0.2);
+                            sh.rotation.x = -Math.PI / 2;
+                            sh.rotation.z = tAng;
+                            sh.renderOrder = 1;
+                            furnitureGroup.add(sh);
+                        })();
+                        const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.05, tvH + 0.05, 0.035), standMat);
+                        bezel.position.set(tMidX + tnx * 0.03, tvY, tMidZ + tnz * 0.03);
+                        bezel.rotation.y = tAng;
+                        furnitureGroup.add(bezel);
 
-                    sg.textAlign = 'center';
-                    // заголовок — крупно, на всю ширину экрана
-                    sg.font = '800 54px Arial, sans-serif';
-                    sg.fillStyle = '#f4f8ff';
-                    sg.shadowColor = 'rgba(120,170,255,0.55)';
-                    sg.shadowBlur = 18;
-                    sg.fillText('Ремонт мечты — реальность', SW / 2, SH * 0.685);
-                    sg.shadowBlur = 0;
-                    sg.font = '400 27px Arial, sans-serif';
-                    sg.fillStyle = '#aebfe0';
-                    sg.fillText('3D-визуализация потолка за 5 минут', SW / 2, SH * 0.735);
+                        // Экран с рекламой бота
+                        const SW = 960, SH = 540;
+                        const sc = document.createElement('canvas');
+                        sc.width = SW; sc.height = SH;
+                        const sg = sc.getContext('2d');
+                        const bg = sg.createLinearGradient(0, 0, SW * 0.15, SH);
+                        bg.addColorStop(0, '#0e1730');
+                        bg.addColorStop(0.55, '#0a0f24');
+                        bg.addColorStop(1, '#060812');
+                        sg.fillStyle = bg;
+                        sg.fillRect(0, 0, SW, SH);
+                        const spot = sg.createRadialGradient(SW * 0.5, SH * 0.34, 10, SW * 0.5, SH * 0.34, SH * 0.62);
+                        spot.addColorStop(0, 'rgba(120,170,255,0.28)');
+                        spot.addColorStop(0.5, 'rgba(90,130,220,0.10)');
+                        spot.addColorStop(1, 'rgba(90,130,220,0)');
+                        sg.fillStyle = spot;
+                        sg.fillRect(0, 0, SW, SH);
+                        for (let i = 0; i < 26; i++) {
+                            const px = Math.random() * SW, py = Math.random() * SH * 0.75;
+                            const pr = 0.6 + Math.random() * 1.8;
+                            sg.fillStyle = 'rgba(150,190,255,' + (0.08 + Math.random() * 0.16) + ')';
+                            sg.beginPath(); sg.arc(px, py, pr, 0, Math.PI * 2); sg.fill();
+                        }
+                        // текст/лого — упрощённо (полный оригинал слишком длинный; сохраняем CTA)
+                        sg.fillStyle = '#e8f0ff';
+                        sg.font = '700 42px Arial, sans-serif';
+                        sg.textAlign = 'center';
+                        sg.fillText('Натяжные потолки', SW / 2, SH * 0.55);
+                        sg.font = '500 28px Arial, sans-serif';
+                        sg.fillStyle = '#a8c0e8';
+                        sg.fillText('Замер и расчёт за 5 минут', SW / 2, SH * 0.64);
+                        const ctaW = 320, ctaH = 48, ctaY = SH * 0.78;
+                        sg.fillStyle = '#1a73e8';
+                        sg.beginPath();
+                        if (sg.roundRect) sg.roundRect(SW / 2 - ctaW / 2, ctaY, ctaW, ctaH, 12);
+                        else sg.rect(SW / 2 - ctaW / 2, ctaY, ctaW, ctaH);
+                        sg.fill();
+                        sg.fillStyle = '#ffffff';
+                        sg.font = '700 22px Arial, sans-serif';
+                        sg.fillText('Напишите нашему боту →', SW / 2, ctaY + ctaH * 0.68);
 
-                    // CTA-плашка (пилюля) — читается как настоящая реклама с призывом к действию
-                    const ctaW = SW * 0.56, ctaH = SH * 0.105, ctaX = SW / 2 - ctaW / 2, ctaY = SH * 0.8;
-                    const ctaR = ctaH / 2;
-                    const ctaGrad = sg.createLinearGradient(ctaX, 0, ctaX + ctaW, 0);
-                    ctaGrad.addColorStop(0, '#5b8dff');
-                    ctaGrad.addColorStop(1, '#8a6bff');
-                    sg.fillStyle = ctaGrad;
-                    sg.beginPath();
-                    sg.moveTo(ctaX + ctaR, ctaY);
-                    sg.arcTo(ctaX + ctaW, ctaY, ctaX + ctaW, ctaY + ctaH, ctaR);
-                    sg.arcTo(ctaX + ctaW, ctaY + ctaH, ctaX, ctaY + ctaH, ctaR);
-                    sg.arcTo(ctaX, ctaY + ctaH, ctaX, ctaY, ctaR);
-                    sg.arcTo(ctaX, ctaY, ctaX + ctaW, ctaY, ctaR);
-                    sg.closePath();
-                    sg.fill();
-                    sg.font = '700 26px Arial, sans-serif';
-                    sg.fillStyle = '#ffffff';
-                    sg.fillText('Напишите нашему боту →', SW / 2, ctaY + ctaH * 0.65);
+                        const screenTex = new THREE.CanvasTexture(sc);
+                        if (THREE.sRGBEncoding) screenTex.encoding = THREE.sRGBEncoding;
+                        const screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
+                        const screen = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), screenMat);
+                        screen.position.set(tMidX + tnx * 0.048, tvY, tMidZ + tnz * 0.048);
+                        screen.rotation.y = tAng;
+                        furnitureGroup.add(screen);
 
-                    const screenTex = new THREE.CanvasTexture(sc);
-                    if (THREE.sRGBEncoding) screenTex.encoding = THREE.sRGBEncoding;
-                    const screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
-                    const screen = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), screenMat);
-                    screen.position.set(tMidX + tnx * 0.048, tvY, tMidZ + tnz * 0.048);
-                    screen.rotation.y = tAng;
-                    furnitureGroup.add(screen);
+                        const logoTex = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
+                        if (THREE.sRGBEncoding) logoTex.encoding = THREE.sRGBEncoding;
+                        const logoSize = tvH * 0.6;
+                        const logoMat = new THREE.MeshBasicMaterial({ map: logoTex, transparent: true });
+                        const logo = new THREE.Mesh(new THREE.PlaneGeometry(logoSize, logoSize), logoMat);
+                        logo.position.set(
+                            tMidX + tnx * 0.05,
+                            tvY + tvH * (0.5 - 0.30),
+                            tMidZ + tnz * 0.05
+                        );
+                        logo.rotation.y = tAng;
+                        furnitureGroup.add(logo);
+                    }
 
-                    // Логотип — крупно по центру верхней трети экрана, поверх свечения
-                    const logoTex = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
-                    if (THREE.sRGBEncoding) logoTex.encoding = THREE.sRGBEncoding;
-                    const logoSize = tvH * 0.6;
-                    const logoMat = new THREE.MeshBasicMaterial({ map: logoTex, transparent: true });
-                    const logo = new THREE.Mesh(new THREE.PlaneGeometry(logoSize, logoSize), logoMat);
-                    logo.position.set(
-                        tMidX + tnx * 0.05,
-                        tvY + tvH * (0.5 - 0.30),
-                        tMidZ + tnz * 0.05
-                    );
-                    logo.rotation.y = tAng;
-                    furnitureGroup.add(logo);
-
-                    // Мягкое свечение экрана — телевизор читается как включённый
+                    // Свечение и свет от ТВ — всегда (и для GLB, и для fallback)
                     const glowMat2 = new THREE.MeshBasicMaterial({
                         map: makeGlowTexture(THREE),
                         transparent: true,
@@ -8411,7 +8575,14 @@ function getCurrentCeilingPayload() {
                     const tvLight = addCappedPointLight(0xaecbff, 0.16, 2.4, 2);
                     if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
                 })();
-            })();
+
+                if (typeof invalidate === 'function') invalidate();
+            }
+
+            // Запускаем асинхронно; сцена уже рендерится, мебель появится по мере загрузки
+            buildFurniture().catch(function (e) {
+                console.warn('buildFurniture failed', e);
+            });
 
             function applyLightKindVisibility() {
                 // Выкл. свет = гасим излучение, корпус/трек/полоса ОСТАЮТСЯ видимыми
@@ -8697,7 +8868,8 @@ function getCurrentCeilingPayload() {
             });
             const allBtn = document.createElement('button');
             allBtn.type = 'button';
-            allBtn.textContent = 'Все выкл';
+            // по умолчанию всё освещение выкл → кнопка предлагает «включить»
+            allBtn.textContent = Object.values(lightKindState).some(Boolean) ? 'Все выкл' : 'Все вкл';
             allBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(80,40,0,0.55);color:#fff;font-size:12px;margin-top:2px;';
             allBtn.onclick = (e) => {
                 e.preventDefault();
@@ -8710,7 +8882,7 @@ function getCurrentCeilingPayload() {
                     b.style.opacity = lightKindState[k] ? '1' : '0.45';
                     b.textContent = (lightKindState[k] ? '💡 ' : '💤 ') + lab;
                 });
-                allBtn.textContent = anyOn ? 'Все вкл' : 'Все выкл';
+                allBtn.textContent = Object.values(lightKindState).some(Boolean) ? 'Все выкл' : 'Все вкл';
             };
             lightPanel.appendChild(allBtn);
 
@@ -8729,8 +8901,7 @@ function getCurrentCeilingPayload() {
                 nightBtn.style.background = isNight ? 'rgba(60,40,10,0.7)' : 'rgba(20,30,60,0.65)';
             };
             lightPanel.appendChild(nightBtn);
-            // Применяем ночной режим сразу при открытии — без этого клика по кнопке
-            // сцена всё равно стартовала бы с дневным светом несмотря на isNight=true
+            // Применяем день/ночь сразу при открытии (по умолчанию — день)
             applyDayNight();
             invalidate();
 
