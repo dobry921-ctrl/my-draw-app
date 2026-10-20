@@ -996,7 +996,41 @@
             });
             let windowEdgesList = corniceEdgeIdxs.map(edgeByIndex).filter(function (e) { return e && e.len > 0.7; });
 
-            const doorEdge = wallEdges.find(function (e) { return corniceEdgeIdxs.indexOf(e.i) === -1; }) || wallEdges[0];
+            // Дверь всегда справа от угла A (первая вершина points[0]):
+            // ребро контура, начинающееся в A (после приведения к CCW).
+            // t ближе к A — дверь «сразу справа» от угла.
+            var doorEdge = null;
+            var doorTFromA = 0.28;
+            (function pickDoorAtCornerA() {
+                if (!points || !points.length || !roomContour.length) return;
+                var aM = toM(points[0].x, points[0].y);
+                var aIdx = 0, bestD = Infinity;
+                for (var i = 0; i < roomContour.length; i++) {
+                    var d = Math.hypot(roomContour[i].x - aM.x, roomContour[i].z - aM.z);
+                    if (d < bestD) { bestD = d; aIdx = i; }
+                }
+                var n = roomContour.length;
+                var nextIdx = (aIdx + 1) % n;
+                var prevIdx = (aIdx - 1 + n) % n;
+                // Ребро A → next (направление обхода CCW) — «справа» от угла A при стандартном плане
+                var eDoor = edgeByIndex(aIdx);
+                if (eDoor && eDoor.len >= 0.9) {
+                    doorEdge = eDoor;
+                    // edgeByIndex(aIdx): a = roomContour[aIdx]=A, b = next → t от A
+                    doorTFromA = 0.28;
+                    return;
+                }
+                // запасной вариант: ребро prev → A
+                eDoor = edgeByIndex(prevIdx);
+                if (eDoor && eDoor.len >= 0.9) {
+                    doorEdge = eDoor;
+                    doorTFromA = 0.72; // ближе к концу ребра (= A)
+                }
+            })();
+            if (!doorEdge) {
+                doorEdge = wallEdges.find(function (e) { return corniceEdgeIdxs.indexOf(e.i) === -1; }) || wallEdges[0];
+                doorTFromA = 0.28;
+            }
 
             if (!windowEdgesList.length) {
                 // Карнизов нет — прежняя эвристика на одно окно
@@ -1041,7 +1075,7 @@
                 w: 0.85,
                 h: 2.05,
                 y: 2.05 / 2,
-                t: 0.28
+                t: (typeof doorTFromA === 'number' ? doorTFromA : 0.28)
             };
 
             // Единый масштаб рисунка обоев на всех стенах (раньше обои растягивались
@@ -2787,11 +2821,35 @@
                     }
                     return inside;
                 }
-                const cand = wallEdges.filter(function (e) {
+                // Диван: длинная стена без двери; по возможности не на окне.
+                // Предпочитаем стену, нормаль которой наиболее противоположна двери
+                // (чтобы ТВ естественно встал напротив).
+                var cand = wallEdges.filter(function (e) {
                     if (doorEdge && e.i === doorEdge.i) return false;
+                    return true;
+                });
+                var candNoWin = cand.filter(function (e) {
                     return !windowEdgesList.some(function (we) { return we.i === e.i; });
                 });
-                const edge = cand.find(function (e) { return e.len >= 1.2; }) || cand[0] || wallEdges[0];
+                function wallInwardNormal(e) {
+                    var enx = -Math.sin(e.ang), enz = -Math.cos(e.ang);
+                    var emx = (e.a.x + e.b.x) / 2, emz = (e.a.z + e.b.z) / 2;
+                    if (emx * enx + emz * enz > 0) { enx = -enx; enz = -enz; }
+                    return { nx: enx, nz: enz };
+                }
+                var doorN = doorEdge ? wallInwardNormal(doorEdge) : null;
+                function pickSofaEdge(list) {
+                    if (!list || !list.length) return null;
+                    var sorted = list.slice().sort(function (u, v) { return v.len - u.len; });
+                    if (!doorN) return sorted[0];
+                    // Среди достаточно длинных — та, что «смотрит» примерно в ту же сторону, что и дверь
+                    // (диван на дальней от двери стене: нормаль сонаправленна с нормалью двери → ближе к окну/входу сбоку)
+                    // На практике: выбираем самую длинную стену, НЕ совпадающую с дверью; если есть несколько —
+                    // берём с максимальной длиной (классика гостиной).
+                    var longEnough = sorted.filter(function (e) { return e.len >= 1.2; });
+                    return (longEnough[0] || sorted[0]);
+                }
+                var edge = pickSofaEdge(candNoWin) || pickSofaEdge(cand) || wallEdges[0];
                 if (!edge || edge.len < 0.8) {
                     console.warn('buildFurniture: no wall edge');
                     return;
@@ -2896,19 +2954,30 @@
                     furnitureGroup.add(canvasMesh);
                 })();
 
-                // ТВ
+                // ТВ всегда строго напротив дивана (картина уже над диваном на той же стене).
+                // Не пропускаем стену с окном — только стену дивана; дверь избегаем, если есть альтернатива.
                 (function addTVOpposite() {
                     let best = null, bestDot = 1;
+                    let bestAny = null, bestAnyDot = 1;
                     wallEdges.forEach(function (e) {
-                        if (doorEdge && e.i === doorEdge.i) return;
-                        if (windowEdgesList.some(function (we) { return we.i === e.i; })) return;
+                        if (e.i === edge.i) return; // не на стене дивана
                         const eAng = e.ang;
                         let enx = -Math.sin(eAng), enz = -Math.cos(eAng);
                         const emx = (e.a.x + e.b.x) / 2, emz = (e.a.z + e.b.z) / 2;
                         if (emx * enx + emz * enz > 0) { enx = -enx; enz = -enz; }
                         const dot = enx * nx + enz * nz;
-                        if (dot < bestDot && e.len >= 1.0) { bestDot = dot; best = { e: e, enx: enx, enz: enz }; }
+                        // наиболее противоположная нормаль (dot → -1)
+                        if (dot < bestAnyDot && e.len >= 0.8) {
+                            bestAnyDot = dot;
+                            bestAny = { e: e, enx: enx, enz: enz };
+                        }
+                        if (doorEdge && e.i === doorEdge.i) return;
+                        if (dot < bestDot && e.len >= 0.8) {
+                            bestDot = dot;
+                            best = { e: e, enx: enx, enz: enz };
+                        }
                     });
+                    if (!best) best = bestAny;
                     if (!best) return;
                     const te = best.e, tnx = best.enx, tnz = best.enz;
                     const tAng = te.ang;
