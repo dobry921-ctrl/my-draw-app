@@ -3342,8 +3342,16 @@
         function selectPointTypeFromSelect() {
             const sel = document.getElementById('point-type-select');
             if (!sel) return;
-            spotKind = sel.value === 'light_point' ? 'light_point' : 'spot';
-            selectedLightingName = spotKind === 'light_point' ? 'Светильник (установка)' : 'Спот (установка)';
+            // value: "spot" | "light_point" | "spot|Имя из прайса" | "light_point|Имя"
+            var raw = (sel.value || 'spot').split('|');
+            var kind = raw[0] || 'spot';
+            var matName = (raw[1] || '').trim();
+            spotKind = kind === 'light_point' ? 'light_point' : 'spot';
+            if (matName) {
+                selectedLightingName = matName;
+            } else {
+                selectedLightingName = spotKind === 'light_point' ? 'Светильник (установка)' : 'Спот (установка)';
+            }
             updatePointPlaceHint();
         }
 
@@ -10282,6 +10290,45 @@ async function captureCeilingPhotoForKP() {
                 else if (chNames.indexOf('Люстра (установка)') < 0) chNames.unshift('Люстра (установка)');
                 var vc = fillSelect('chandelier-select', chNames, typeof selectedChandelierName !== 'undefined' ? selectedChandelierName : null);
                 if (vc) selectedChandelierName = vc;
+
+                // Точечные из прайса (спот / светильник / прочие)
+                var spotNames = (lightings || []).filter(function (n) { return /спот/i.test(n); });
+                var lampNames = (lightings || []).filter(function (n) {
+                    return /светильник/i.test(n) && !/люстр/i.test(n);
+                });
+                var otherPoint = (lightings || []).filter(function (n) {
+                    return !/люстр|полос|трек|track|strip/i.test(n)
+                        && spotNames.indexOf(n) < 0 && lampNames.indexOf(n) < 0;
+                });
+                var ptSel = document.getElementById('point-type-select');
+                if (ptSel && (spotNames.length || lampNames.length || otherPoint.length)) {
+                    var prevPt = ptSel.value;
+                    ptSel.innerHTML = '';
+                    function addOpt(val, label) {
+                        var o = document.createElement('option');
+                        o.value = val; o.textContent = label;
+                        ptSel.appendChild(o);
+                    }
+                    if (spotNames.length) {
+                        spotNames.forEach(function (n) { addOpt('spot|' + n, n); });
+                    } else {
+                        addOpt('spot', 'Спот');
+                    }
+                    if (lampNames.length) {
+                        lampNames.forEach(function (n) { addOpt('light_point|' + n, n); });
+                    } else {
+                        addOpt('light_point', 'Светильник');
+                    }
+                    otherPoint.forEach(function (n) { addOpt('spot|' + n, n); });
+                    if (prevPt) {
+                        for (var i = 0; i < ptSel.options.length; i++) {
+                            if (ptSel.options[i].value === prevPt) { ptSel.selectedIndex = i; break; }
+                        }
+                    }
+                    if (typeof selectPointTypeFromSelect === 'function') {
+                        try { selectPointTypeFromSelect(); } catch (e) {}
+                    }
+                }
 
                 // Полосы: явный strips= или из lighting (полос/трек/track/strip) + дефолты
                 var stripNames = stripsParam && stripsParam.length ? stripsParam.slice() : [];
