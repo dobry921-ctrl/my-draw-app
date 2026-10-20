@@ -5684,6 +5684,9 @@ function getCurrentCeilingPayload() {
             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
             tex.repeat.set(repX == null ? 1 : repX, repY == null ? 1 : repY);
             tex.anisotropy = _maxAniso;
+            tex.generateMipmaps = true;
+            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            tex.magFilter = THREE.LinearFilter;
             tex.needsUpdate = true;
             return tex;
         }
@@ -5703,6 +5706,10 @@ function getCurrentCeilingPayload() {
             g.fillRect(0, 0, 128, 128);
             _glowTexCache = new THREE.CanvasTexture(c);
             if (THREE.sRGBEncoding) _glowTexCache.encoding = THREE.sRGBEncoding;
+            _glowTexCache.generateMipmaps = true;
+            _glowTexCache.minFilter = THREE.LinearMipmapLinearFilter;
+            _glowTexCache.magFilter = THREE.LinearFilter;
+            _glowTexCache.anisotropy = _maxAniso;
             return _glowTexCache;
         }
 
@@ -6252,17 +6259,21 @@ function getCurrentCeilingPayload() {
             camera.lookAt(0, roomH - 0.05, 0);
 
             const isMobile3d = (W < 900) || /Android|iPhone|iPad|Mobile|Telegram/i.test(navigator.userAgent || '');
+            const useMSAA = !isMobile3d;   // MSAA только на десктопе, на мобиле полагаемся на FXAA
             const renderer = new THREE.WebGLRenderer({
-                antialias: false, // AA очень дорогой; без него FPS заметно выше
-                preserveDrawingBuffer: true, // нужно для «Фото для КП»
-                powerPreference: 'high-performance'
+                antialias: useMSAA,
+                preserveDrawingBuffer: true, // нужно для «Фото для КП» — НЕ трогать
+                powerPreference: 'high-performance',
+                stencil: false                 // не используем stencil — экономим память
             });
             renderer.setSize(W, H);
-            // Жёсткий потолок DPR: 1.0 на мобиле/Telegram, 1.25 на десктопе
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile3d ? 1.0 : 1.25));
-            // Тени только на десктопе и простые (Basic), карта 512 — иначе FPS падает
-            renderer.shadowMap.enabled = !isMobile3d;
-            renderer.shadowMap.type = THREE.BasicShadowMap;
+            // стартовые значения; адаптация в animate (этап 5)
+            let _dprTarget = isMobile3d
+                ? 1.0
+                : Math.min(window.devicePixelRatio || 1, 1.5);
+            renderer.setPixelRatio(_dprTarget);
+            // Тени отключены полностью (ТЗ: shadow-pass мёртвый, съедает FPS)
+            renderer.shadowMap.enabled = false;
             renderer.setClearColor(0x1a1a1a, 1);
             if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
             if (renderer.outputColorSpace !== undefined) renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -6271,9 +6282,12 @@ function getCurrentCeilingPayload() {
                 renderer.toneMapping = THREE.ACESFilmicToneMapping;
                 renderer.toneMappingExposure = 1.28;
             }
-            _maxAniso = 4;
-            try { _maxAniso = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); } catch (e) { _maxAniso = 1; }
-            if (isMobile3d) _maxAniso = 1;
+            try {
+                _maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+            } catch (e) {
+                _maxAniso = 4;
+            }
+            if (isMobile3d) _maxAniso = 2;  // 8× на мобиле — лишний расход без видимого выигрыша
 
             // лимит PointLight — иначе большие потолки тормозят
             let _plBudget = isMobile3d ? 10 : 16;
@@ -6856,6 +6870,10 @@ function getCurrentCeilingPayload() {
                             panel(pad, dc.height * 0.09 + topH + gap, panelW, botH);
                             const tex2 = new THREE.CanvasTexture(dc);
                             if (THREE.sRGBEncoding) tex2.encoding = THREE.sRGBEncoding;
+                            tex2.generateMipmaps = true;
+                            tex2.minFilter = THREE.LinearMipmapLinearFilter;
+                            tex2.magFilter = THREE.LinearFilter;
+                            tex2.anisotropy = _maxAniso;
                             return tex2;
                         }
 
@@ -6867,7 +6885,7 @@ function getCurrentCeilingPayload() {
                             midZ + uz * wOff + nz * leafDepthOffset
                         );
                         core.rotation.y = ang;
-                        core.castShadow = true;
+                        core.castShadow = false;
                         core.receiveShadow = true;
                         scene.add(core);
 
@@ -7057,7 +7075,7 @@ function getCurrentCeilingPayload() {
                         const mesh = new THREE.Mesh(geo, intWallMat);
                         mesh.position.set(midX, wallH / 2, midZ);
                         mesh.rotation.y = ang;
-                        mesh.castShadow = true;
+                        mesh.castShadow = false;
                         mesh.receiveShadow = true;
                         scene.add(mesh);
                         return;
@@ -7078,7 +7096,7 @@ function getCurrentCeilingPayload() {
                             const panel = new THREE.Mesh(new THREE.BoxGeometry(leftLen, wallH, WALL_THK), intWallMat);
                             panel.position.set(cxp, wallH / 2, czp);
                             panel.rotation.y = ang;
-                            panel.castShadow = true;
+                            panel.castShadow = false;
                             panel.receiveShadow = true;
                             scene.add(panel);
                         }
@@ -7115,7 +7133,7 @@ function getCurrentCeilingPayload() {
                         const panel = new THREE.Mesh(new THREE.BoxGeometry(rightLen, wallH, WALL_THK), intWallMat);
                         panel.position.set(cxp, wallH / 2, czp);
                         panel.rotation.y = ang;
-                        panel.castShadow = true;
+                        panel.castShadow = false;
                         panel.receiveShadow = true;
                         scene.add(panel);
                     }
@@ -7157,6 +7175,10 @@ function getCurrentCeilingPayload() {
                     g.stroke();
                 }
                 const woodTex = new THREE.CanvasTexture(c);
+                woodTex.generateMipmaps = true;
+                woodTex.minFilter = THREE.LinearMipmapLinearFilter;
+                woodTex.magFilter = THREE.LinearFilter;
+                woodTex.anisotropy = _maxAniso;
                 const leafMat = new THREE.MeshPhongMaterial({ map: woodTex, color: 0xe0b888, shininess: 20, side: THREE.DoubleSide });
                 const frameMat = new THREE.MeshPhongMaterial({ map: woodTex, color: 0xc4965a, shininess: 15, side: THREE.DoubleSide });
                 const metalMat = new THREE.MeshPhongMaterial({ color: 0xcccccc, shininess: 90 });
@@ -7187,7 +7209,7 @@ function getCurrentCeilingPayload() {
                         mz + nz * casingD + tz * ox
                     );
                     m.rotation.y = doorEdge.ang;
-                    m.castShadow = true;
+                    m.castShadow = false;
                     scene.add(m);
                 }
                 // боковые стойки: от пола до верха проёма
@@ -7355,6 +7377,9 @@ function getCurrentCeilingPayload() {
 
                     const tex = new THREE.CanvasTexture(c);
                     if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                    tex.generateMipmaps = true;
+                    tex.minFilter = THREE.LinearMipmapLinearFilter;
+                    tex.magFilter = THREE.LinearFilter;
                     tex.anisotropy = _maxAniso;
                     return tex;
                 }
@@ -7465,6 +7490,9 @@ function getCurrentCeilingPayload() {
 
                     const tex = new THREE.CanvasTexture(c);
                     if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                    tex.generateMipmaps = true;
+                    tex.minFilter = THREE.LinearMipmapLinearFilter;
+                    tex.magFilter = THREE.LinearFilter;
                     tex.anisotropy = _maxAniso;
                     return tex;
                 }
@@ -7517,6 +7545,10 @@ function getCurrentCeilingPayload() {
                     gg.fillStyle = grd;
                     gg.fillRect(0, 0, 128, 128);
                     const sheenTex = new THREE.CanvasTexture(gc);
+                    sheenTex.generateMipmaps = true;
+                    sheenTex.minFilter = THREE.LinearMipmapLinearFilter;
+                    sheenTex.magFilter = THREE.LinearFilter;
+                    sheenTex.anisotropy = _maxAniso;
                     const sheen = new THREE.Mesh(
                         new THREE.PlaneGeometry(winW * 0.92, winH * 0.92),
                         new THREE.MeshBasicMaterial({
@@ -7579,18 +7611,9 @@ function getCurrentCeilingPayload() {
                 const sun = new THREE.DirectionalLight(0xffe0c0, 0.14);
                 sun.position.set(mx + nx * 4, winY + 1.5, mz + nz * 4);
                 sun.target.position.set(mx - nx * 1.3 + tx * 1.7, 0.3, mz - nz * 1.3 + tz * 1.7);
-                // единственный источник с тенями — дёшево и сразу «приземляет» предметы
-                sun.castShadow = !isMobile3d;
-                if (sun.castShadow) {
-                    sun.shadow.mapSize.set(512, 512); // 512 вместо 2048 — сильно дешевле
-                    sun.shadow.camera.near = 0.5;
-                    sun.shadow.camera.far = 18;
-                    sun.shadow.camera.left = -5;
-                    sun.shadow.camera.right = 5;
-                    sun.shadow.camera.top = 5;
-                    sun.shadow.camera.bottom = -5;
-                    sun.shadow.bias = -0.001;
-                }
+                // Тени отключены (ТЗ: castShadow нигде не true)
+                sun.castShadow = false;
+                // shadow-камера не нужна — shadowMap.enabled = false глобально
                 scene.add(sun);
                 scene.add(sun.target);
                 const wl = addCappedPointLight(0xffd8a8, 0.14, 4.5, 1.8);
@@ -8513,7 +8536,7 @@ function getCurrentCeilingPayload() {
                     const frame = new THREE.Mesh(new THREE.BoxGeometry(picW + 0.06, picH + 0.06, 0.03), frameMat2);
                     frame.position.set(midX + nx * 0.03, 1.72, midZ + nz * 0.03);
                     frame.rotation.y = ang;
-                    frame.castShadow = true;
+                    frame.castShadow = false;
                     furnitureGroup.add(frame);
                     var canvasMat;
                     if (paintingTex) {
@@ -8576,7 +8599,7 @@ function getCurrentCeilingPayload() {
                         var bezel = new THREE.Mesh(new THREE.BoxGeometry(bezelW, bezelH, 0.028), frameMat);
                         bezel.position.set(tMidX + tnx * 0.05, tvY, tMidZ + tnz * 0.05);
                         bezel.rotation.y = tAng;
-                        bezel.castShadow = true;
+                        bezel.castShadow = false;
                         furnitureGroup.add(bezel);
                         var screen = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
                         screen.position.set(tMidX + tnx * 0.066, tvY, tMidZ + tnz * 0.066);
@@ -10012,14 +10035,21 @@ async function captureCeilingPhotoForKP() {
                 });
             } catch (e) { _cubeRT = null; }
 
-            // ===== Пост-обработка: свечение источников, виньетка, мягкий контраст =====
+            // ===== Пост-обработка: FXAA + bloom + dithering (ТЗ P0-4) =====
             let post = null;
             function disposePost() {
                 if (!post) return;
                 try {
-                    post.rtScene.dispose(); post.rtA.dispose(); post.rtB.dispose();
+                    post.rtScene.dispose();
+                    post.rtA.dispose();
+                    post.rtB.dispose();
+                    if (post.rtFinal) post.rtFinal.dispose();
                     post.quad.geometry.dispose();
-                    post.matBright.dispose(); post.matBlur.dispose(); post.matFinal.dispose();
+                    post.matBright.dispose();
+                    post.matBlur.dispose();
+                    if (post.matComposite) post.matComposite.dispose();
+                    if (post.matFXAA) post.matFXAA.dispose();
+                    if (post.matFinal) post.matFinal.dispose();
                 } catch (e) {}
                 post = null;
             }
@@ -10034,14 +10064,24 @@ async function captureCeilingPhotoForKP() {
                         minFilter: THREE.LinearFilter,
                         magFilter: THREE.LinearFilter,
                         format: THREE.RGBAFormat,
-                        stencilBuffer: false
+                        stencilBuffer: false,
+                        type: THREE.UnsignedByteType
                     };
-                    const rtScene = new THREE.WebGLRenderTarget(pw, ph, Object.assign({ depthBuffer: true }, base));
+                    let rtScene;
+                    if (useMSAA && THREE.WebGLMultisampleRenderTarget && renderer.capabilities.isWebGL2) {
+                        rtScene = new THREE.WebGLMultisampleRenderTarget(pw, ph, Object.assign({
+                            depthBuffer: true, samples: 4
+                        }, base));
+                    } else {
+                        rtScene = new THREE.WebGLRenderTarget(pw, ph, Object.assign({ depthBuffer: true }, base));
+                    }
                     const rtA = new THREE.WebGLRenderTarget(bw, bh, Object.assign({ depthBuffer: false }, base));
                     const rtB = new THREE.WebGLRenderTarget(bw, bh, Object.assign({ depthBuffer: false }, base));
+                    const rtFinal = new THREE.WebGLRenderTarget(pw, ph, Object.assign({ depthBuffer: false }, base));
                     const vs = 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}';
+                    // Bright pass: порог 0.62 — светятся только реальные источники
                     const matBright = new THREE.ShaderMaterial({
-                        uniforms: { tDiffuse: { value: null }, uThr: { value: 0.42 } },
+                        uniforms: { tDiffuse: { value: null }, uThr: { value: 0.62 } },
                         vertexShader: vs,
                         fragmentShader: [
                             'uniform sampler2D tDiffuse;uniform float uThr;varying vec2 vUv;',
@@ -10064,11 +10104,11 @@ async function captureCeilingPhotoForKP() {
                             'gl_FragColor=vec4(s,1.0);}'
                         ].join('')
                     });
-                    const matFinal = new THREE.ShaderMaterial({
+                    const matComposite = new THREE.ShaderMaterial({
                         uniforms: {
                             tDiffuse: { value: null },
                             tBloom: { value: null },
-                            uStrength: { value: 0.95 }
+                            uStrength: { value: 0.78 }
                         },
                         vertexShader: vs,
                         fragmentShader: [
@@ -10078,63 +10118,111 @@ async function captureCeilingPhotoForKP() {
                             'void main(){vec3 base=texture2D(tDiffuse,vUv).rgb;',
                             'vec3 bl=texture2D(tBloom,vUv).rgb;',
                             'vec3 col=base+bl*uStrength;',
-                            'col=mix(col,col*col*(3.0-2.0*col),0.10);',
+                            'col=mix(col,col*col*(3.0-2.0*col),0.12);',
                             'float d=distance(vUv,vec2(0.5));',
                             'col*=smoothstep(0.95,0.25,d)*0.26+0.74;',
                             'gl_FragColor=vec4(lin2srgb(col),1.0);}'
                         ].join('')
                     });
+                    // FXAA 3.11 + dithering (убирает banding на градиентах)
+                    const matFXAA = new THREE.ShaderMaterial({
+                        uniforms: {
+                            tDiffuse: { value: null },
+                            uTexelSize: { value: new THREE.Vector2(1 / pw, 1 / ph) }
+                        },
+                        vertexShader: vs,
+                        fragmentShader: [
+                            'uniform sampler2D tDiffuse;uniform vec2 uTexelSize;varying vec2 vUv;',
+                            'vec3 fxaa(sampler2D tex, vec2 uv, vec2 rcp){',
+                            'vec3 rgbNW=texture2D(tex,uv+vec2(-1.0,-1.0)*rcp).rgb;',
+                            'vec3 rgbNE=texture2D(tex,uv+vec2( 1.0,-1.0)*rcp).rgb;',
+                            'vec3 rgbSW=texture2D(tex,uv+vec2(-1.0, 1.0)*rcp).rgb;',
+                            'vec3 rgbSE=texture2D(tex,uv+vec2( 1.0, 1.0)*rcp).rgb;',
+                            'vec3 rgbM=texture2D(tex,uv).rgb;',
+                            'vec3 luma=vec3(0.299,0.587,0.114);',
+                            'float lumaNW=dot(rgbNW,luma);float lumaNE=dot(rgbNE,luma);',
+                            'float lumaSW=dot(rgbSW,luma);float lumaSE=dot(rgbSE,luma);',
+                            'float lumaM=dot(rgbM,luma);',
+                            'float lumaMin=min(lumaM,min(min(lumaNW,lumaNE),min(lumaSW,lumaSE)));',
+                            'float lumaMax=max(lumaM,max(max(lumaNW,lumaNE),max(lumaSW,lumaSE)));',
+                            'vec2 dir;dir.x=-((lumaNW+lumaNE)-(lumaSW+lumaSE));',
+                            'dir.y=((lumaNW+lumaSW)-(lumaNE+lumaSE));',
+                            'float dirReduce=max((lumaNW+lumaNE+lumaSW+lumaSE)*(0.25*0.125),1.0/128.0);',
+                            'float rcpDirMin=1.0/(min(abs(dir.x),abs(dir.y))+dirReduce);',
+                            'dir=min(vec2(8.0),max(vec2(-8.0),dir*rcpDirMin))*rcp;',
+                            'vec3 rgbA=0.5*(texture2D(tex,uv+dir*(1.0/3.0-0.5)).rgb+texture2D(tex,uv+dir*(2.0/3.0-0.5)).rgb);',
+                            'vec3 rgbB=rgbA*0.5+0.25*(texture2D(tex,uv+dir*-0.5).rgb+texture2D(tex,uv+dir*0.5).rgb);',
+                            'float lumaB=dot(rgbB,luma);',
+                            'if((lumaB<lumaMin)||(lumaB>lumaMax)) return rgbA;',
+                            'return rgbB;}',
+                            'void main(){vec3 col=fxaa(tDiffuse,vUv,uTexelSize);',
+                            'float dither=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);',
+                            'col+=(dither-0.5)/255.0;',
+                            'gl_FragColor=vec4(col,1.0);}'
+                        ].join('')
+                    });
                     const pScene = new THREE.Scene();
                     const pCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-                    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), matFinal);
+                    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), matComposite);
                     quad.frustumCulled = false;
                     pScene.add(quad);
                     return {
-                        rtScene: rtScene, rtA: rtA, rtB: rtB, bw: bw, bh: bh,
-                        matBright: matBright, matBlur: matBlur, matFinal: matFinal,
+                        rtScene: rtScene, rtA: rtA, rtB: rtB, rtFinal: rtFinal, bw: bw, bh: bh,
+                        matBright: matBright, matBlur: matBlur, matComposite: matComposite, matFXAA: matFXAA,
                         scene: pScene, cam: pCam, quad: quad
                     };
                 } catch (e) {
+                    console.warn('createPost failed', e);
                     return null;
                 }
             }
-            // Bloom/post — только на десктопе; на телефоне съедает FPS
-            post = (!isMobile3d && W * H > 200000) ? createPost(W, H) : null;
+            // Десктоп: bloom + vignette (+ FXAA дешёвый, dithering на всех)
+            // Мобилка: bloom + vignette + FXAA (MSAA выключен)
+            // Очень слабые/маленькие экраны — без поста
+            const usePost = (W * H > 80000) || !isMobile3d;
+            post = usePost ? createPost(W, H) : null;
 
             function renderFrame() {
-                // В режиме сверху post всегда выкл — критично для плавного drag
+                // Режим «сверху» — напрямую в экран, без пост-обработки (плавный drag)
                 if (!post || topDownOn) {
                     renderer.setRenderTarget(null);
                     renderer.render(scene, camera);
                     return;
                 }
                 try {
+                    // 1. Сцена → rtScene
                     renderer.setRenderTarget(post.rtScene);
                     renderer.clear();
                     renderer.render(scene, camera);
-
+                    // 2. Bright → rtA
                     post.quad.material = post.matBright;
                     post.matBright.uniforms.tDiffuse.value = post.rtScene.texture;
                     renderer.setRenderTarget(post.rtA);
                     renderer.render(post.scene, post.cam);
-
+                    // 3. Blur H: rtA → rtB
                     post.quad.material = post.matBlur;
                     post.matBlur.uniforms.tDiffuse.value = post.rtA.texture;
                     post.matBlur.uniforms.uDir.value.set(1 / post.bw, 0);
                     renderer.setRenderTarget(post.rtB);
                     renderer.render(post.scene, post.cam);
-
+                    // 4. Blur V: rtB → rtA
                     post.matBlur.uniforms.tDiffuse.value = post.rtB.texture;
                     post.matBlur.uniforms.uDir.value.set(0, 1 / post.bh);
                     renderer.setRenderTarget(post.rtA);
                     renderer.render(post.scene, post.cam);
-
-                    post.quad.material = post.matFinal;
-                    post.matFinal.uniforms.tDiffuse.value = post.rtScene.texture;
-                    post.matFinal.uniforms.tBloom.value = post.rtA.texture;
+                    // 5. Композит (bloom + vignette + sRGB) → rtFinal
+                    post.quad.material = post.matComposite;
+                    post.matComposite.uniforms.tDiffuse.value = post.rtScene.texture;
+                    post.matComposite.uniforms.tBloom.value = post.rtA.texture;
+                    renderer.setRenderTarget(post.rtFinal);
+                    renderer.render(post.scene, post.cam);
+                    // 6. FXAA + dithering → экран (всегда: на десктопе дешёвый, на мобиле обязателен)
+                    post.quad.material = post.matFXAA;
+                    post.matFXAA.uniforms.tDiffuse.value = post.rtFinal.texture;
                     renderer.setRenderTarget(null);
                     renderer.render(post.scene, post.cam);
                 } catch (e) {
+                    console.warn('renderFrame failed', e);
                     disposePost();
                     renderer.setRenderTarget(null);
                     renderer.render(scene, camera);
@@ -10158,7 +10246,8 @@ async function captureCeilingPhotoForKP() {
                 renderer.domElement.style.width = '100%';
                 renderer.domElement.style.height = '100%';
                 disposePost();
-                post = createPost(w2, h2);
+                const usePostR = (w2 * h2 > 80000) || !isMobile3d;
+                post = usePostR ? createPost(w2, h2) : null;
                 invalidate();
             };
             window.addEventListener('resize', onResize);
@@ -10211,11 +10300,39 @@ async function captureCeilingPhotoForKP() {
 
             const speed = 1.8; // м/с
             let lastT = performance.now();
+            // Адаптивный DPR (ТЗ P1-5)
+            let _fpsAccum = 0, _fpsFrames = 0, _dprLastChange = 0;
+            const _dprMin = isMobile3d ? 0.85 : 1.0;
+            const _dprMax = isMobile3d ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
             const animate = () => {
                 _threeAnim = requestAnimationFrame(animate);
                 const now = performance.now();
                 const dt = Math.min(0.05, (now - lastT) / 1000);
                 lastT = now;
+
+                // Адаптивный DPR: плавная деградация на слабых, подъём на мощных
+                _fpsAccum += dt;
+                _fpsFrames++;
+                if (_fpsAccum > 1.5) {
+                    const avgFps = _fpsFrames / _fpsAccum;
+                    if (now - _dprLastChange > 3000) {
+                        if (avgFps < 48 && _dprTarget > _dprMin) {
+                            _dprTarget = Math.max(_dprMin, _dprTarget - 0.15);
+                            renderer.setPixelRatio(_dprTarget);
+                            _dprLastChange = now;
+                            onResize();
+                            console.log('[adaptive] DPR ↓', _dprTarget, 'fps', avgFps.toFixed(1));
+                        } else if (avgFps > 58 && _dprTarget < _dprMax && !isMobile3d) {
+                            _dprTarget = Math.min(_dprMax, _dprTarget + 0.15);
+                            renderer.setPixelRatio(_dprTarget);
+                            _dprLastChange = now;
+                            onResize();
+                            console.log('[adaptive] DPR ↑', _dprTarget, 'fps', avgFps.toFixed(1));
+                        }
+                    }
+                    _fpsAccum = 0;
+                    _fpsFrames = 0;
+                }
 
                 let mx = moveX, mz = moveZ;
                 if (keys['KeyW'] || keys['ArrowUp']) mz += 1;
