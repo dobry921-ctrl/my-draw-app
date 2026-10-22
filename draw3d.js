@@ -683,6 +683,10 @@
             renderer.domElement.style.width = '100%';
             renderer.domElement.style.height = '100%';
             renderer.domElement.style.display = 'block';
+            renderer.domElement.style.touchAction = 'none';
+            renderer.domElement.style.position = 'absolute';
+            renderer.domElement.style.inset = '0';
+            renderer.domElement.style.zIndex = '1';
 
             // Контур комнаты в метрах (XZ), CCW для корректной заливки
             const roomContour = points.map(p => toM(p.x, p.y));
@@ -996,41 +1000,7 @@
             });
             let windowEdgesList = corniceEdgeIdxs.map(edgeByIndex).filter(function (e) { return e && e.len > 0.7; });
 
-            // Дверь всегда справа от угла A (первая вершина points[0]):
-            // ребро контура, начинающееся в A (после приведения к CCW).
-            // t ближе к A — дверь «сразу справа» от угла.
-            var doorEdge = null;
-            var doorTFromA = 0.28;
-            (function pickDoorAtCornerA() {
-                if (!points || !points.length || !roomContour.length) return;
-                var aM = toM(points[0].x, points[0].y);
-                var aIdx = 0, bestD = Infinity;
-                for (var i = 0; i < roomContour.length; i++) {
-                    var d = Math.hypot(roomContour[i].x - aM.x, roomContour[i].z - aM.z);
-                    if (d < bestD) { bestD = d; aIdx = i; }
-                }
-                var n = roomContour.length;
-                var nextIdx = (aIdx + 1) % n;
-                var prevIdx = (aIdx - 1 + n) % n;
-                // Ребро A → next (направление обхода CCW) — «справа» от угла A при стандартном плане
-                var eDoor = edgeByIndex(aIdx);
-                if (eDoor && eDoor.len >= 0.9) {
-                    doorEdge = eDoor;
-                    // edgeByIndex(aIdx): a = roomContour[aIdx]=A, b = next → t от A
-                    doorTFromA = 0.28;
-                    return;
-                }
-                // запасной вариант: ребро prev → A
-                eDoor = edgeByIndex(prevIdx);
-                if (eDoor && eDoor.len >= 0.9) {
-                    doorEdge = eDoor;
-                    doorTFromA = 0.72; // ближе к концу ребра (= A)
-                }
-            })();
-            if (!doorEdge) {
-                doorEdge = wallEdges.find(function (e) { return corniceEdgeIdxs.indexOf(e.i) === -1; }) || wallEdges[0];
-                doorTFromA = 0.28;
-            }
+            const doorEdge = wallEdges.find(function (e) { return corniceEdgeIdxs.indexOf(e.i) === -1; }) || wallEdges[0];
 
             if (!windowEdgesList.length) {
                 // Карнизов нет — прежняя эвристика на одно окно
@@ -1075,7 +1045,7 @@
                 w: 0.85,
                 h: 2.05,
                 y: 2.05 / 2,
-                t: (typeof doorTFromA === 'number' ? doorTFromA : 0.28)
+                t: 0.28
             };
 
             // Единый масштаб рисунка обоев на всех стенах (раньше обои растягивались
@@ -2821,35 +2791,11 @@
                     }
                     return inside;
                 }
-                // Диван: длинная стена без двери; по возможности не на окне.
-                // Предпочитаем стену, нормаль которой наиболее противоположна двери
-                // (чтобы ТВ естественно встал напротив).
-                var cand = wallEdges.filter(function (e) {
+                const cand = wallEdges.filter(function (e) {
                     if (doorEdge && e.i === doorEdge.i) return false;
-                    return true;
-                });
-                var candNoWin = cand.filter(function (e) {
                     return !windowEdgesList.some(function (we) { return we.i === e.i; });
                 });
-                function wallInwardNormal(e) {
-                    var enx = -Math.sin(e.ang), enz = -Math.cos(e.ang);
-                    var emx = (e.a.x + e.b.x) / 2, emz = (e.a.z + e.b.z) / 2;
-                    if (emx * enx + emz * enz > 0) { enx = -enx; enz = -enz; }
-                    return { nx: enx, nz: enz };
-                }
-                var doorN = doorEdge ? wallInwardNormal(doorEdge) : null;
-                function pickSofaEdge(list) {
-                    if (!list || !list.length) return null;
-                    var sorted = list.slice().sort(function (u, v) { return v.len - u.len; });
-                    if (!doorN) return sorted[0];
-                    // Среди достаточно длинных — та, что «смотрит» примерно в ту же сторону, что и дверь
-                    // (диван на дальней от двери стене: нормаль сонаправленна с нормалью двери → ближе к окну/входу сбоку)
-                    // На практике: выбираем самую длинную стену, НЕ совпадающую с дверью; если есть несколько —
-                    // берём с максимальной длиной (классика гостиной).
-                    var longEnough = sorted.filter(function (e) { return e.len >= 1.2; });
-                    return (longEnough[0] || sorted[0]);
-                }
-                var edge = pickSofaEdge(candNoWin) || pickSofaEdge(cand) || wallEdges[0];
+                const edge = cand.find(function (e) { return e.len >= 1.2; }) || cand[0] || wallEdges[0];
                 if (!edge || edge.len < 0.8) {
                     console.warn('buildFurniture: no wall edge');
                     return;
@@ -2954,30 +2900,19 @@
                     furnitureGroup.add(canvasMesh);
                 })();
 
-                // ТВ всегда строго напротив дивана (картина уже над диваном на той же стене).
-                // Не пропускаем стену с окном — только стену дивана; дверь избегаем, если есть альтернатива.
+                // ТВ
                 (function addTVOpposite() {
                     let best = null, bestDot = 1;
-                    let bestAny = null, bestAnyDot = 1;
                     wallEdges.forEach(function (e) {
-                        if (e.i === edge.i) return; // не на стене дивана
+                        if (doorEdge && e.i === doorEdge.i) return;
+                        if (windowEdgesList.some(function (we) { return we.i === e.i; })) return;
                         const eAng = e.ang;
                         let enx = -Math.sin(eAng), enz = -Math.cos(eAng);
                         const emx = (e.a.x + e.b.x) / 2, emz = (e.a.z + e.b.z) / 2;
                         if (emx * enx + emz * enz > 0) { enx = -enx; enz = -enz; }
                         const dot = enx * nx + enz * nz;
-                        // наиболее противоположная нормаль (dot → -1)
-                        if (dot < bestAnyDot && e.len >= 0.8) {
-                            bestAnyDot = dot;
-                            bestAny = { e: e, enx: enx, enz: enz };
-                        }
-                        if (doorEdge && e.i === doorEdge.i) return;
-                        if (dot < bestDot && e.len >= 0.8) {
-                            bestDot = dot;
-                            best = { e: e, enx: enx, enz: enz };
-                        }
+                        if (dot < bestDot && e.len >= 1.0) { bestDot = dot; best = { e: e, enx: enx, enz: enz }; }
                     });
-                    if (!best) best = bestAny;
                     if (!best) return;
                     const te = best.e, tnx = best.enx, tnz = best.enz;
                     const tAng = te.ang;
@@ -3110,8 +3045,8 @@
                 }
                 return inside;
             }
-            // отступ от стен ~28 см — нельзя «провалиться» в стену
-            const WALL_MARGIN = 0.28;
+            // отступ от стен ~22 см — комфортное движение у стен на телефоне
+            const WALL_MARGIN = 0.22;
 
             function distPointToSeg2D(x, z, a, b) {
                 const abx = b.x - a.x, abz = b.z - a.z;
@@ -3175,17 +3110,17 @@
                 camX = startX * 0.4;
                 camZ = startZ * 0.4;
             }
-            let eyeH = 1.55; // рост глаз
+            let eyeH = 1.60; // рост глаз (чуть выше — комната читается крупнее)
             let yaw = Math.atan2(-camX, -camZ); // смотрим примерно к центру
-            let pitch = 0.35; // слегка вверх на потолок
+            let pitch = 0.28; // слегка вверх на потолок
 
-            let camFov = 60;
+            let camFov = 52; // уже FOV → комната не «схлопывается» вширь
             // Рендер по требованию: не крутим GPU впустую, когда картинка статична
             let needsRender = true;
             function invalidate() { needsRender = true; }
             // Сглаженные значения: камера догоняет ввод с инерцией — движение
             // перестаёт быть «рывками», плюс мягкий заход в сцену при открытии
-            let yawS = yaw + 0.42, pitchS = pitch - 0.22, fovS = 74;
+            let yawS = yaw + 0.28, pitchS = pitch - 0.12, fovS = 58;
             let camXS = camX, camZS = camZ, eyeHS = eyeH;
             function applyCam() {
                 camera.fov = fovS;
@@ -3235,11 +3170,11 @@
             }
             let zoomSlider = null;
 
-            // Джойстик перемещения на экране
+            // Джойстик перемещения на экране (крупнее + выше z-index для телефона)
             const pad = document.createElement('div');
-            pad.style.cssText = 'position:absolute;left:12px;bottom:12px;width:120px;height:120px;border-radius:60px;background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.25);touch-action:none;z-index:5;';
+            pad.style.cssText = 'position:absolute;left:14px;bottom:18px;width:140px;height:140px;border-radius:70px;background:rgba(255,255,255,0.14);border:2px solid rgba(255,255,255,0.35);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30;pointer-events:auto;';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.45);';
+            knob.style.cssText = 'position:absolute;left:50px;top:50px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.55);pointer-events:none;';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
@@ -3247,9 +3182,9 @@
             // Зум ползунком — по требованию, отдельно от щипка/колёсика
             const zoomWrap = document.createElement('div');
             zoomWrap.style.cssText = 'position:absolute;right:14px;top:50%;transform:translateY(-50%);' +
-                'z-index:5;display:flex;flex-direction:column;align-items:center;gap:6px;' +
-                'padding:10px 7px;border-radius:16px;touch-action:none;';
-            zoomWrap.className = 'p3d-pad';
+                'z-index:30;display:flex;flex-direction:column;align-items:center;gap:6px;' +
+                'padding:10px 7px;border-radius:16px;touch-action:none;pointer-events:auto;';
+            zoomWrap.className = 'p3d-zoom';
             const zoomPlus = document.createElement('span');
             zoomPlus.textContent = '🔍+';
             zoomPlus.style.cssText = 'color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,0.6);';
@@ -4161,16 +4096,16 @@ async function captureCeilingPhotoForKP() {
             let padActive = false, padId = null;
 
             function setKnob(nx, ny) {
-                // nx,ny -1..1
-                knob.style.left = (40 + nx * 28) + 'px';
-                knob.style.top = (40 + ny * 28) + 'px';
+                // nx,ny -1..1; pad 140×140, knob 40×40 → центр 50, ход ~42
+                knob.style.left = (50 + nx * 42) + 'px';
+                knob.style.top = (50 + ny * 42) + 'px';
             }
 
             const el = renderer.domElement;
 
             // Осмотр (drag по canvas) + перетаскивание света в режиме «сверху»
             const onLookDown = (e) => {
-                if (e.target.closest && (e.target.closest('.p3d-pad') || e.target.closest('.p3d-panel'))) return;
+                if (e.target.closest && (e.target.closest('.p3d-pad') || e.target.closest('.p3d-zoom') || e.target.closest('.p3d-panel'))) return;
                 const t = e.touches ? e.touches[0] : e;
                 if (!t) return;
                 if (topDownOn) {
@@ -4356,42 +4291,90 @@ async function captureCeilingPhotoForKP() {
             }, { passive: false });
             el.addEventListener('touchend', onLookUp);
 
-            // Джойстик
-            function padStart(e) {
+            // Джойстик: Pointer Events + setPointerCapture (надёжно на iOS/Android/Telegram)
+            function padPointerDown(e) {
                 e.preventDefault();
+                e.stopPropagation();
                 padActive = true;
-                const t = e.touches ? e.touches[0] : e;
-                padId = t.identifier !== undefined ? t.identifier : 'mouse';
-                padMove(e);
+                padId = e.pointerId;
+                try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+                padPointerMove(e);
             }
-            function padMove(e) {
+            function padPointerMove(e) {
                 if (!padActive) return;
-                const t = e.touches
-                    ? Array.from(e.touches).find(tt => tt.identifier === padId) || e.touches[0]
-                    : e;
-                if (!t) return;
+                if (padId != null && e.pointerId !== padId) return;
+                e.preventDefault();
+                e.stopPropagation();
                 const rect = pad.getBoundingClientRect();
-                let nx = (t.clientX - rect.left) / rect.width * 2 - 1;
-                let ny = (t.clientY - rect.top) / rect.height * 2 - 1;
+                let nx = (e.clientX - rect.left) / rect.width * 2 - 1;
+                let ny = (e.clientY - rect.top) / rect.height * 2 - 1;
                 const mag = Math.hypot(nx, ny) || 1;
                 if (mag > 1) { nx /= mag; ny /= mag; }
                 setKnob(nx, ny);
-                // вверх стика = вперёд; вправо стика = вправо (без зеркала)
-                moveX = -nx;  // инверсия: было перепутано лево/право
+                // вверх стика = вперёд; вправо стика = вправо
+                moveX = -nx;
                 moveZ = -ny;
+                needsRender = true;
             }
-            function padEnd() {
+            function padPointerUp(e) {
+                if (padId != null && e.pointerId !== padId) return;
                 padActive = false;
+                padId = null;
                 moveX = 0; moveZ = 0;
                 setKnob(0, 0);
+                try { if (e && e.pointerId != null) pad.releasePointerCapture(e.pointerId); } catch (err) {}
             }
-            pad.addEventListener('mousedown', padStart);
-            window.addEventListener('mousemove', padMove);
-            window.addEventListener('mouseup', padEnd);
-            pad.addEventListener('touchstart', padStart, { passive: false });
-            pad.addEventListener('touchmove', padMove, { passive: false });
-            pad.addEventListener('touchend', padEnd);
-            pad.addEventListener('touchcancel', padEnd);
+            pad.addEventListener('pointerdown', padPointerDown, { passive: false });
+            pad.addEventListener('pointermove', padPointerMove, { passive: false });
+            pad.addEventListener('pointerup', padPointerUp, { passive: false });
+            pad.addEventListener('pointercancel', padPointerUp, { passive: false });
+            pad.addEventListener('lostpointercapture', padPointerUp);
+            // Запасной путь для старых WebView без Pointer Events
+            if (!window.PointerEvent) {
+                function padStart(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    padActive = true;
+                    const t = e.touches ? e.touches[0] : e;
+                    padId = t.identifier !== undefined ? t.identifier : 'mouse';
+                    padMoveLegacy(e);
+                }
+                function padMoveLegacy(e) {
+                    if (!padActive) return;
+                    const t = e.touches
+                        ? Array.from(e.touches).find(function (tt) { return tt.identifier === padId; }) || e.touches[0]
+                        : e;
+                    if (!t) return;
+                    e.preventDefault();
+                    const rect = pad.getBoundingClientRect();
+                    let nx = (t.clientX - rect.left) / rect.width * 2 - 1;
+                    let ny = (t.clientY - rect.top) / rect.height * 2 - 1;
+                    const mag = Math.hypot(nx, ny) || 1;
+                    if (mag > 1) { nx /= mag; ny /= mag; }
+                    setKnob(nx, ny);
+                    moveX = -nx;
+                    moveZ = -ny;
+                    needsRender = true;
+                }
+                function padEndLegacy() {
+                    padActive = false;
+                    padId = null;
+                    moveX = 0; moveZ = 0;
+                    setKnob(0, 0);
+                }
+                pad.addEventListener('touchstart', padStart, { passive: false });
+                window.addEventListener('touchmove', function (e) {
+                    if (!padActive) return;
+                    padMoveLegacy(e);
+                }, { passive: false });
+                window.addEventListener('touchend', function (e) {
+                    if (!padActive) return;
+                    padEndLegacy();
+                });
+                pad.addEventListener('mousedown', padStart);
+                window.addEventListener('mousemove', padMoveLegacy);
+                window.addEventListener('mouseup', padEndLegacy);
+            }
 
             // Клавиатура
             const keys = {};
@@ -4691,12 +4674,11 @@ async function captureCeilingPhotoForKP() {
                     window.removeEventListener('mouseup', onLookUp);
                     el.removeEventListener('wheel', onWheel);
                     el.removeEventListener('touchend', onLookUp);
-                    pad.removeEventListener('mousedown', padStart);
-                    window.removeEventListener('mousemove', padMove);
-                    window.removeEventListener('mouseup', padEnd);
-                    pad.removeEventListener('touchstart', padStart);
-                    pad.removeEventListener('touchmove', padMove);
-                    pad.removeEventListener('touchend', padEnd);
+                    pad.removeEventListener('pointerdown', padPointerDown);
+                    pad.removeEventListener('pointermove', padPointerMove);
+                    pad.removeEventListener('pointerup', padPointerUp);
+                    pad.removeEventListener('pointercancel', padPointerUp);
+                    pad.removeEventListener('lostpointercapture', padPointerUp);
                     window.removeEventListener('keydown', onKeyDown);
                     window.removeEventListener('keyup', onKeyUp);
                     try {
@@ -4711,7 +4693,7 @@ async function captureCeilingPhotoForKP() {
             _threeCamera = camera;
             _threeRenderer = renderer;
 
-            const speed = 1.8; // м/с
+            const speed = 2.4; // м/с — чуть быстрее, комната ощущается нормального размера
             let lastT = performance.now();
             // Адаптивный DPR (ТЗ P1-5)
             let _fpsAccum = 0, _fpsFrames = 0, _dprLastChange = 0;
