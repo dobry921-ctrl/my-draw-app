@@ -684,9 +684,11 @@
             renderer.domElement.style.height = '100%';
             renderer.domElement.style.display = 'block';
             renderer.domElement.style.touchAction = 'none';
-            renderer.domElement.style.position = 'absolute';
-            renderer.domElement.style.inset = '0';
-            renderer.domElement.style.zIndex = '1';
+            // НЕ position:absolute на canvas — иначе host схлопывается (absolute вне потока) → чёрный экран
+            host.style.position = 'relative';
+            host.style.width = '100%';
+            host.style.height = '100%';
+            host.style.minHeight = '200px';
 
             // Контур комнаты в метрах (XZ), CCW для корректной заливки
             const roomContour = points.map(p => toM(p.x, p.y));
