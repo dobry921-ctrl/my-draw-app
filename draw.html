@@ -3879,7 +3879,12 @@
                     showToast('Изменения в памяти. Нажмите «Сохранить изменения в заказ»!', 4500);
                 } else if (points.length >= 3) {
                     ensureCurrentCeilingSaved();
-                    showToast('Проверьте потолки, затем «Отправить весь замер».', 4000);
+                    window._lastSavedCeilingToken = window._ceilingSessionToken || 0;
+                    showToast(
+                        'Сохранено потолков: ' + completedCeilings.length +
+                        '. Можно «➕ Добавить ещё потолок» или «📤 Отправить весь замер».',
+                        4500
+                    );
                 }
             } catch (e) { console.error('finishInstall save', e); }
             try { showOnlyPanel('results-panel'); } catch (e) {
@@ -4441,18 +4446,13 @@
             var current;
             try { current = getCurrentCeilingPayload(); } catch (e) { console.warn(e); return false; }
             if (!current || !current.points || current.points.length < 3) return false;
+            // Явное редактирование существующего потолка (switchCeiling / edit)
             if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
                 completedCeilings[editCeilingIndex] = current;
                 return true;
             }
-            if (completedCeilings.length) {
-                var last = completedCeilings[completedCeilings.length - 1];
-                if (sameCeilingGeom(last, current)) {
-                    completedCeilings[completedCeilings.length - 1] = current;
-                    editCeilingIndex = completedCeilings.length - 1;
-                    return true;
-                }
-            }
+            // Новый потолок — ВСЕГДА добавляем. Не сравниваем геометрию:
+            // две одинаковые комнаты (шаблон 3×4) должны сохраниться обе.
             completedCeilings.push(current);
             editCeilingIndex = completedCeilings.length - 1;
             return true;
@@ -4596,20 +4596,56 @@ function getCurrentCeilingPayload() {
                 showToast('Сначала завершите текущий потолок.', 2500);
                 return;
             }
-            if (!ensureCurrentCeilingSaved()) {
+            // Сохраняем текущий в список (если ещё не сохранён как edit)
+            if (points.length >= 3 && edges.length) {
+                // если уже правили существующий — перезапишем его
+                if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
+                    try { completedCeilings[editCeilingIndex] = getCurrentCeilingPayload(); } catch (e) {}
+                } else {
+                    // не дублируем, если только что сохранили тем же содержимым через finishInstall
+                    var already = false;
+                    try {
+                        var cur = getCurrentCeilingPayload();
+                        if (completedCeilings.length) {
+                            var last = completedCeilings[completedCeilings.length - 1];
+                            // дубль только если это ТОТ ЖЕ объект сессии (только что finishInstall)
+                            if (last === cur) already = true;
+                            else if (sameCeilingGeom(last, cur) && window._lastSavedCeilingToken === window._ceilingSessionToken) {
+                                already = true;
+                            }
+                        }
+                        if (!already) {
+                            completedCeilings.push(cur);
+                        } else {
+                            // обновим fixtures/material последнего
+                            completedCeilings[completedCeilings.length - 1] = cur;
+                        }
+                    } catch (e) {
+                        if (!ensureCurrentCeilingSaved()) {
+                            showToast('Нет готового потолка.', 2000);
+                            return;
+                        }
+                    }
+                }
+            } else if (!completedCeilings.length) {
                 showToast('Нет готового потолка.', 2000);
                 return;
             }
+            // Новый потолок — сбрасываем индекс правки, чтобы не перезаписать предыдущий
+            editCeilingIndex = -1;
+            window._ceilingSessionToken = (window._ceilingSessionToken || 0) + 1;
             startNextCeilingDrawing();
         }
 
         function startNextCeilingDrawing() {
+            editCeilingIndex = -1;
             resetCurrentDrawing(false);
+            editCeilingIndex = -1;
             updateCeilingsList();
             updateSavedChip();
             showToast(
-                'Потолок №' + completedCeilings.length + ' сохранён. Тапайте углы следующего, затем замкните и введите размеры — как в первый раз.',
-                4500
+                'Потолок №' + completedCeilings.length + ' сохранён. Чертите следующий (углы → размеры → монтаж). Все потолки уйдут одним замером.',
+                5000
             );
         }
 
@@ -4784,19 +4820,21 @@ function getCurrentCeilingPayload() {
                         }
                     } catch (e) { console.warn(e); }
                 }
+                // Не дедуплицируем по геометрии: две одинаковые комнаты — это два потолка.
+                // Убираем только подряд идущие полные дубликаты (двойной finishInstall без addCeiling).
                 (function () {
                     var out = [];
-                    completedCeilings.forEach(function (c) {
-                        var dup = false;
-                        for (var i = 0; i < out.length; i++) {
-                            if (typeof sameCeilingGeom === 'function' && sameCeilingGeom(out[i], c)) { dup = true; break; }
+                    completedCeilings.forEach(function (c, idx) {
+                        if (idx > 0 && typeof sameCeilingGeom === 'function' &&
+                            sameCeilingGeom(out[out.length - 1], c) &&
+                            JSON.stringify(out[out.length - 1].fixtures || []) === JSON.stringify(c.fixtures || [])) {
+                            // подряд одинаковые с тем же светом — оставляем один
+                            out[out.length - 1] = c;
+                            return;
                         }
-                        if (!dup) out.push(c);
+                        out.push(c);
                     });
-                    if (out.length !== completedCeilings.length) {
-                        console.warn('[sendToBot] dedupe', completedCeilings.length, '->', out.length);
-                        completedCeilings = out;
-                    }
+                    completedCeilings = out;
                 })();
                 if (!completedCeilings.length) {
                     note('Нет потолка для отправки.');
