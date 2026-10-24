@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+Ф<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -2095,7 +2095,7 @@
             }
 
             const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
-            const targetAng = Math.atan2(dirY, dirX);
+            const targetAng = snapSketchAngleToGrid(Math.atan2(dirY, dirX));
             const currentAng = Math.atan2(wdy, wdx);
             let dAng = targetAng - currentAng;
             while (dAng > Math.PI) dAng -= 2 * Math.PI;
@@ -2112,12 +2112,33 @@
             return work;
         }
 
+        /** Угол первой стороны эскиза → ближайшая ось сетки (0/90/180/270°),
+         *  если отклонение небольшое. Иначе оставляем как рисовали (косые комнаты). */
+        function snapSketchAngleToGrid(ang) {
+            var candidates = [0, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.PI, Math.PI * 1.5];
+            var best = ang, bestDiff = Infinity;
+            for (var i = 0; i < candidates.length; i++) {
+                var d = ang - candidates[i];
+                while (d > Math.PI) d -= 2 * Math.PI;
+                while (d < -Math.PI) d += 2 * Math.PI;
+                if (Math.abs(d) < bestDiff) {
+                    bestDiff = Math.abs(d);
+                    best = candidates[i];
+                }
+            }
+            // порог 28°: типичный «кривой» палец на планшете, но не настоящий ромб
+            if (bestDiff <= (28 * Math.PI / 180)) return best;
+            return ang;
+        }
+
         function alignToSketchOrientation(pts) {
             if (!pts || pts.length < 2 || !sketchPoints.length) return pts;
             const work = clonePoints(pts);
             const sk0 = sketchPoints[0], sk1 = sketchPoints[1];
             const dirX = sk1.x - sk0.x, dirY = sk1.y - sk0.y;
-            const targetAng = Math.atan2(dirY, dirX);
+            // Важно: после ввода длин ортогональная фигура НЕ должна «уезжать» с сетки
+            // из‑за чуть кривого эскиза пальцем — привязываем к 0/90°.
+            var targetAng = snapSketchAngleToGrid(Math.atan2(dirY, dirX));
             const wdx = work[1].x - work[0].x, wdy = work[1].y - work[0].y;
             const currentAng = Math.atan2(wdy, wdx);
             let dAng = targetAng - currentAng;
