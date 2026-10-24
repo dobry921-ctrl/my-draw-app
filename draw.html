@@ -3311,6 +3311,7 @@
                 sideProfiles = points.map(() => selectedProfileName);
             }
             installMode = mode;
+            snapGuides = [];  // сброс направляющих при смене режима
             stripDraft = [];
             stripPreviewLen = 0;
             document.querySelectorAll('#install-panel > .install-modes > .install-mode-btn').forEach(b => b.classList.remove('active'));
@@ -4435,26 +4436,23 @@
             }
             return true;
         }
-        function genCeilingId() {
-            return 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
-        }
         function ensureCurrentCeilingSaved() {
-            // Каждый завершённый потолок сохраняется отдельно.
-            // НЕ сливаем по геометрии: после реконструкции разные комнаты
-            // часто имеют похожие абсолютные координаты у начала координат
-            // и раньше второй потолок перезаписывал первый.
             if (!points || points.length < 3) return false;
             var current;
             try { current = getCurrentCeilingPayload(); } catch (e) { console.warn(e); return false; }
             if (!current || !current.points || current.points.length < 3) return false;
             if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
-                var prev = completedCeilings[editCeilingIndex];
-                if (prev && prev.id) current.id = prev.id;
-                else if (!current.id) current.id = genCeilingId();
                 completedCeilings[editCeilingIndex] = current;
                 return true;
             }
-            if (!current.id) current.id = genCeilingId();
+            if (completedCeilings.length) {
+                var last = completedCeilings[completedCeilings.length - 1];
+                if (sameCeilingGeom(last, current)) {
+                    completedCeilings[completedCeilings.length - 1] = current;
+                    editCeilingIndex = completedCeilings.length - 1;
+                    return true;
+                }
+            }
             completedCeilings.push(current);
             editCeilingIndex = completedCeilings.length - 1;
             return true;
@@ -4513,12 +4511,6 @@ function getCurrentCeilingPayload() {
                 fixtures: fxOut,
                 unit: 'm'
             };
-            try {
-                if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0
-                    && completedCeilings[editCeilingIndex] && completedCeilings[editCeilingIndex].id) {
-                    payload.id = completedCeilings[editCeilingIndex].id;
-                }
-            } catch (eId) {}
             try {
                 let idx = (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0)
                     ? editCeilingIndex
@@ -4626,22 +4618,9 @@ function getCurrentCeilingPayload() {
                 showToast('В режиме правки заказа удаление недоступно.', 2500);
                 return;
             }
-            if (idx < 0 || idx >= completedCeilings.length) return;
             completedCeilings.splice(idx, 1);
-            if (editCeilingIndex === idx) {
-                editCeilingIndex = completedCeilings.length ? Math.min(idx, completedCeilings.length - 1) : -1;
-                if (editCeilingIndex >= 0) {
-                    try { loadCeilingIntoEditor(editCeilingIndex); state = 'DONE'; } catch (e) {}
-                } else {
-                    points = []; edges = []; fixtures = []; isClosed = false;
-                }
-            } else if (editCeilingIndex > idx) {
-                editCeilingIndex -= 1;
-            }
             updateCeilingsList();
-            updateSavedChip();
-            draw();
-            showToast('Потолок удалён. В заказе: ' + completedCeilings.length, 2000);
+            showToast('Потолок удалён.', 2000);
         }
 
         function resetCurrentDrawing(full = true) {
@@ -4806,21 +4785,16 @@ function getCurrentCeilingPayload() {
                     } catch (e) { console.warn(e); }
                 }
                 (function () {
-                    // Дедуп только по id (или ссылочному равенству) — НЕ по геометрии.
-                    // Иначе разные комнаты с похожей формой после реконструкции
-                    // считались одним потолком и в бот уходил только последний.
                     var out = [];
-                    var seenIds = {};
                     completedCeilings.forEach(function (c) {
-                        if (!c) return;
-                        if (c.id) {
-                            if (seenIds[c.id]) return;
-                            seenIds[c.id] = true;
+                        var dup = false;
+                        for (var i = 0; i < out.length; i++) {
+                            if (typeof sameCeilingGeom === 'function' && sameCeilingGeom(out[i], c)) { dup = true; break; }
                         }
-                        out.push(c);
+                        if (!dup) out.push(c);
                     });
                     if (out.length !== completedCeilings.length) {
-                        console.warn('[sendToBot] id-dedupe', completedCeilings.length, '->', out.length);
+                        console.warn('[sendToBot] dedupe', completedCeilings.length, '->', out.length);
                         completedCeilings = out;
                     }
                 })();
@@ -5127,12 +5101,8 @@ function getCurrentCeilingPayload() {
 
         function copyData() {
             try {
-                try {
-                    if (points.length >= 3 && (state === 'DONE' || state === 'INSTALL' || state === 'SELECT_MATERIAL')) {
-                        ensureCurrentCeilingSaved();
-                    }
-                } catch (eSave) {}
-                const all = completedCeilings.slice();
+                const all = [...completedCeilings];
+                if (state === 'DONE' && points.length >= 3) all.push(getCurrentCeilingPayload());
                 const data = { type: 'drawing_set', ceilings: all };
                 const str = JSON.stringify(data, null, 2);
                 navigator.clipboard.writeText(str).then(() => showToast('Скопировано.', 2000))
