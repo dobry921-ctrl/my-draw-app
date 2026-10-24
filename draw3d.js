@@ -224,7 +224,8 @@
             const st = document.createElement('style');
             st.id = 'p3d-style';
             st.textContent = [
-                '.p3d-panel{max-height:calc(100% - 24px);overflow-y:auto;padding:8px!important;border-radius:16px!important;',
+                '.p3d-panel{max-height:calc(100% - 175px);overflow-y:auto;-webkit-overflow-scrolling:touch;',
+                'padding:8px!important;border-radius:16px!important;',
                 'background:linear-gradient(180deg,rgba(22,24,32,0.72),rgba(14,16,22,0.62))!important;',
                 'border:1px solid rgba(255,255,255,0.16)!important;box-shadow:0 8px 28px rgba(0,0,0,0.38)!important;',
                 '-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);gap:5px!important;width:172px;}',
@@ -260,42 +261,58 @@
         }
 
         function loadThreeJs() {
-            if (window.THREE && window.THREE.GLTFLoader && window.THREE.DRACOLoader) {
+            if (window.THREE) {
                 return Promise.resolve(window.THREE);
             }
             function loadScript(src) {
                 return new Promise(function (resolve, reject) {
                     var existing = document.querySelector('script[src="' + src + '"]');
                     if (existing) {
-                        // если скрипт уже в DOM — ждём появления глобала чуть-чуть
                         var tries = 0;
                         (function waitReady() {
                             if (src.indexOf('three.min') >= 0 && window.THREE) return resolve();
                             if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve();
                             if (src.indexOf('DRACOLoader') >= 0 && window.THREE && window.THREE.DRACOLoader) return resolve();
-                            if (++tries > 40) return resolve(); // не блокируем навсегда
-                            setTimeout(waitReady, 50);
+                            if (++tries > 50) return resolve();
+                            setTimeout(waitReady, 40);
                         })();
                         return;
                     }
                     var s = document.createElement('script');
                     s.src = src;
+                    s.async = true;
                     s.onload = function () { resolve(); };
                     s.onerror = function () { reject(new Error('Не загрузился: ' + src)); };
                     document.head.appendChild(s);
                 });
             }
-            var threeUrl = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-            var gltfUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
-            var dracoUrl = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js';
-            return loadScript(threeUrl).then(function () {
+            function loadFirst(urls) {
+                var i = 0;
+                function next() {
+                    if (i >= urls.length) return Promise.reject(new Error('CDN недоступен'));
+                    return loadScript(urls[i++]).catch(function () { return next(); });
+                }
+                return next();
+            }
+            var threeUrls = [
+                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+                'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+                'https://unpkg.com/three@0.128.0/build/three.min.js'
+            ];
+            var dracoUrls = [
+                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js',
+                'https://unpkg.com/three@0.128.0/examples/js/loaders/DRACOLoader.js'
+            ];
+            var gltfUrls = [
+                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
+                'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js'
+            ];
+            return loadFirst(threeUrls).then(function () {
                 if (!window.THREE) throw new Error('Three.js не загрузился');
-                return loadScript(dracoUrl);
+                return loadFirst(dracoUrls).catch(function (e) { console.warn('DRACOLoader skip', e); });
             }).then(function () {
-                return loadScript(gltfUrl);
+                return loadFirst(gltfUrls).catch(function (e) { console.warn('GLTFLoader skip', e); });
             }).then(function () {
-                if (!window.THREE.GLTFLoader) throw new Error('GLTFLoader не загрузился');
-                if (!window.THREE.DRACOLoader) throw new Error('DRACOLoader не загрузился');
                 return window.THREE;
             });
         }
@@ -317,13 +334,25 @@
             }
             if (_clientPreviewMode === '3d') {
                 if (c2d) c2d.style.display = 'none';
-                if (d3) d3.style.display = 'block';
+                if (d3) {
+                    d3.style.display = 'block';
+                    d3.style.position = 'absolute';
+                    d3.style.inset = '0';
+                    d3.style.width = '100%';
+                    d3.style.height = '100%';
+                }
                 try {
-                    showToast('Загрузка 3D…', 1200);
+                    showToast('Загрузка 3D…', 1500);
+                    await new Promise(function (r) {
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () { r(); });
+                        });
+                    });
                     await renderClient3DRealistic();
                 } catch (e) {
                     console.error(e);
-                    showToast('3D не удалось загрузить. Проверьте интернет.', 3500);
+                    var msg = (e && e.message) ? String(e.message).slice(0, 80) : 'ошибка';
+                    showToast('3D: ' + msg, 4000);
                 }
             } else {
                 disposeThreePreview();
@@ -551,8 +580,16 @@
             const host = document.getElementById('client-preview-3d');
             if (!host) return;
             host.innerHTML = '';
-            const W = host.clientWidth || window.innerWidth || 400;
-            const H = host.clientHeight || (window.innerHeight - 100) || 500;
+            var W = host.clientWidth || 0;
+            var H = host.clientHeight || 0;
+            if (W < 40 || H < 40) {
+                var parent = host.parentElement;
+                W = (parent && parent.clientWidth) || window.innerWidth || 360;
+                H = (parent && parent.clientHeight) || Math.max(320, (window.innerHeight || 600) - 110);
+                host.style.width = '100%';
+                host.style.height = H + 'px';
+                host.style.minHeight = '280px';
+            }
 
             // Координаты комнаты в метрах (из см чертежа)
             // При плане квартиры — учитываем все комнаты и внутренние стены
@@ -604,12 +641,21 @@
 
             const isMobile3d = (W < 900) || /Android|iPhone|iPad|Mobile|Telegram/i.test(navigator.userAgent || '');
             const useMSAA = !isMobile3d;   // MSAA только на десктопе, на мобиле полагаемся на FXAA
-            const renderer = new THREE.WebGLRenderer({
-                antialias: useMSAA,
-                preserveDrawingBuffer: true, // нужно для «Фото для КП» — НЕ трогать
-                powerPreference: 'high-performance',
-                stencil: false                 // не используем stencil — экономим память
-            });
+            var renderer;
+            try {
+                renderer = new THREE.WebGLRenderer({
+                    antialias: useMSAA,
+                    preserveDrawingBuffer: true, // нужно для «Фото для КП» — НЕ трогать
+                    powerPreference: isMobile3d ? 'default' : 'high-performance',
+                    stencil: false,
+                    alpha: false,
+                    failIfMajorPerformanceCaveat: false
+                });
+            } catch (eGl) {
+                console.error('WebGLRenderer failed', eGl);
+                showToast('WebGL недоступен на устройстве', 3500);
+                return;
+            }
             renderer.setSize(W, H);
             // стартовые значения; адаптация в animate (этап 5)
             let _dprTarget = isMobile3d
@@ -2092,29 +2138,45 @@
             var _glbInflight = window._apexGlbInflight || (window._apexGlbInflight = {});
             function getGltfLoader() {
                 if (_gltfLoaderShared) return _gltfLoaderShared;
-                if (!THREE.GLTFLoader || !THREE.DRACOLoader) {
-                    throw new Error('GLTFLoader/DRACOLoader not ready');
+                if (!THREE.GLTFLoader) {
+                    throw new Error('GLTFLoader not ready');
                 }
-                var draco = new THREE.DRACOLoader();
-                draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-                try { draco.setDecoderConfig({ type: 'wasm' }); } catch (e) {
-                    draco.setDecoderConfig({ type: 'js' });
-                }
+                // DRACO опционален: без него несжатые glb всё ещё грузятся
                 var loader = new THREE.GLTFLoader();
-                loader.setDRACOLoader(draco);
+                if (THREE.DRACOLoader) {
+                    try {
+                        var draco = new THREE.DRACOLoader();
+                        draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+                        try { draco.setDecoderConfig({ type: 'wasm' }); } catch (e) {
+                            draco.setDecoderConfig({ type: 'js' });
+                        }
+                        loader.setDRACOLoader(draco);
+                    } catch (eD) {
+                        console.warn('DRACO init skip', eD);
+                    }
+                }
                 _gltfLoaderShared = loader;
                 return loader;
             }
             function loadGltfWithFallback(fileName) {
                 if (_glbSceneCache[fileName]) {
-                    return Promise.resolve(_glbSceneCache[fileName].clone(true));
+                    try {
+                        return Promise.resolve(_glbSceneCache[fileName].clone(true));
+                    } catch (eCl) {
+                        return Promise.resolve(_glbSceneCache[fileName]);
+                    }
                 }
                 if (_glbInflight[fileName]) {
                     return _glbInflight[fileName].then(function (root) {
-                        return root.clone(true);
+                        try { return root.clone(true); } catch (e2) { return root; }
                     });
                 }
-                var loader = getGltfLoader();
+                var loader;
+                try {
+                    loader = getGltfLoader();
+                } catch (eL) {
+                    return Promise.reject(eL);
+                }
                 var bases = FURNITURE_ASSET_CANDIDATES.slice();
                 var i = 0;
                 function next() {
@@ -2184,10 +2246,10 @@
             var chandelierTemplate = null;
             try {
                 var warmFurniture = Promise.allSettled([
-                    loadGltfWithFallback('sofa.glb'),
-                    loadGltfWithFallback('stol-v1.glb'),
-                    loadGltfWithFallback('kover-v1.glb'),
-                    loadGltfWithFallback('TV-v1.glb')
+                    Promise.resolve().then(function () { return loadGltfWithFallback('sofa.glb'); }),
+                    Promise.resolve().then(function () { return loadGltfWithFallback('stol-v1.glb'); }),
+                    Promise.resolve().then(function () { return loadGltfWithFallback('kover-v1.glb'); }),
+                    Promise.resolve().then(function () { return loadGltfWithFallback('TV-v1.glb'); })
                 ]);
                 chandelierTemplate = await loadGltfWithFallback('lustra.glb').catch(function () {
                     return loadGltfWithFallback('chandelier.glb');
@@ -3295,9 +3357,10 @@
 
             // Джойстик перемещения на экране (крупнее + выше z-index для телефона)
             const pad = document.createElement('div');
-            pad.style.cssText = 'position:absolute;left:14px;bottom:18px;width:140px;height:140px;border-radius:70px;background:rgba(255,255,255,0.14);border:2px solid rgba(255,255,255,0.35);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30;pointer-events:auto;';
+            // Джойстик ниже панели: панель max-height оставляет ~175px снизу под pad
+            pad.style.cssText = 'position:absolute;left:12px;bottom:10px;width:118px;height:118px;border-radius:59px;background:rgba(255,255,255,0.14);border:2px solid rgba(255,255,255,0.35);touch-action:none;-webkit-user-select:none;user-select:none;z-index:20;pointer-events:auto;';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:50px;top:50px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.55);pointer-events:none;';
+            knob.style.cssText = 'position:absolute;left:39px;top:39px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.55);pointer-events:none;';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
@@ -3338,7 +3401,7 @@
             ensure3DStyles();
             const lightPanel = document.createElement('div');
             lightPanel.className = 'p3d-panel';
-            lightPanel.style.cssText = 'position:absolute;left:10px;top:10px;z-index:8;display:flex;flex-direction:column;gap:4px;max-width:min(42vw,190px);';
+            lightPanel.style.cssText = 'position:absolute;left:10px;top:10px;z-index:25;display:flex;flex-direction:column;gap:4px;max-width:min(42vw,190px);max-height:calc(100% - 175px);overflow-y:auto;-webkit-overflow-scrolling:touch;';
             const panelHead = document.createElement('button');
             panelHead.type = 'button';
             panelHead.className = 'p3d-head';
