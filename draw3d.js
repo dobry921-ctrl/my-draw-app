@@ -2074,18 +2074,22 @@
 
             // ===== Общие загрузчики GLB (Draco) — мебель + люстра =====
             const FURNITURE_ASSET_CANDIDATES = (function () {
-                var list = [
-                    'https://dobry921-ctrl.github.io/my-draw-app/models/',
-                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/'
-                ];
+                // Локальные пути первыми — быстрее, если models рядом с Draw.html
+                var list = [];
                 try {
                     var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
                     list.push(path + 'models/');
                 } catch (e0) {}
                 list.push('./models/', 'models/');
+                list.push(
+                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/',
+                    'https://dobry921-ctrl.github.io/my-draw-app/models/'
+                );
                 return list;
             })();
             var _gltfLoaderShared = null;
+            var _glbSceneCache = window._apexGlbCache || (window._apexGlbCache = {});
+            var _glbInflight = window._apexGlbInflight || (window._apexGlbInflight = {});
             function getGltfLoader() {
                 if (_gltfLoaderShared) return _gltfLoaderShared;
                 if (!THREE.GLTFLoader || !THREE.DRACOLoader) {
@@ -2093,13 +2097,23 @@
                 }
                 var draco = new THREE.DRACOLoader();
                 draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-                draco.setDecoderConfig({ type: 'js' });
+                try { draco.setDecoderConfig({ type: 'wasm' }); } catch (e) {
+                    draco.setDecoderConfig({ type: 'js' });
+                }
                 var loader = new THREE.GLTFLoader();
                 loader.setDRACOLoader(draco);
                 _gltfLoaderShared = loader;
                 return loader;
             }
             function loadGltfWithFallback(fileName) {
+                if (_glbSceneCache[fileName]) {
+                    return Promise.resolve(_glbSceneCache[fileName].clone(true));
+                }
+                if (_glbInflight[fileName]) {
+                    return _glbInflight[fileName].then(function (root) {
+                        return root.clone(true);
+                    });
+                }
                 var loader = getGltfLoader();
                 var bases = FURNITURE_ASSET_CANDIDATES.slice();
                 var i = 0;
@@ -2115,7 +2129,17 @@
                         });
                     }).catch(function () { return next(); });
                 }
-                return next();
+                _glbInflight[fileName] = next().then(function (root) {
+                    _glbSceneCache[fileName] = root;
+                    delete _glbInflight[fileName];
+                    return root;
+                }).catch(function (e) {
+                    delete _glbInflight[fileName];
+                    throw e;
+                });
+                return _glbInflight[fileName].then(function (root) {
+                    return root.clone(true);
+                });
             }
             function prepareHangingModel(root, targetSize) {
                 root.position.set(0, 0, 0);
@@ -2156,14 +2180,21 @@
                 });
                 return root;
             }
-            // Предзагрузка люстры: models/lustra.glb (или chandelier.glb)
+            // Предзагрузка люстры + прогрев кэша мебели (параллельно)
             var chandelierTemplate = null;
             try {
+                var warmFurniture = Promise.allSettled([
+                    loadGltfWithFallback('sofa.glb'),
+                    loadGltfWithFallback('stol-v1.glb'),
+                    loadGltfWithFallback('kover-v1.glb'),
+                    loadGltfWithFallback('TV-v1.glb')
+                ]);
                 chandelierTemplate = await loadGltfWithFallback('lustra.glb').catch(function () {
                     return loadGltfWithFallback('chandelier.glb');
                 }).catch(function () { return null; });
                 if (chandelierTemplate) console.log('Chandelier GLB loaded');
                 else console.warn('Chandelier GLB not found (models/lustra.glb)');
+                warmFurniture.then(function () { console.log('Furniture cache warmed'); });
             } catch (eCh) {
                 console.warn('Chandelier preload', eCh);
                 chandelierTemplate = null;
@@ -2175,7 +2206,6 @@
             const movableGroups = [];
             let topDownOn = false; // объявлен рано — applyCam читает флаг
             let lightsOn = false;
-            // Включаем свет по факту наличия приборов — иначе 3D-превью «серое» и антипродающее
             const _presentKinds = {};
             (fixtures || []).forEach(function (f) {
                 if (!f || !f.type) return;
@@ -2193,7 +2223,6 @@
                 cornice: !!_presentKinds.cornice,
                 floating: false
             };
-            // Если есть хоть один прибор — считаем свет «включённым» для UI
             lightsOn = Object.values(lightKindState).some(Boolean);
             // Подсветка парящего профиля (накоплена при стенах)
             if (pendingFloatingLights.length) {
@@ -2713,17 +2742,32 @@
                 tvAd: 'tv-ad.jpg'
             };
 
+            function _sharpenTex(tex) {
+                if (!tex) return tex;
+                if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
+                tex.generateMipmaps = true;
+                tex.minFilter = THREE.LinearMipmapLinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                try {
+                    var maxA = (typeof renderer !== 'undefined' && renderer && renderer.capabilities)
+                        ? renderer.capabilities.getMaxAnisotropy() : 8;
+                    tex.anisotropy = Math.min(16, maxA || 8);
+                } catch (e) { tex.anisotropy = 8; }
+                tex.needsUpdate = true;
+                return tex;
+            }
+
             function tryLoadTexture(url) {
                 return new Promise(function (resolve, reject) {
                     new THREE.TextureLoader().load(url, function (tex) {
-                        if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
-                        tex.needsUpdate = true;
-                        resolve(tex);
+                        resolve(_sharpenTex(tex));
                     }, undefined, function () { reject(new Error('tex ' + url)); });
                 });
             }
 
+            var _texCache = window._apexTexCache || (window._apexTexCache = {});
             function loadTextureWithFallback(fileName) {
+                if (_texCache[fileName]) return Promise.resolve(_texCache[fileName]);
                 var names = [fileName];
                 if (/\.jpe?g$/i.test(fileName)) names.push(fileName.replace(/\.jpe?g$/i, '.png'));
                 else if (/\.png$/i.test(fileName)) names.push(fileName.replace(/\.png$/i, '.jpg'));
@@ -2735,7 +2779,63 @@
                     var url = bases[bi++] + names[ni];
                     return tryLoadTexture(url).catch(function () { return next(); });
                 }
-                return next();
+                return next().then(function (tex) {
+                    _texCache[fileName] = tex;
+                    return tex;
+                });
+            }
+
+            /** HD-экран ТВ: бренд + читаемый телефон */
+            function makeSharpTvAdTexture() {
+                var W = 1024, H = 576;
+                var c = document.createElement('canvas');
+                c.width = W; c.height = H;
+                var ctx = c.getContext('2d');
+                var g = ctx.createLinearGradient(0, 0, W, H);
+                g.addColorStop(0, '#1a2332');
+                g.addColorStop(1, '#0d1218');
+                ctx.fillStyle = g;
+                ctx.fillRect(0, 0, W, H);
+                ctx.strokeStyle = '#c4a574';
+                ctx.lineWidth = 8;
+                ctx.strokeRect(16, 16, W - 32, H - 32);
+                ctx.fillStyle = '#f5efe6';
+                ctx.font = 'bold 96px Arial, Helvetica, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('APEX', W / 2, H * 0.32);
+                ctx.fillStyle = '#c4a574';
+                ctx.font = '28px Arial, Helvetica, sans-serif';
+                ctx.fillText('НАТЯЖНЫЕ ПОТОЛКИ', W / 2, H * 0.48);
+                var phone = '+375 29 194-57-61';
+                ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                ctx.strokeText(phone, W / 2, H * 0.68);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(phone, W / 2, H * 0.68);
+                ctx.fillStyle = '#9aa3ad';
+                ctx.font = '22px Arial, Helvetica, sans-serif';
+                ctx.fillText('Замер и 3D-проект в Telegram', W / 2, H * 0.84);
+                return _sharpenTex(new THREE.CanvasTexture(c));
+            }
+
+            function makeSharpPaintingTexture() {
+                var W = 1024, H = 768;
+                var c = document.createElement('canvas');
+                c.width = W; c.height = H;
+                var ctx = c.getContext('2d');
+                ctx.fillStyle = '#2a241c';
+                ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#f5efe6';
+                ctx.font = 'bold 72px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('APEX', W / 2, H / 2 - 24);
+                ctx.fillStyle = '#c4a574';
+                ctx.font = '32px Arial';
+                ctx.fillText('НАТЯЖНЫЕ ПОТОЛКИ', W / 2, H / 2 + 40);
+                return _sharpenTex(new THREE.CanvasTexture(c));
             }
 
             function prepareModel(root, targetW, targetD, targetH) {
@@ -2909,10 +3009,9 @@
                     furnitureGroup.add(frame);
                     var canvasMat;
                     if (paintingTex) {
-                        canvasMat = new THREE.MeshBasicMaterial({ map: paintingTex });
+                        canvasMat = new THREE.MeshBasicMaterial({ map: _sharpenTex(paintingTex) });
                     } else {
-                        var fb = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
-                        if (THREE.sRGBEncoding) fb.encoding = THREE.sRGBEncoding;
+                        var fb = makeSharpPaintingTexture();
                         canvasMat = new THREE.MeshBasicMaterial({ map: fb });
                     }
                     const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(picW, picH), canvasMat);
@@ -2954,12 +3053,15 @@
                     // Экран рекламы + тонкая рамка
                     (function addTvScreen() {
                         var screenMat;
-                        if (tvAdTex) {
-                            screenMat = new THREE.MeshBasicMaterial({ map: tvAdTex });
-                        } else {
-                            var fb2 = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
-                            if (THREE.sRGBEncoding) fb2.encoding = THREE.sRGBEncoding;
-                            screenMat = new THREE.MeshBasicMaterial({ map: fb2 });
+                        try {
+                            screenMat = new THREE.MeshBasicMaterial({ map: makeSharpTvAdTexture() });
+                        } catch (eAd) {
+                            if (tvAdTex) {
+                                screenMat = new THREE.MeshBasicMaterial({ map: _sharpenTex(tvAdTex) });
+                            } else {
+                                var fb2 = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
+                                screenMat = new THREE.MeshBasicMaterial({ map: _sharpenTex(fb2) });
+                            }
                         }
                         var sw = tvW * 0.94, sh = tvH * 0.94;
                         // тонкая тёмная рамка вокруг экрана
@@ -4094,7 +4196,6 @@ async function captureCeilingPhotoForKP() {
                     e.stopPropagation();
                     roomHeightM = Math.max(2.2, Math.min(4.0, Math.round((roomH + delta) * 20) / 20));
                     hLab.textContent = 'Высота ' + roomHeightM.toFixed(2) + ' м';
-                    // Полная пересборка сцены тяжёлая — дебаунс 400 мс
                     if (window._p3dHeightTimer) clearTimeout(window._p3dHeightTimer);
                     window._p3dHeightTimer = setTimeout(function () {
                         renderClient3DRealistic().catch(function () {});
