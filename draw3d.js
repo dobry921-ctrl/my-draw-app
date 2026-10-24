@@ -683,6 +683,12 @@
             renderer.domElement.style.width = '100%';
             renderer.domElement.style.height = '100%';
             renderer.domElement.style.display = 'block';
+            renderer.domElement.style.touchAction = 'none';
+            // НЕ position:absolute на canvas — иначе host схлопывается (absolute вне потока) → чёрный экран
+            host.style.position = 'relative';
+            host.style.width = '100%';
+            host.style.height = '100%';
+            host.style.minHeight = '200px';
 
             // Контур комнаты в метрах (XZ), CCW для корректной заливки
             const roomContour = points.map(p => toM(p.x, p.y));
@@ -2169,7 +2175,26 @@
             const movableGroups = [];
             let topDownOn = false; // объявлен рано — applyCam читает флаг
             let lightsOn = false;
-            const lightKindState = { spot: false, light_point: false, chandelier: false, strip: false, track: false, cornice: false, floating: false };
+            // Включаем свет по факту наличия приборов — иначе 3D-превью «серое» и антипродающее
+            const _presentKinds = {};
+            (fixtures || []).forEach(function (f) {
+                if (!f || !f.type) return;
+                var k = f.type;
+                if (k === 'strip' && /трек|track/i.test(String(f.material || f.name || ''))) k = 'track';
+                _presentKinds[k] = true;
+                if (k === 'cornice' && (f.with_backlight || f.backlight)) _presentKinds.cornice = true;
+            });
+            const lightKindState = {
+                spot: !!_presentKinds.spot,
+                light_point: !!_presentKinds.light_point,
+                chandelier: !!_presentKinds.chandelier,
+                strip: !!_presentKinds.strip,
+                track: !!_presentKinds.track,
+                cornice: !!_presentKinds.cornice,
+                floating: false
+            };
+            // Если есть хоть один прибор — считаем свет «включённым» для UI
+            lightsOn = Object.values(lightKindState).some(Boolean);
             // Подсветка парящего профиля (накоплена при стенах)
             if (pendingFloatingLights.length) {
                 pendingFloatingLights.forEach(function (item) {
@@ -3041,8 +3066,8 @@
                 }
                 return inside;
             }
-            // отступ от стен ~28 см — нельзя «провалиться» в стену
-            const WALL_MARGIN = 0.28;
+            // отступ от стен ~22 см — комфортное движение у стен на телефоне
+            const WALL_MARGIN = 0.22;
 
             function distPointToSeg2D(x, z, a, b) {
                 const abx = b.x - a.x, abz = b.z - a.z;
@@ -3106,17 +3131,17 @@
                 camX = startX * 0.4;
                 camZ = startZ * 0.4;
             }
-            let eyeH = 1.55; // рост глаз
+            let eyeH = 1.60; // рост глаз (чуть выше — комната читается крупнее)
             let yaw = Math.atan2(-camX, -camZ); // смотрим примерно к центру
-            let pitch = 0.35; // слегка вверх на потолок
+            let pitch = 0.28; // слегка вверх на потолок
 
-            let camFov = 60;
+            let camFov = 52; // уже FOV → комната не «схлопывается» вширь
             // Рендер по требованию: не крутим GPU впустую, когда картинка статична
             let needsRender = true;
             function invalidate() { needsRender = true; }
             // Сглаженные значения: камера догоняет ввод с инерцией — движение
             // перестаёт быть «рывками», плюс мягкий заход в сцену при открытии
-            let yawS = yaw + 0.42, pitchS = pitch - 0.22, fovS = 74;
+            let yawS = yaw + 0.28, pitchS = pitch - 0.12, fovS = 58;
             let camXS = camX, camZS = camZ, eyeHS = eyeH;
             function applyCam() {
                 camera.fov = fovS;
@@ -3166,11 +3191,11 @@
             }
             let zoomSlider = null;
 
-            // Джойстик перемещения на экране
+            // Джойстик перемещения на экране (крупнее + выше z-index для телефона)
             const pad = document.createElement('div');
-            pad.style.cssText = 'position:absolute;left:12px;bottom:12px;width:120px;height:120px;border-radius:60px;background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.25);touch-action:none;z-index:5;';
+            pad.style.cssText = 'position:absolute;left:14px;bottom:18px;width:140px;height:140px;border-radius:70px;background:rgba(255,255,255,0.14);border:2px solid rgba(255,255,255,0.35);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30;pointer-events:auto;';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.45);';
+            knob.style.cssText = 'position:absolute;left:50px;top:50px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.55);pointer-events:none;';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
@@ -3178,9 +3203,9 @@
             // Зум ползунком — по требованию, отдельно от щипка/колёсика
             const zoomWrap = document.createElement('div');
             zoomWrap.style.cssText = 'position:absolute;right:14px;top:50%;transform:translateY(-50%);' +
-                'z-index:5;display:flex;flex-direction:column;align-items:center;gap:6px;' +
-                'padding:10px 7px;border-radius:16px;touch-action:none;';
-            zoomWrap.className = 'p3d-pad';
+                'z-index:30;display:flex;flex-direction:column;align-items:center;gap:6px;' +
+                'padding:10px 7px;border-radius:16px;touch-action:none;pointer-events:auto;';
+            zoomWrap.className = 'p3d-zoom';
             const zoomPlus = document.createElement('span');
             zoomPlus.textContent = '🔍+';
             zoomPlus.style.cssText = 'color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,0.6);';
@@ -4068,7 +4093,12 @@ async function captureCeilingPhotoForKP() {
                     e.preventDefault();
                     e.stopPropagation();
                     roomHeightM = Math.max(2.2, Math.min(4.0, Math.round((roomH + delta) * 20) / 20));
-                    renderClient3DRealistic().catch(function () {});
+                    hLab.textContent = 'Высота ' + roomHeightM.toFixed(2) + ' м';
+                    // Полная пересборка сцены тяжёлая — дебаунс 400 мс
+                    if (window._p3dHeightTimer) clearTimeout(window._p3dHeightTimer);
+                    window._p3dHeightTimer = setTimeout(function () {
+                        renderClient3DRealistic().catch(function () {});
+                    }, 400);
                 };
                 return b;
             }
@@ -4092,16 +4122,16 @@ async function captureCeilingPhotoForKP() {
             let padActive = false, padId = null;
 
             function setKnob(nx, ny) {
-                // nx,ny -1..1
-                knob.style.left = (40 + nx * 28) + 'px';
-                knob.style.top = (40 + ny * 28) + 'px';
+                // nx,ny -1..1; pad 140×140, knob 40×40 → центр 50, ход ~42
+                knob.style.left = (50 + nx * 42) + 'px';
+                knob.style.top = (50 + ny * 42) + 'px';
             }
 
             const el = renderer.domElement;
 
             // Осмотр (drag по canvas) + перетаскивание света в режиме «сверху»
             const onLookDown = (e) => {
-                if (e.target.closest && (e.target.closest('.p3d-pad') || e.target.closest('.p3d-panel'))) return;
+                if (e.target.closest && (e.target.closest('.p3d-pad') || e.target.closest('.p3d-zoom') || e.target.closest('.p3d-panel'))) return;
                 const t = e.touches ? e.touches[0] : e;
                 if (!t) return;
                 if (topDownOn) {
@@ -4287,42 +4317,90 @@ async function captureCeilingPhotoForKP() {
             }, { passive: false });
             el.addEventListener('touchend', onLookUp);
 
-            // Джойстик
-            function padStart(e) {
+            // Джойстик: Pointer Events + setPointerCapture (надёжно на iOS/Android/Telegram)
+            function padPointerDown(e) {
                 e.preventDefault();
+                e.stopPropagation();
                 padActive = true;
-                const t = e.touches ? e.touches[0] : e;
-                padId = t.identifier !== undefined ? t.identifier : 'mouse';
-                padMove(e);
+                padId = e.pointerId;
+                try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+                padPointerMove(e);
             }
-            function padMove(e) {
+            function padPointerMove(e) {
                 if (!padActive) return;
-                const t = e.touches
-                    ? Array.from(e.touches).find(tt => tt.identifier === padId) || e.touches[0]
-                    : e;
-                if (!t) return;
+                if (padId != null && e.pointerId !== padId) return;
+                e.preventDefault();
+                e.stopPropagation();
                 const rect = pad.getBoundingClientRect();
-                let nx = (t.clientX - rect.left) / rect.width * 2 - 1;
-                let ny = (t.clientY - rect.top) / rect.height * 2 - 1;
+                let nx = (e.clientX - rect.left) / rect.width * 2 - 1;
+                let ny = (e.clientY - rect.top) / rect.height * 2 - 1;
                 const mag = Math.hypot(nx, ny) || 1;
                 if (mag > 1) { nx /= mag; ny /= mag; }
                 setKnob(nx, ny);
-                // вверх стика = вперёд; вправо стика = вправо (без зеркала)
-                moveX = -nx;  // инверсия: было перепутано лево/право
+                // вверх стика = вперёд; вправо стика = вправо
+                moveX = -nx;
                 moveZ = -ny;
+                needsRender = true;
             }
-            function padEnd() {
+            function padPointerUp(e) {
+                if (padId != null && e.pointerId !== padId) return;
                 padActive = false;
+                padId = null;
                 moveX = 0; moveZ = 0;
                 setKnob(0, 0);
+                try { if (e && e.pointerId != null) pad.releasePointerCapture(e.pointerId); } catch (err) {}
             }
-            pad.addEventListener('mousedown', padStart);
-            window.addEventListener('mousemove', padMove);
-            window.addEventListener('mouseup', padEnd);
-            pad.addEventListener('touchstart', padStart, { passive: false });
-            pad.addEventListener('touchmove', padMove, { passive: false });
-            pad.addEventListener('touchend', padEnd);
-            pad.addEventListener('touchcancel', padEnd);
+            pad.addEventListener('pointerdown', padPointerDown, { passive: false });
+            pad.addEventListener('pointermove', padPointerMove, { passive: false });
+            pad.addEventListener('pointerup', padPointerUp, { passive: false });
+            pad.addEventListener('pointercancel', padPointerUp, { passive: false });
+            pad.addEventListener('lostpointercapture', padPointerUp);
+            // Запасной путь для старых WebView без Pointer Events
+            if (!window.PointerEvent) {
+                function padStart(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    padActive = true;
+                    const t = e.touches ? e.touches[0] : e;
+                    padId = t.identifier !== undefined ? t.identifier : 'mouse';
+                    padMoveLegacy(e);
+                }
+                function padMoveLegacy(e) {
+                    if (!padActive) return;
+                    const t = e.touches
+                        ? Array.from(e.touches).find(function (tt) { return tt.identifier === padId; }) || e.touches[0]
+                        : e;
+                    if (!t) return;
+                    e.preventDefault();
+                    const rect = pad.getBoundingClientRect();
+                    let nx = (t.clientX - rect.left) / rect.width * 2 - 1;
+                    let ny = (t.clientY - rect.top) / rect.height * 2 - 1;
+                    const mag = Math.hypot(nx, ny) || 1;
+                    if (mag > 1) { nx /= mag; ny /= mag; }
+                    setKnob(nx, ny);
+                    moveX = -nx;
+                    moveZ = -ny;
+                    needsRender = true;
+                }
+                function padEndLegacy() {
+                    padActive = false;
+                    padId = null;
+                    moveX = 0; moveZ = 0;
+                    setKnob(0, 0);
+                }
+                pad.addEventListener('touchstart', padStart, { passive: false });
+                window.addEventListener('touchmove', function (e) {
+                    if (!padActive) return;
+                    padMoveLegacy(e);
+                }, { passive: false });
+                window.addEventListener('touchend', function (e) {
+                    if (!padActive) return;
+                    padEndLegacy();
+                });
+                pad.addEventListener('mousedown', padStart);
+                window.addEventListener('mousemove', padMoveLegacy);
+                window.addEventListener('mouseup', padEndLegacy);
+            }
 
             // Клавиатура
             const keys = {};
@@ -4622,12 +4700,11 @@ async function captureCeilingPhotoForKP() {
                     window.removeEventListener('mouseup', onLookUp);
                     el.removeEventListener('wheel', onWheel);
                     el.removeEventListener('touchend', onLookUp);
-                    pad.removeEventListener('mousedown', padStart);
-                    window.removeEventListener('mousemove', padMove);
-                    window.removeEventListener('mouseup', padEnd);
-                    pad.removeEventListener('touchstart', padStart);
-                    pad.removeEventListener('touchmove', padMove);
-                    pad.removeEventListener('touchend', padEnd);
+                    pad.removeEventListener('pointerdown', padPointerDown);
+                    pad.removeEventListener('pointermove', padPointerMove);
+                    pad.removeEventListener('pointerup', padPointerUp);
+                    pad.removeEventListener('pointercancel', padPointerUp);
+                    pad.removeEventListener('lostpointercapture', padPointerUp);
                     window.removeEventListener('keydown', onKeyDown);
                     window.removeEventListener('keyup', onKeyUp);
                     try {
@@ -4642,7 +4719,7 @@ async function captureCeilingPhotoForKP() {
             _threeCamera = camera;
             _threeRenderer = renderer;
 
-            const speed = 1.8; // м/с
+            const speed = 2.4; // м/с — чуть быстрее, комната ощущается нормального размера
             let lastT = performance.now();
             // Адаптивный DPR (ТЗ P1-5)
             let _fpsAccum = 0, _fpsFrames = 0, _dprLastChange = 0;
