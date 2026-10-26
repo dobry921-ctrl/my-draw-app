@@ -242,9 +242,147 @@
             margin-bottom: 6px;
         }
         .field-label { font-size: 0.75rem; color: #5f6368; margin: 2px 0 3px; font-weight: 600; }
+
+
+        /* === Dobry_Master: клиентский путь и адаптивные карточки === */
+        #client-progress {
+            display:flex; gap:4px; align-items:center; justify-content:space-between;
+            padding:7px 10px 6px; background:#f7f9fc; border-bottom:1px solid #e6eaf0;
+            flex-shrink:0; z-index:20;
+        }
+        .client-step { flex:1; min-width:0; text-align:center; color:#8b95a5; font-size:10px; line-height:1.15; }
+        .client-step .client-step-line { height:4px; border-radius:99px; background:#dfe5ee; margin-bottom:4px; }
+        .client-step.active { color:#145eb8; font-weight:700; }
+        .client-step.active .client-step-line, .client-step.done .client-step-line { background:#2374d8; }
+        .client-step.done { color:#4d6b8b; }
+        .dm-overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:16px; z-index:850; background:rgba(9,16,28,.72); backdrop-filter:blur(5px); overflow:auto; }
+        .dm-card { width:min(100%,520px); max-height:92vh; overflow:auto; background:#fff; color:#202938; border-radius:22px; box-shadow:0 22px 65px rgba(0,0,0,.28); }
+        .dm-welcome-hero { padding:24px 22px 18px; background:radial-gradient(circle at 92% 0%,rgba(255,255,255,.2),transparent 34%),linear-gradient(135deg,#142a45,#245c94 65%,#367fbb); color:#fff; }
+        .dm-eyebrow { font-size:11px; letter-spacing:.13em; font-weight:800; text-transform:uppercase; opacity:.82; }
+        .dm-welcome-hero h1 { font-size:25px; line-height:1.12; margin:10px 0 8px; letter-spacing:-.03em; }
+        .dm-welcome-hero p { font-size:13px; line-height:1.5; margin:0; color:rgba(255,255,255,.84); }
+        .dm-body { padding:16px; }
+        .dm-choice { width:100%; display:flex; align-items:center; gap:12px; text-align:left; padding:13px 12px; border:1px solid #e1e6ed; border-radius:14px; background:#fff; margin-bottom:8px; cursor:pointer; color:#202938; }
+        .dm-choice:active { transform:scale(.99); }
+        .dm-choice .dm-icon { width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:#edf4ff; font-size:22px; }
+        .dm-choice strong { display:block; font-size:14px; margin-bottom:3px; }
+        .dm-choice small { display:block; font-size:12px; line-height:1.4; color:#687487; }
+        .dm-secondary { background:#f7f9fc; border-color:#e8ecf2; }
+        .dm-muted-action { width:100%; padding:10px; border:0; background:transparent; color:#66758a; font-size:12px; cursor:pointer; }
+        .dm-modal-title { padding:16px 18px 10px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #edf0f4; }
+        .dm-modal-title strong { font-size:16px; }
+        .dm-close { border:0; background:#f0f3f7; color:#647184; width:32px; height:32px; border-radius:50%; font-size:20px; cursor:pointer; }
+        .dm-portfolio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .dm-idea { border:1px solid #e2e7ee; border-radius:14px; overflow:hidden; background:#fff; padding:0; text-align:left; cursor:pointer; color:#1c2837; }
+        .dm-idea-visual { height:100px; position:relative; overflow:hidden; background:linear-gradient(165deg,#f8f4ee,#d4d5d2); }
+        .dm-idea-visual:before { content:''; position:absolute; left:8%; right:8%; top:12%; bottom:18%; background:linear-gradient(160deg,#e8e4de,#c5c7c9); border:2px solid rgba(255,255,255,.85); box-shadow:0 8px 16px rgba(30,40,50,.12); }
+        .dm-idea-visual:after { content:''; position:absolute; left:20%; right:20%; bottom:20%; height:23%; border-radius:14px 14px 4px 4px; background:linear-gradient(#8f9ca9,#5d6874); box-shadow:0 -3px 0 rgba(255,255,255,.45) inset; }
+        .dm-idea-visual.cozy { background:linear-gradient(150deg,#29272a,#6e5545); }
+        .dm-idea-visual.cozy:before { background:linear-gradient(160deg,#55483e,#282b30); border-color:#b99b72; box-shadow:0 0 18px rgba(255,190,102,.45); }
+        .dm-idea-visual.cozy:after { background:linear-gradient(#9a7961,#504238); }
+        .dm-idea-visual.lines { background:linear-gradient(150deg,#e8ecf0,#b8c1cb); }
+        .dm-idea-visual.lines:before { background:linear-gradient(160deg,#e8ecef,#b7c1cb); }
+        .dm-idea-visual.lines .dm-light-line { position:absolute; z-index:2; left:13%; right:13%; top:27%; height:3px; background:#fff; box-shadow:0 0 8px #fff,0 0 15px #d8f0ff; }
+        .dm-idea-visual.float { background:linear-gradient(150deg,#dce7ea,#b2c4cd); }
+        .dm-idea-visual.float:before { border:0; box-shadow:0 0 0 3px rgba(255,255,255,.85),0 0 12px 5px rgba(119,221,241,.5); background:#dce3e5; }
+        .dm-idea-copy { padding:9px 10px 10px; }
+        .dm-idea-copy strong { display:block; font-size:12px; margin-bottom:3px; }
+        .dm-idea-copy small { color:#6e7888; font-size:10px; line-height:1.35; display:block; }
+        .dm-note { font-size:11px; line-height:1.45; color:#647184; background:#f5f7fa; border-radius:10px; padding:10px 11px; margin-top:12px; }
+        .dm-form { padding:16px; display:flex; flex-direction:column; gap:10px; }
+        .dm-form label { display:flex; flex-direction:column; gap:5px; font-size:12px; color:#566275; font-weight:700; }
+        .dm-form input, .dm-form select, .dm-form textarea { width:100%; border:1px solid #d6dde7; border-radius:10px; padding:11px 12px; background:#fff; color:#1d2735; font:inherit; font-size:14px; }
+        .dm-form textarea { resize:vertical; min-height:70px; }
+        .dm-primary { width:100%; border:0; border-radius:12px; padding:13px 15px; background:linear-gradient(135deg,#16824b,#24a35f); color:white; font-weight:800; font-size:14px; cursor:pointer; box-shadow:0 5px 13px rgba(28,144,81,.18); }
+        .dm-outline { width:100%; border:1px solid #d6dde7; border-radius:12px; padding:11px 14px; background:#fff; color:#253247; font-weight:700; font-size:13px; cursor:pointer; }
+        #client-project-summary { border:1px solid #dfe6ef; border-radius:12px; padding:10px 11px; margin:7px 0 9px; background:linear-gradient(145deg,#fbfcfe,#f4f7fb); }
+        #client-project-summary .dm-summary-top { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; margin-bottom:6px; }
+        #client-project-summary .dm-summary-title { font-weight:800; font-size:13px; }
+        #client-project-summary .dm-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+        #client-project-summary .dm-metric { background:#fff; border:1px solid #edf0f4; border-radius:8px; padding:7px 6px; min-width:0; }
+        #client-project-summary .dm-metric b { display:block; font-size:14px; color:#1e4f86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        #client-project-summary .dm-metric span { display:block; font-size:10px; color:#748093; margin-top:2px; }
+        #client-project-summary .dm-summary-note { font-size:11px; color:#637087; line-height:1.4; margin-top:7px; }
+        #client-project-summary .dm-price { font-size:13px; font-weight:800; color:#176a3e; margin-top:8px; }
+        #client-order-actions { display:grid; grid-template-columns:1fr; gap:7px; margin:7px 0 2px; }
+        #client-order-actions .btn { padding:10px; font-size:13px; }
+        #client-preview-footer { display:flex; gap:8px; padding:8px 10px calc(8px + env(safe-area-inset-bottom)); background:#11151d; align-items:center; }
+        #client-preview-footer .dm-preview-hint { flex:1; color:#b7c0ce; font-size:10px; line-height:1.35; }
+        #client-preview-footer button { white-space:nowrap; padding:9px 10px; }
+        #copy-data-btn { display:none !important; }
+        @media (max-width:370px) {
+            .dm-welcome-hero h1 { font-size:22px; }
+            .dm-portfolio-grid { gap:7px; }
+            .dm-idea-visual { height:82px; }
+            #client-preview-footer .dm-preview-hint { display:none; }
+            .client-step { font-size:9px; }
+        }
+
 </style>
 </head>
 <body>
+
+    <div id="client-welcome" class="dm-overlay" role="dialog" aria-modal="true" aria-labelledby="dm-welcome-title" style="display:flex;">
+        <div class="dm-card">
+            <div class="dm-welcome-hero">
+                <div class="dm-eyebrow">DOBRY_MASTER · НАТЯЖНЫЕ ПОТОЛКИ</div>
+                <h1 id="dm-welcome-title">Подберите потолок под свою комнату</h1>
+                <p>Соберите свой вариант, посмотрите освещение в 3D и отправьте проект мастеру. Точные размеры можно уточнить при замере.</p>
+            </div>
+            <div class="dm-body">
+                <button class="dm-choice" type="button" onclick="welcomeStart('quick')"><span class="dm-icon">✨</span><span><strong>Подобрать потолок</strong><small>Начните с готового шаблона комнаты и настройте материал и свет.</small></span></button>
+                <button class="dm-choice" type="button" onclick="welcomeStart('plan')"><span class="dm-icon">📐</span><span><strong>У меня есть план или размеры</strong><small>Постройте точную геометрию или загрузите фото плана.</small></span></button>
+                <button class="dm-choice dm-secondary" type="button" onclick="openClientPortfolio()"><span class="dm-icon">🏡</span><span><strong>Посмотреть идеи оформления</strong><small>Выберите стиль и попробуйте его в своей комнате.</small></span></button>
+                <button class="dm-choice dm-secondary" type="button" onclick="openLeadRequest()"><span class="dm-icon">👷</span><span><strong>Сразу вызвать мастера</strong><small>Оставьте контакт — бот передаст запрос на связь.</small></span></button>
+                <button class="dm-muted-action" id="dm-resume-btn" type="button" onclick="resumeClientProject()" style="display:none;">↩ Продолжить сохранённый проект</button>
+                <button class="dm-muted-action" id="dm-newproject-btn" type="button" onclick="startNewClientProject()" style="display:none;">＋ Начать новый проект</button>
+                <button class="dm-muted-action" type="button" onclick="closeClientWelcome()">Продолжить без подсказок</button>
+                <div class="dm-note">Предварительная визуализация помогает выбрать вариант, но не заменяет профессиональный замер. Финальную стоимость подтверждает мастер.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="client-portfolio-modal" class="dm-overlay" role="dialog" aria-modal="true" aria-labelledby="dm-portfolio-title">
+        <div class="dm-card">
+            <div class="dm-modal-title"><strong id="dm-portfolio-title">Идеи для потолка</strong><button class="dm-close" type="button" onclick="closeClientPortfolio()" aria-label="Закрыть">×</button></div>
+            <div class="dm-body">
+                <div class="dm-portfolio-grid">
+                    <button class="dm-idea" type="button" onclick="chooseClientIdea('day')"><div class="dm-idea-visual"><span class="dm-light-line" style="position:absolute;left:30%;right:30%;top:23%;height:2px;background:#fff;box-shadow:0 0 7px #fff;"></span></div><div class="dm-idea-copy"><strong>Спокойный минимализм</strong><small>Матовая поверхность и дневной свет</small></div></button>
+                    <button class="dm-idea" type="button" onclick="chooseClientIdea('cozy')"><div class="dm-idea-visual cozy"></div><div class="dm-idea-copy"><strong>Уютный вечер</strong><small>Тёплая атмосфера и мягкое освещение</small></div></button>
+                    <button class="dm-idea" type="button" onclick="chooseClientIdea('lines')"><div class="dm-idea-visual lines"><span class="dm-light-line"></span></div><div class="dm-idea-copy"><strong>Световые линии</strong><small>Акцент на линейном освещении</small></div></button>
+                    <button class="dm-idea" type="button" onclick="chooseClientIdea('floating')"><div class="dm-idea-visual float"></div><div class="dm-idea-copy"><strong>Парящий контур</strong><small>Световой контур по периметру</small></div></button>
+                </div>
+                <div id="dm-master-proof" style="display:none;margin-top:14px;border:1px solid #e1e7ef;border-radius:12px;padding:11px;background:#f8fafc;">
+                    <div style="font-weight:800;font-size:13px;margin-bottom:5px;" id="dm-master-name"></div>
+                    <div style="display:flex;gap:10px;align-items:flex-start;">
+                        <img id="dm-master-photo" alt="Мастер" style="display:none;width:64px;height:64px;object-fit:cover;border-radius:12px;background:#e6ebf2;">
+                        <div id="dm-master-about" style="font-size:11px;line-height:1.45;color:#667387;"></div>
+                    </div>
+                    <div id="dm-master-credentials" style="font-size:11px;line-height:1.5;color:#43536a;margin-top:7px;"></div>
+                    <div id="dm-real-works" style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;"></div>
+                </div>
+                <div class="dm-note">Карточки выше — стилистические примеры, а не фотографии выполненных заказов. Реальное портфолио, отзывы и условия гарантии отображаются только после подключения подтверждённых материалов мастера.</div>
+                <button class="dm-primary" type="button" style="margin-top:12px;" onclick="closeClientPortfolio();welcomeStart('quick')">Подобрать похожий вариант</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="client-lead-modal" class="dm-overlay" role="dialog" aria-modal="true" aria-labelledby="dm-lead-title">
+        <div class="dm-card">
+            <div class="dm-modal-title"><strong id="dm-lead-title">Связаться с мастером</strong><button class="dm-close" type="button" onclick="closeLeadRequest()" aria-label="Закрыть">×</button></div>
+            <form class="dm-form" id="client-lead-form" onsubmit="submitLeadRequest(event)">
+                <div style="font-size:12px;color:#647184;line-height:1.45;">Оставьте удобный контакт. Если проект уже создан, он будет приложен к запросу.</div>
+                <label>Как к вам обращаться<input id="lead-name" name="name" autocomplete="name" maxlength="80" placeholder="Ваше имя" required></label>
+                <label>Телефон для связи<input id="lead-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="40" placeholder="+375 …" required></label>
+                <label>Когда удобно связаться<select id="lead-time" name="preferred_time"><option value="Не указано">Не указано</option><option value="Сегодня">Сегодня</option><option value="Завтра">Завтра</option><option value="В будний день">В будний день</option><option value="В выходной">В выходной</option></select></label>
+                <label>Комментарий (необязательно)<textarea id="lead-comment" name="comment" maxlength="500" placeholder="Например: гостиная, нужен парящий профиль"></textarea></label>
+                <button class="dm-primary" type="submit">📨 Передать запрос</button>
+                <button class="dm-outline" type="button" onclick="closeLeadRequest()">Пока не готов</button>
+                <div class="dm-note" style="margin-top:0;">Данные используются для ответа на ваш запрос. Не указывайте лишнюю личную информацию.</div>
+            </form>
+        </div>
+    </div>
+
     <div id="top-bar">
         <div class="title-info">
             <strong>Замер потолка</strong>
@@ -257,6 +395,13 @@
             <button class="btn btn-outline" id="edit-sides-btn" onclick="openEditSidesPanel()" style="display:none;">📐 Размеры</button>
             <button class="btn btn-danger" onclick="resetAll()">Сброс</button>
         </div>
+    </div>
+    <div id="client-progress" aria-label="Этапы проекта">
+        <div class="client-step active" data-client-step="0"><div class="client-step-line"></div>Комната</div>
+        <div class="client-step" data-client-step="1"><div class="client-step-line"></div>Размеры</div>
+        <div class="client-step" data-client-step="2"><div class="client-step-line"></div>Потолок</div>
+        <div class="client-step" data-client-step="3"><div class="client-step-line"></div>Свет</div>
+        <div class="client-step" data-client-step="4"><div class="client-step-line"></div>Готово</div>
     </div>
     <div id="toast"></div>
     <div id="canvas-container">
@@ -496,7 +641,13 @@
 
     <div id="results-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('results-panel')">✕</button>
-        <div class="panel-title" id="results-title">Готовые потолки в заказе</div>
+        <div class="panel-title" id="results-title">Ваш проект</div>
+        <div id="client-project-summary">
+            <div class="dm-summary-top"><span class="dm-summary-title">Сводка проекта</span><span style="font-size:10px;color:#738096;">Dobry_Master</span></div>
+            <div class="dm-summary-grid"><div class="dm-metric"><b id="dm-total-area">—</b><span>Площадь</span></div><div class="dm-metric"><b id="dm-total-perim">—</b><span>Периметр</span></div><div class="dm-metric"><b id="dm-total-lights">—</b><span>Элементы</span></div></div>
+            <div id="dm-project-details" class="dm-summary-note">Завершите первый потолок — здесь появится сводка.</div>
+            <div id="dm-price-line" class="dm-price">Стоимость уточнит мастер после проверки проекта.</div>
+        </div>
         <div id="ceilings-list" class="ceilings-list"></div>
         <div id="edit-actions" style="display:block;margin-bottom:4px;">
             <div style="display:flex;flex-wrap:wrap;gap:4px;">
@@ -510,8 +661,11 @@
         <div style="margin-bottom:6px;">
             <button type="button" class="btn btn-accent" style="width:100%;padding:12px;font-size:1.05rem;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,0.18);" onclick="showClientPreview('3d')">🏛 Показать в 3D</button>
         </div>
-        <button class="send-btn" id="send-btn" onclick="sendToBot()">📤 Отправить весь замер</button>
-        <button class="copy-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
+        <div id="client-order-actions">
+            <button type="button" class="btn btn-success" onclick="openLeadRequest()">✅ Заказать замер / получить смету</button>
+            <button class="send-btn" id="send-btn" onclick="sendToBot()">📨 Отправить проект мастеру</button>
+        </div>
+        <button class="copy-btn" id="copy-data-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
     </div>
 
     <!-- Полноэкранный превью для клиента -->
@@ -527,8 +681,10 @@
             <canvas id="client-preview-canvas" style="display:none;max-width:100%;max-height:100%;background:#fff;"></canvas>
             <div id="client-preview-3d" style="display:none;position:absolute;inset:0;"></div>
         </div>
-        <div style="padding:8px 12px;color:#aaa;font-size:0.75rem;text-align:center;z-index:2;">
-            3D: старт из угла · пальцем — осмотр · джойстик слева — ходить по комнате
+        <div id="client-preview-footer" style="z-index:2;">
+            <div class="dm-preview-hint">Проведите пальцем, чтобы осмотреть комнату. Джойстик — прогулка. Сценарии света находятся в панели «Сцена».</div>
+            <button type="button" class="btn btn-outline" style="color:#fff;border-color:#566173;" onclick="downloadClientPreview()">📸 Сохранить</button>
+            <button type="button" class="btn btn-success" onclick="closeClientPreview();openLeadRequest()">Получить смету →</button>
         </div>
     </div>
 
@@ -3987,6 +4143,7 @@
                 planTb.style.display = (planPhotoImg && state === 'DRAWING' && !isApartmentPlan) ? 'flex' : 'none';
             }
             updateSavedChip();
+            try { if (typeof window.updateClientProgress === 'function') window.updateClientProgress(); } catch (e) {}
         }
 
         function updateInputUI() {
@@ -4715,11 +4872,12 @@ function getCurrentCeilingPayload() {
             document.getElementById('finish-strip-btn').style.display = 'none';
 
             if (full) {
+                try { if (typeof window.clearSavedClientProject === 'function') window.clearSavedClientProject(); } catch (e) {}
                 completedCeilings = [];
                 isEditMode = false;
                 editOrderId = null;
                 const sendBtn = document.getElementById('send-btn');
-                if (sendBtn) sendBtn.textContent = '📤 Отправить весь замер';
+                if (sendBtn) sendBtn.textContent = '📨 Отправить проект мастеру';
                 const addBtn = document.getElementById('add-ceiling-btn');
                 if (addBtn) addBtn.style.display = '';
                 const title = document.getElementById('results-title');
@@ -4832,7 +4990,7 @@ function getCurrentCeilingPayload() {
                     }
                     return true;
                 }
-                if (points.length >= 3) {
+                if (points.length >= 3 && (!window._dobryLeadRequest || ['DONE','INSTALL','SELECT_MATERIAL'].indexOf(state) >= 0)) {
                     try {
                         if (isEditMode && editCeilingIndex >= 0) {
                             try { saveEditorToCompleted(); } catch (e) { ensureCurrentCeilingSaved(); }
@@ -4990,6 +5148,7 @@ function getCurrentCeilingPayload() {
                         ceilings: buildLevel(level)
                     };
                     if (isEditMode && editOrderId != null) payload.edit_order_id = editOrderId;
+                    if (window._dobryLeadRequest) payload.lead_request = window._dobryLeadRequest;
                     return JSON.stringify(payload);
                 }
 
@@ -5130,6 +5289,7 @@ function getCurrentCeilingPayload() {
                 } catch (eChk) {}
 
                 webApp.sendData(toSend);
+                    try { if (typeof window.clearSavedClientProject === 'function') window.clearSavedClientProject(); } catch (eClear) {}
                 } catch (sendErr) {
                     var msg = (sendErr && (sendErr.message || sendErr)) || 'WebAppDataInvalid';
                     note('Ошибка: ' + msg + '. Размер ' + byteLen(toSend) + ' б. Откройте замер кнопкой в чате.');
@@ -5390,6 +5550,7 @@ function getCurrentCeilingPayload() {
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
             drawPlanPhotoUnderlay();
             ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
             let gridSize = 30 * camera.zoom;
@@ -5847,6 +6008,472 @@ function getCurrentCeilingPayload() {
         // Инициализация floating button (скрыта по умолчанию)
         document.getElementById('float-menu-btn').style.display = 'none';
     </script>
+    <script>
+    // ================================================================
+    // Dobry_Master — клиентский сценарий, сохранение проекта и заявка.
+    // Все действующие функции замера остаются в основном редакторе.
+    // ================================================================
+    (function () {
+        'use strict';
+        const q = new URLSearchParams(location.search || '');
+        const editModeFromUrl = q.get('mode') === 'edit' && !!(q.get('oid') || q.get('order_id'));
+        const internalModeFromUrl = q.get('mode') === 'measure' || q.get('mode') === 'internal' || q.get('client') === '0';
+        const debugMode = q.get('debug') === '1';
+        const debugCopy = document.getElementById('copy-data-btn');
+        if (debugCopy && debugMode) debugCopy.style.setProperty('display', 'block', 'important');
+        const progress = document.getElementById('client-progress');
+        if (progress && (q.get('hideProgress') === '1')) progress.style.display = 'none';
+
+        function projectKey() {
+            let userPart = 'guest';
+            try {
+                const wa = window.Telegram && window.Telegram.WebApp;
+                const uid = wa && wa.initDataUnsafe && wa.initDataUnsafe.user && wa.initDataUnsafe.user.id;
+                if (uid != null) userPart = String(uid);
+            } catch (e) {}
+            return 'dobry_master_project_v2_' + userPart;
+        }
+        let saveTimer = null;
+        window.scheduleProjectAutosave = function () {
+            if (editModeFromUrl || internalModeFromUrl || (typeof isEditMode !== 'undefined' && isEditMode)) return;
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(function () {
+                try {
+                    if ((!points || points.length === 0) && (!completedCeilings || completedCeilings.length === 0)) {
+                        try { localStorage.removeItem(projectKey()); } catch (e0) {}
+                        updateResumeButton(false);
+                        return;
+                    }
+                    const cleanCeilings = (completedCeilings || []).map(function (c) {
+                        const out = Object.assign({}, c);
+                        delete out.kp_photo; delete out.kp_photo_url; delete out.preview_3d;
+                        return out;
+                    });
+                    const snapshot = {
+                        v: 2, savedAt: Date.now(),
+                        points: points || [], edges: edges || [], availableDiagonals: availableDiagonals || [],
+                        selectedDiagonals: selectedDiagonals || [], isClosed: !!isClosed,
+                        sketchPoints: sketchPoints || [], sketchTurnSigns: sketchTurnSigns || [], sketchOrientation: sketchOrientation || 1,
+                        currentDiagonalInput: typeof currentDiagonalInput === 'number' ? currentDiagonalInput : 0,
+                        aptRooms: typeof aptRooms !== 'undefined' ? aptRooms : [],
+                        aptInternalWalls: typeof aptInternalWalls !== 'undefined' ? aptInternalWalls : [],
+                        aptDoors: typeof aptDoors !== 'undefined' ? aptDoors : [],
+                        aptNextRoomId: typeof aptNextRoomId === 'number' ? aptNextRoomId : 1,
+                        activeAptRoomIdx: typeof activeAptRoomIdx === 'number' ? activeAptRoomIdx : -1,
+                        isApartmentPlan: typeof isApartmentPlan !== 'undefined' ? !!isApartmentPlan : false,
+                        planDrawMode: typeof planDrawMode !== 'undefined' ? planDrawMode : 'room',
+                        state: state || 'DRAWING', completedCeilings: cleanCeilings,
+                        selectedMaterial: selectedMaterial || 'Мат', selectedColor: selectedColor || 'Белый',
+                        usedExactGeometry: !!usedExactGeometry, sideProfiles: sideProfiles || [], fixtures: fixtures || [],
+                        installMode: installMode || 'profile', lightingSub: lightingSub || 'spot',
+                        selectedProfileName: selectedProfileName || 'Стандартный',
+                        selectedStripMaterial: selectedStripMaterial || 'Световая полоса',
+                        spotKind: spotKind || 'spot', pointPlaceMode: pointPlaceMode || 'free',
+                        evenCount: typeof evenCount === 'number' ? evenCount : 4,
+                        currentInputEdge: typeof currentInputEdge === 'number' ? currentInputEdge : 0,
+                        editCeilingIndex: typeof editCeilingIndex === 'number' ? editCeilingIndex : -1,
+                        designPreset: window._dobryDesignPreset || 'day',
+                        roomHeightM: typeof roomHeightM !== 'undefined' ? roomHeightM : 2.7,
+                        preferredCurtainColor: typeof preferredCurtainColor !== 'undefined' ? preferredCurtainColor : '#c4b5a0',
+                        preferredWallColor: typeof preferredWallColor !== 'undefined' ? preferredWallColor : null,
+                        preferredFloorColor: typeof preferredFloorColor !== 'undefined' ? preferredFloorColor : null
+                    };
+                    localStorage.setItem(projectKey(), JSON.stringify(snapshot));
+                    const chip = document.getElementById('saved-chip');
+                    if (chip && state === 'DRAWING' && completedCeilings && completedCeilings.length) {
+                        chip.textContent = 'Сохранено: ' + completedCeilings.length + ' пот. · проект запомнен';
+                    }
+                    updateResumeButton(true);
+                } catch (e) { console.warn('Автосохранение проекта недоступно', e); }
+            }, 320);
+        };
+        window.clearSavedClientProject = function () {
+            if (saveTimer) clearTimeout(saveTimer);
+            try { localStorage.removeItem(projectKey()); } catch (e) {}
+            updateResumeButton(false);
+        };
+        function updateResumeButton(hasProject) {
+            const b = document.getElementById('dm-resume-btn');
+            if (b) b.style.display = hasProject ? 'block' : 'none';
+            const n = document.getElementById('dm-newproject-btn');
+            if (n) n.style.display = hasProject ? 'block' : 'none';
+        }
+        function readSnapshot() {
+            try {
+                const raw = localStorage.getItem(projectKey());
+                if (!raw) return null;
+                const s = JSON.parse(raw);
+                if (!s || s.v !== 2 || !Array.isArray(s.points) || !Array.isArray(s.completedCeilings)) return null;
+                return s;
+            } catch (e) { return null; }
+        }
+        window.resumeClientProject = function () {
+            closeClientWelcome();
+            if (typeof showOnlyPanel === 'function') {
+                if (state === 'DONE' || (completedCeilings && completedCeilings.length && !points.length && state !== 'DRAWING')) showOnlyPanel('results-panel');
+                else if (state === 'INPUT_SIDES') showOnlyPanel('bottom-input-bar');
+                else if (state === 'INPUT_DIAGONALS') showOnlyPanel('diagonals-panel');
+                else if (state === 'SELECT_MATERIAL') showOnlyPanel('material-panel');
+                else if (state === 'INSTALL') showOnlyPanel('install-panel');
+            }
+            try { if (state === 'INPUT_SIDES' && typeof updateInputUI === 'function') updateInputUI(); } catch (e) {}
+            try { if (state === 'INPUT_DIAGONALS' && typeof updateDiagonalSelectionUI === 'function') updateDiagonalSelectionUI(); } catch (e) {}
+            try {
+                if (state === 'INSTALL' && typeof setInstallMode === 'function') {
+                    setInstallMode(installMode);
+                    if (installMode === 'lighting' && typeof setLightingSub === 'function') setLightingSub(lightingSub || 'spot');
+                    if (typeof setPointPlaceMode === 'function') setPointPlaceMode(pointPlaceMode || 'free');
+                }
+            } catch (e) {}
+            try { if (typeof updateFixtureList === 'function') updateFixtureList(); } catch (e) {}
+            try { autoFitCamera(); } catch (e) {}
+            try { updateCeilingsList(); updateUI(); draw(); } catch (e) {}
+            showToast('Продолжаем сохранённый проект.', 2300);
+        };
+        window.startNewClientProject = function () {
+            if (typeof window.clearSavedClientProject === 'function') window.clearSavedClientProject();
+            try { if (typeof resetCurrentDrawing === 'function') resetCurrentDrawing(true); } catch (e) { console.warn(e); }
+            closeClientWelcome();
+            if (typeof openRoomTemplatePanel === 'function') openRoomTemplatePanel();
+        };
+        function restoreSnapshot() {
+            if (editModeFromUrl || internalModeFromUrl || (typeof isEditMode !== 'undefined' && isEditMode)) return false;
+            const s = readSnapshot();
+            if (!s) return false;
+            try {
+                points = s.points || []; edges = s.edges || []; availableDiagonals = s.availableDiagonals || [];
+                selectedDiagonals = s.selectedDiagonals || []; isClosed = !!s.isClosed;
+                sketchPoints = s.sketchPoints || (points.length ? points.map(p => ({x:p.x,y:p.y,letter:p.letter})) : []);
+                sketchTurnSigns = s.sketchTurnSigns || []; sketchOrientation = s.sketchOrientation || 1;
+                if (typeof s.currentDiagonalInput === 'number') currentDiagonalInput = s.currentDiagonalInput;
+                if (typeof aptRooms !== 'undefined') aptRooms = s.aptRooms || [];
+                if (typeof aptInternalWalls !== 'undefined') aptInternalWalls = s.aptInternalWalls || [];
+                if (typeof aptDoors !== 'undefined') aptDoors = s.aptDoors || [];
+                if (typeof aptNextRoomId !== 'undefined' && typeof s.aptNextRoomId === 'number') aptNextRoomId = s.aptNextRoomId;
+                if (typeof activeAptRoomIdx !== 'undefined' && typeof s.activeAptRoomIdx === 'number') activeAptRoomIdx = s.activeAptRoomIdx;
+                if (typeof isApartmentPlan !== 'undefined') isApartmentPlan = !!s.isApartmentPlan;
+                if (typeof planDrawMode !== 'undefined') planDrawMode = s.planDrawMode || 'room';
+                completedCeilings = s.completedCeilings || []; selectedMaterial = s.selectedMaterial || 'Мат';
+                selectedColor = s.selectedColor || 'Белый'; usedExactGeometry = !!s.usedExactGeometry;
+                sideProfiles = s.sideProfiles || []; fixtures = s.fixtures || [];
+                installMode = s.installMode || 'profile'; lightingSub = s.lightingSub || 'spot';
+                selectedProfileName = s.selectedProfileName || 'Стандартный'; selectedStripMaterial = s.selectedStripMaterial || 'Световая полоса';
+                spotKind = s.spotKind || 'spot'; pointPlaceMode = s.pointPlaceMode || 'free';
+                if (typeof s.evenCount === 'number') evenCount = s.evenCount;
+                if (typeof s.currentInputEdge === 'number') currentInputEdge = s.currentInputEdge;
+                editCeilingIndex = typeof s.editCeilingIndex === 'number' ? s.editCeilingIndex : -1;
+                state = s.state || (completedCeilings.length ? 'DONE' : 'DRAWING');
+                // INSTALL is a valid resumable stage. Transient drag/strip gestures reset naturally.
+                window._dobryDesignPreset = s.designPreset || 'day';
+                if (typeof roomHeightM !== 'undefined' && Number.isFinite(Number(s.roomHeightM))) roomHeightM = Math.max(2.2, Math.min(4.0, Number(s.roomHeightM)));
+                if (typeof preferredCurtainColor !== 'undefined' && s.preferredCurtainColor) preferredCurtainColor = s.preferredCurtainColor;
+                if (typeof preferredWallColor !== 'undefined') preferredWallColor = s.preferredWallColor || null;
+                if (typeof preferredFloorColor !== 'undefined') preferredFloorColor = s.preferredFloorColor || null;
+                const color = document.getElementById('color-input'); if (color) color.value = selectedColor;
+                const mat = document.getElementById('mat-select'); if (mat) mat.value = selectedMaterial;
+                const profile = document.getElementById('profile-select'); if (profile) profile.value = selectedProfileName;
+                const stripMat = document.getElementById('strip-material-select'); if (stripMat) stripMat.value = selectedStripMaterial;
+                const pt = document.getElementById('point-type-select'); if (pt) { try { pt.value = spotKind; } catch (e) {} }
+                statusText.innerText = state === 'DONE' ? 'Проект восстановлен' : (state === 'INPUT_SIDES' ? 'Ввод размеров' : 'Продолжение проекта');
+                updateCeilingsList(); updateUI();
+                try { if (typeof updateInputUI === 'function' && state === 'INPUT_SIDES') updateInputUI(); } catch (e) {}
+                try { if (typeof updateDiagonalSelectionUI === 'function' && state === 'INPUT_DIAGONALS') updateDiagonalSelectionUI(); } catch (e) {}
+                try {
+                    if (state === 'INSTALL' && typeof setInstallMode === 'function') {
+                        setInstallMode(installMode);
+                        if (installMode === 'lighting' && typeof setLightingSub === 'function') setLightingSub(s.lightingSub || 'spot');
+                        if (typeof setPointPlaceMode === 'function') setPointPlaceMode(s.pointPlaceMode || 'free');
+                        const ec = document.getElementById('even-count-input'); if (ec && typeof s.evenCount === 'number') ec.value = s.evenCount;
+                    }
+                } catch (e) {}
+                try { if (typeof updateFixtureList === 'function') updateFixtureList(); } catch (e) {}
+                try { resizeCanvas(); autoFitCamera(); } catch (e) {}
+                draw(); updateClientProgress(); updateClientProjectSummary();
+                return true;
+            } catch (e) { console.warn('Не удалось восстановить проект', e); return false; }
+        }
+
+        window.closeClientWelcome = function () {
+            const el = document.getElementById('client-welcome'); if (el) el.style.display = 'none';
+            try { if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.disableVerticalSwipes) window.Telegram.WebApp.disableVerticalSwipes(); } catch (e) {}
+        };
+        window.welcomeStart = function (mode) {
+            closeClientWelcome();
+            if (mode === 'plan') {
+                if ((points && points.length) || (completedCeilings && completedCeilings.length)) {
+                    showToast('Есть сохранённый проект. Продолжите его или начните новый проект.', 3500);
+                    const w = document.getElementById('client-welcome'); if (w) w.style.display = 'flex';
+                    updateResumeButton(true);
+                    return;
+                }
+                showToast('Загрузите фото плана или начните с шаблона комнаты.', 3000);
+                if (typeof triggerPlanPhotoUpload === 'function') triggerPlanPhotoUpload();
+                else if (typeof openRoomTemplatePanel === 'function') openRoomTemplatePanel();
+                return;
+            }
+            if (mode === 'quick' && typeof openRoomTemplatePanel === 'function' && state === 'DRAWING' && (!points || points.length === 0) && (!completedCeilings || completedCeilings.length === 0)) {
+                openRoomTemplatePanel();
+                showToast('Шаблон ускорит построение формы. Вводите реальные размеры, если они известны.', 3600);
+                return;
+            }
+            if (mode === 'quick' && ((points && points.length) || (completedCeilings && completedCeilings.length))) {
+                showToast('Есть сохранённый проект. Продолжите его или выберите «Начать новый проект».', 3500);
+                const w = document.getElementById('client-welcome'); if (w) w.style.display = 'flex';
+                updateResumeButton(true);
+                return;
+            }
+            showToast('Тапните по экрану, чтобы добавить углы комнаты. Можно начать с кнопки «Шаблон».', 3800);
+        };
+        window.openClientPortfolio = function () {
+            const m = document.getElementById('client-portfolio-modal'); if (m) m.style.display = 'flex';
+        };
+        window.closeClientPortfolio = function () {
+            const m = document.getElementById('client-portfolio-modal'); if (m) m.style.display = 'none';
+        };
+        window.chooseClientIdea = function (preset) {
+            window._dobryDesignPreset = ['day','cozy','spots','lines','floating'].indexOf(preset) >= 0 ? preset : 'day';
+            try { localStorage.setItem('dobry_master_design_preset', window._dobryDesignPreset); } catch (e) {}
+            closeClientPortfolio(); closeClientWelcome();
+            if (typeof scheduleProjectAutosave === 'function') scheduleProjectAutosave();
+            if (points && points.length >= 3 && typeof showClientPreview === 'function') {
+                showToast('Вариант выбран. Посмотрите сценарий в 3D.', 2400);
+                showClientPreview('3d');
+            } else {
+                showToast('Стиль выбран. Сначала задайте комнату — затем посмотрите её в 3D.', 3200);
+                if (typeof openRoomTemplatePanel === 'function') openRoomTemplatePanel();
+            }
+        };
+        window.openLeadRequest = function () {
+            const m = document.getElementById('client-lead-modal'); if (m) m.style.display = 'flex';
+            try { const p = document.getElementById('lead-phone'); if (p) setTimeout(() => p.focus(), 120); } catch (e) {}
+        };
+        window.closeLeadRequest = function () {
+            const m = document.getElementById('client-lead-modal'); if (m) m.style.display = 'none';
+        };
+        function leadProjectSummary() {
+            const summary = document.getElementById('client-project-summary');
+            const details = document.getElementById('dm-project-details');
+            return {
+                ceilings_count: Array.isArray(completedCeilings) ? completedCeilings.length : 0,
+                area_m2: details ? (document.getElementById('dm-total-area') || {}).textContent : null,
+                perimeter_m: (document.getElementById('dm-total-perim') || {}).textContent,
+                elements: (document.getElementById('dm-total-lights') || {}).textContent,
+                summary: summary ? summary.innerText.slice(0, 700) : ''
+            };
+        }
+        window.submitLeadRequest = function (event) {
+            if (event && event.preventDefault) event.preventDefault();
+            const name = (document.getElementById('lead-name').value || '').trim();
+            const phone = (document.getElementById('lead-phone').value || '').trim();
+            const preferred_time = document.getElementById('lead-time').value || 'Не указано';
+            const comment = (document.getElementById('lead-comment').value || '').trim();
+            if (name.length < 2) { showToast('Укажите имя, чтобы мастер знал, как к вам обращаться.', 2500); return; }
+            const digits = phone.replace(/\D/g, '');
+            if (digits.length < 7) { showToast('Проверьте номер телефона.', 2500); return; }
+            const request = { name: name.slice(0,80), phone: phone.slice(0,40), preferred_time: preferred_time, comment: comment.slice(0,500), source: 'dobry_master_webapp', created_at: new Date().toISOString(), project: leadProjectSummary() };
+            const hasProject = (Array.isArray(completedCeilings) && completedCeilings.length > 0) ||
+                (Array.isArray(points) && points.length >= 3 && isClosed && ['SELECT_MATERIAL','INSTALL','DONE'].indexOf(state) >= 0);
+            closeLeadRequest();
+            if (hasProject) {
+                window._dobryLeadRequest = request;
+                showToast('Отправляю проект и контакт для расчёта…', 4000);
+                if (typeof sendToBot === 'function') {
+                    Promise.resolve(sendToBot()).catch(function (e) { console.error(e); showToast('Не удалось отправить проект. Попробуйте ещё раз.', 3500); });
+                } else {
+                    showToast('Не удалось подготовить отправку проекта.', 3000);
+                }
+                return;
+            }
+            const wa = window.Telegram && window.Telegram.WebApp;
+            if (wa && typeof wa.sendData === 'function') {
+                try {
+                    wa.sendData(JSON.stringify({ type: 'lead_request', v: 1, lead_request: request }));
+                    showToast('Запрос передан в Telegram. Проверьте ответ бота.', 4000);
+                } catch (e) {
+                    console.error(e);
+                    showToast('Не получилось передать запрос. Начните проект и отправьте его мастеру.', 4000);
+                }
+            } else {
+                const text = 'Запрос на замер потолка — Dobry_Master\nИмя: ' + request.name + '\nТелефон: ' + request.phone + '\nКогда связаться: ' + request.preferred_time + '\nКомментарий: ' + request.comment;
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(() => showToast('Telegram недоступен. Текст запроса скопирован.', 4000)).catch(() => showToast('Откройте приложение через кнопку Telegram-бота, чтобы передать запрос.', 4000));
+                    } else showToast('Откройте приложение через кнопку Telegram-бота, чтобы передать запрос.', 4000);
+                } catch (e) { showToast('Откройте приложение через кнопку Telegram-бота, чтобы передать запрос.', 4000); }
+            }
+        };
+
+        window.updateClientProgress = function () {
+            const items = document.querySelectorAll('.client-step'); if (!items.length) return;
+            let step = 0;
+            if (state === 'INPUT_SIDES' || state === 'INPUT_DIAGONALS') step = 1;
+            else if (state === 'SELECT_MATERIAL') step = 2;
+            else if (state === 'INSTALL') step = 3;
+            else if (state === 'DONE') step = 4;
+            items.forEach(function (el, i) { el.classList.toggle('active', i === step); el.classList.toggle('done', i < step); });
+        };
+        window.updateClientProjectSummary = function () {
+            const areaEl = document.getElementById('dm-total-area');
+            const perimEl = document.getElementById('dm-total-perim');
+            const lightsEl = document.getElementById('dm-total-lights');
+            const detailsEl = document.getElementById('dm-project-details');
+            const priceEl = document.getElementById('dm-price-line');
+            if (!areaEl || !perimEl || !lightsEl) return;
+            const project = Array.isArray(completedCeilings) ? completedCeilings.slice() : [];
+            // Текущий контур добавляем к сводке, если он ещё не сохранён в списке.
+            if (Array.isArray(points) && points.length >= 3 && isClosed && ['SELECT_MATERIAL','INSTALL','DONE'].indexOf(state) >= 0) {
+                let current = null;
+                try { current = getCurrentCeilingPayload(); } catch (e) {}
+                if (current && !(typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < project.length)) project.push(current);
+                else if (current && editCeilingIndex >= 0 && editCeilingIndex < project.length) project[editCeilingIndex] = current;
+            }
+            if (!project.length) {
+                areaEl.textContent = '—'; perimEl.textContent = '—'; lightsEl.textContent = '—';
+                if (detailsEl) detailsEl.textContent = 'Завершите первый потолок — здесь появится сводка.';
+                if (priceEl) priceEl.textContent = 'Стоимость уточнит мастер после проверки проекта.';
+                updateClientProgress(); return;
+            }
+            let area = 0, perim = 0, fixturesCount = 0;
+            const mats = [], profileNames = new Set(), fxNames = new Set();
+            project.forEach(function (c) {
+                const pts = c.points || [];
+                // completedCeilings хранит координаты в метрах; текущий payload тоже уже в метрах.
+                try { area += Math.abs(calcAreaM2(pts)); } catch (e) {}
+                const sides = c.sides_cm || [];
+                perim += sides.reduce((a,b) => a + (Number(b) || 0), 0) / 100;
+                (c.profiles || []).forEach(p => { if (p) profileNames.add(String(p)); });
+                (c.fixtures || []).forEach(function (f) {
+                    fixturesCount++;
+                    const t = f.type || '';
+                    fxNames.add(t === 'spot' ? 'споты' : t === 'light_point' ? 'светильники' : t === 'chandelier' ? 'люстры' : t === 'cornice' ? 'карнизы' : t === 'track' ? 'трековые системы' : t === 'strip' ? 'световые полосы' : t);
+                    if ((t === 'strip' || t === 'track') && f.length_cm) { /* длина отражена в составе проекта */ }
+                });
+                const mat = (c.material || 'Мат') + ' · ' + (c.color || 'Белый');
+                if (mats.indexOf(mat) < 0) mats.push(mat);
+            });
+            areaEl.textContent = area.toFixed(2) + ' м²';
+            perimEl.textContent = perim.toFixed(2) + ' м';
+            lightsEl.textContent = String(fixturesCount);
+            if (detailsEl) {
+                const lines = [project.length + (project.length === 1 ? ' потолок' : project.length < 5 ? ' потолка' : ' потолков') + ': ' + mats.join(', ')];
+                if (profileNames.size) lines.push('Профиль: ' + Array.from(profileNames).join(', '));
+                if (fxNames.size) lines.push('Освещение/монтаж: ' + Array.from(fxNames).join(', '));
+                detailsEl.textContent = lines.join(' · ');
+            }
+            const estimate = computeOptionalEstimate(project);
+            if (priceEl) priceEl.textContent = estimate == null ? 'Предварительная стоимость: уточнит мастер после проверки размеров и комплектации.' : 'Ориентировочно: ' + estimate.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' BYN · итог подтвердит мастер.';
+            updateClientProgress();
+        };
+        function computeOptionalEstimate(project) {
+            const params = new URLSearchParams(location.search || '');
+            function rate(key) { const v = params.get(key); if (v == null || v.trim() === '') return null; const n = Number(v.replace(',', '.')); return Number.isFinite(n) && n >= 0 ? n : null; }
+            let total = 0;
+            for (const c of project) {
+                const materialText = String(c.material || 'Мат').toLowerCase();
+                let materialSlug = /мат/i.test(materialText) ? 'mat' : /глян/i.test(materialText) ? 'gloss' : /сатин/i.test(materialText) ? 'satin' : materialText.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+                const materialKey = 'price_m2_' + (materialSlug || 'mat');
+                const baseRate = rate(materialKey) != null ? rate(materialKey) : rate('price_m2');
+                if (baseRate == null) return null;
+                const pts = c.points || [];
+                const area = Math.abs(calcAreaM2(pts));
+                total += area * baseRate;
+                const sides = c.sides_cm || [];
+                const profiles = c.profiles || [];
+                for (let i = 0; i < Math.max(sides.length, profiles.length); i++) {
+                    const p = profiles[i] || 'Стандартный';
+                    const slug = /тенев/i.test(p) ? 'shadow' : /парящ/i.test(p) ? 'floating' : 'standard';
+                    const pr = rate('price_profile_' + slug + '_m'); if (pr == null) return null;
+                    total += (Number(sides[i]) || 0) / 100 * pr;
+                }
+                for (const f of (c.fixtures || [])) {
+                    const t = f.type || '';
+                    let key = null, amount = 1;
+                    if (t === 'spot') key = 'price_spot';
+                    else if (t === 'light_point') key = 'price_light_point';
+                    else if (t === 'chandelier') key = 'price_chandelier';
+                    else if (t === 'cornice') { key = 'price_cornice_m'; amount = (Number(f.length_cm) || (Number(sides[Number(f.edge_index)] || 0)))/100; }
+                    else if (t === 'track' || /трек/i.test(String(f.material || f.name || ''))) { key = 'price_track_m'; amount = (Number(f.length_cm) || 0)/100; }
+                    else if (t === 'strip') { key = 'price_strip_m'; amount = (Number(f.length_cm) || 0)/100; }
+                    if (key) { const rr = rate(key); if (rr == null) return null; total += rr * amount; }
+                }
+            }
+            return total;
+        }
+
+        // Inject summary and autosave hooks without replacing the geometry handlers.
+        const drawFn = window.draw;
+        try {
+            const list = document.getElementById('ceilings-list');
+            if (list && window.MutationObserver) new MutationObserver(() => updateClientProjectSummary()).observe(list, {childList:true, subtree:true});
+        } catch (e) {}
+        try {
+            const sendBtn = document.getElementById('send-btn');
+            if (sendBtn) sendBtn.textContent = '📨 Отправить проект мастеру';
+        } catch (e) {}
+        // Real proof content is supplied by the bot through URL params; nothing fabricated is shown.
+        (function renderMasterProof() {
+            const params = new URLSearchParams(location.search || '');
+            const box = document.getElementById('dm-master-proof');
+            const nameEl = document.getElementById('dm-master-name');
+            const aboutEl = document.getElementById('dm-master-about');
+            const credEl = document.getElementById('dm-master-credentials');
+            const photoEl = document.getElementById('dm-master-photo');
+            const worksEl = document.getElementById('dm-real-works');
+            if (!box || !nameEl || !aboutEl || !credEl) return;
+            const name = params.get('master_name') || '';
+            const about = params.get('master_about') || '';
+            const experience = params.get('master_experience') || '';
+            const guarantee = params.get('master_guarantee') || '';
+            const photo = params.get('master_photo') || '';
+            let workCount = 0;
+            if (worksEl) {
+                for (let i = 1; i <= 6; i++) {
+                    const src = params.get('work' + i + '_image');
+                    if (!src || !/^https:\/\//i.test(src)) continue;
+                    const card = document.createElement('div');
+                    card.style.cssText = 'border:1px solid #e2e7ee;border-radius:9px;overflow:hidden;background:#fff;';
+                    const img = document.createElement('img'); img.src = src; img.alt = params.get('work' + i + '_title') || 'Работа мастера'; img.loading = 'lazy';
+                    img.style.cssText = 'display:block;width:100%;height:82px;object-fit:cover;background:#e5eaf0;';
+                    const cap = document.createElement('div'); cap.style.cssText = 'font-size:10px;line-height:1.35;padding:6px;color:#526176;';
+                    cap.textContent = (params.get('work' + i + '_title') || 'Выполненный проект') + (params.get('work' + i + '_note') ? ' · ' + params.get('work' + i + '_note') : '');
+                    card.appendChild(img); card.appendChild(cap); worksEl.appendChild(card); workCount++;
+                }
+            }
+            const supplied = !!(name || about || experience || guarantee || (photo && /^https:\/\//i.test(photo)) || workCount);
+            if (!supplied) return;
+            nameEl.textContent = name || 'Информация о мастере';
+            aboutEl.textContent = about || 'Перед началом работ мастер согласует комплектацию, материалы и условия монтажа.';
+            const credentialBits = [];
+            if (experience) credentialBits.push('Опыт: ' + experience);
+            if (guarantee) credentialBits.push('Гарантия: ' + guarantee);
+            if (workCount) credentialBits.push('Фотографии реальных работ: ' + workCount);
+            credEl.textContent = credentialBits.join(' · ');
+            if (photo && /^https:\/\//i.test(photo)) { photoEl.src = photo; photoEl.style.display = 'block'; }
+            box.style.display = 'block';
+        })();
+
+        // Honor explicit internal/editor mode; otherwise show client welcome after restore check.
+        const savedPreset = (function () { try { return localStorage.getItem('dobry_master_design_preset'); } catch (e) { return null; } })();
+        if (savedPreset && !window._dobryDesignPreset) window._dobryDesignPreset = savedPreset;
+        if (editModeFromUrl || internalModeFromUrl) {
+            closeClientWelcome();
+            if (internalModeFromUrl && progress) progress.style.display = 'none';
+        } else {
+            const restored = restoreSnapshot();
+            updateResumeButton(!!restored);
+            const welcome = document.getElementById('client-welcome');
+            if (welcome) welcome.style.display = 'flex';
+        }
+        updateClientProgress(); updateClientProjectSummary();
+        // When app changes, summarize and persist. Debouncing keeps this cheap during drawing.
+        try {
+            const canvas = document.getElementById('appCanvas');
+            if (canvas) canvas.addEventListener('pointerup', function () { scheduleProjectAutosave(); updateClientProgress(); updateClientProjectSummary(); }, {passive:true});
+            document.addEventListener('change', function (e) { if (e.target && /^(mat-select|color-input|profile-select|point-type-select)$/.test(e.target.id || '')) scheduleProjectAutosave(); });
+        } catch (e) {}
+    })();
+    </script>
+
     <div id="plan-calib-modal" style="display:none;position:fixed;inset:0;z-index:750;background:rgba(10,12,16,0.55);align-items:center;justify-content:center;padding:16px;">
         <div style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,0.35);">
             <div style="font-weight:600;margin-bottom:8px;">Реальная длина этой линии на плане</div>
