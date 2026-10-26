@@ -6265,6 +6265,9 @@ function getCurrentCeilingPayload() {
             }).then(function () {
                 return loadFirst(gltfUrls).catch(function (e) { console.warn('GLTFLoader skip', e); });
             }).then(function () {
+                if (!window.THREE.GLTFLoader) {
+                    console.warn('GLTFLoader missing after CDN load — мебель GLB может не загрузиться');
+                }
                 return window.THREE;
             }).catch(function (e) {
                 _threeJsLoadPromise = null; // allow retry
@@ -8175,23 +8178,29 @@ function getCurrentCeilingPayload() {
             }
 
             // ===== Общие загрузчики GLB (Draco) — мебель + люстра =====
-            const FURNITURE_ASSET_CANDIDATES = (function () {
-                // Локальные пути первыми — быстрее, если models рядом с Draw.html
-                var list = [];
+                        const FURNITURE_ASSET_CANDIDATES = (function () {
+                // CDN первыми: в Telegram WebView локальный ./models/ часто 404 и тормозит цепочку
+                var list = [
+                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/',
+                    'https://fastly.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/',
+                    'https://dobry921-ctrl.github.io/my-draw-app/models/',
+                    'https://raw.githubusercontent.com/dobry921-ctrl/my-draw-app/main/models/'
+                ];
                 try {
                     var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
                     list.push(path + 'models/');
                 } catch (e0) {}
                 list.push('./models/', 'models/');
-                list.push(
-                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/',
-                    'https://dobry921-ctrl.github.io/my-draw-app/models/'
-                );
                 return list;
             })();
             var _gltfLoaderShared = null;
             var _glbSceneCache = window._apexGlbCache || (window._apexGlbCache = {});
             var _glbInflight = window._apexGlbInflight || (window._apexGlbInflight = {});
+            var _dracoDecoderPaths = [
+                'https://www.gstatic.com/draco/versioned/decoders/1.5.6/',
+                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/draco/',
+                'https://unpkg.com/three@0.128.0/examples/js/libs/draco/'
+            ];
             function getGltfLoader() {
                 if (_gltfLoaderShared) return _gltfLoaderShared;
                 if (!THREE.GLTFLoader) {
@@ -8202,10 +8211,8 @@ function getCurrentCeilingPayload() {
                 if (THREE.DRACOLoader) {
                     try {
                         var draco = new THREE.DRACOLoader();
-                        draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-                        try { draco.setDecoderConfig({ type: 'wasm' }); } catch (e) {
-                            draco.setDecoderConfig({ type: 'js' });
-                        }
+                        draco.setDecoderPath(_dracoDecoderPaths[0]);
+                        try { draco.setDecoderConfig({ type: 'js' }); } catch (e) {}
                         loader.setDRACOLoader(draco);
                     } catch (eD) {
                         console.warn('DRACO init skip', eD);
@@ -8235,17 +8242,40 @@ function getCurrentCeilingPayload() {
                 }
                 var bases = FURNITURE_ASSET_CANDIDATES.slice();
                 var i = 0;
+                function loadOne(url) {
+                    return new Promise(function (resolve, reject) {
+                        var done = false;
+                        var timer = setTimeout(function () {
+                            if (done) return;
+                            done = true;
+                            console.warn('GLB timeout', url);
+                            reject(new Error('timeout ' + url));
+                        }, 12000);
+                        try {
+                            loader.load(url, function (gltf) {
+                                if (done) return;
+                                done = true;
+                                clearTimeout(timer);
+                                resolve(gltf.scene || gltf.scenes[0]);
+                            }, undefined, function (err) {
+                                if (done) return;
+                                done = true;
+                                clearTimeout(timer);
+                                console.warn('GLB fail', url, err && (err.message || err));
+                                reject(err || new Error('fail ' + url));
+                            });
+                        } catch (eLoad) {
+                            if (done) return;
+                            done = true;
+                            clearTimeout(timer);
+                            reject(eLoad);
+                        }
+                    });
+                }
                 function next() {
                     if (i >= bases.length) return Promise.reject(new Error('no glb ' + fileName));
                     var url = bases[i++] + fileName;
-                    return new Promise(function (resolve, reject) {
-                        loader.load(url, function (gltf) {
-                            resolve(gltf.scene || gltf.scenes[0]);
-                        }, undefined, function (err) {
-                            console.warn('GLB fail', url, err && err.message);
-                            reject(err);
-                        });
-                    }).catch(function () { return next(); });
+                    return loadOne(url).catch(function () { return next(); });
                 }
                 _glbInflight[fileName] = next().then(function (root) {
                     _glbSceneCache[fileName] = root;
@@ -8256,7 +8286,7 @@ function getCurrentCeilingPayload() {
                     throw e;
                 });
                 return _glbInflight[fileName].then(function (root) {
-                    return root.clone(true);
+                    try { return root.clone(true); } catch (e3) { return root; }
                 });
             }
             function prepareHangingModel(root, targetSize) {
@@ -8856,7 +8886,7 @@ function getCurrentCeilingPayload() {
                 table: 'stol-v1.glb',
                 rug: 'kover-v1.glb',
                 tv: 'TV-v1.glb',
-                painting: 'wall-art.jpg',
+                painting: 'wall-art.png',
                 tvAd: 'tv-ad.jpg'
             };
 
@@ -9034,9 +9064,14 @@ function getCurrentCeilingPayload() {
                     if (doorEdge && e.i === doorEdge.i) return false;
                     return !windowEdgesList.some(function (we) { return we.i === e.i; });
                 });
-                const edge = cand.find(function (e) { return e.len >= 1.2; }) || cand[0] || wallEdges[0];
-                if (!edge || edge.len < 0.8) {
+                const edge = cand.find(function (e) { return e.len >= 1.2; }) || cand.find(function (e) { return e.len >= 0.5; }) || cand[0] || wallEdges[0];
+                if (!edge) {
                     console.warn('buildFurniture: no wall edge');
+                    return;
+                }
+                // даже для маленьких комнат ставим мебель — иначе «пропали диван/ТВ/картина»
+                if (edge.len < 0.35) {
+                    console.warn('buildFurniture: edge too short', edge.len);
                     return;
                 }
 
