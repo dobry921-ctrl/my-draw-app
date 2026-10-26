@@ -2719,10 +2719,33 @@
         // ===== Шаблоны комнат: точные формы вместо рисования от руки =====
         let roomTemplateShape = 'rect';
         function openRoomTemplatePanel() {
-            if (state !== 'DRAWING' || points.length > 0) return;
-            selectRoomTemplateShape(roomTemplateShape);
-            document.getElementById('room-template-modal').style.display = 'flex';
+            // Не молчим при ошибке — иначе кнопки welcome «не работают»
+            try {
+                if (typeof state !== 'undefined' && state !== 'DRAWING') {
+                    // вернёмся к черчению, если это возможно
+                    if (typeof points !== 'undefined' && Array.isArray(points) && points.length === 0) {
+                        state = 'DRAWING';
+                    }
+                }
+                if (typeof points !== 'undefined' && Array.isArray(points) && points.length > 0) {
+                    if (typeof showToast === 'function') {
+                        showToast('Есть незавершённый контур. Нажмите «Сброс» или «Начать новый проект».', 3200);
+                    }
+                    return;
+                }
+                selectRoomTemplateShape(roomTemplateShape || 'rect');
+                var m = document.getElementById('room-template-modal');
+                if (m) {
+                    m.style.display = 'flex';
+                } else if (typeof showToast === 'function') {
+                    showToast('Панель шаблона не найдена', 2500);
+                }
+            } catch (err) {
+                console.error('openRoomTemplatePanel', err);
+                if (typeof showToast === 'function') showToast('Не удалось открыть шаблон', 2500);
+            }
         }
+        window.openRoomTemplatePanel = openRoomTemplatePanel;
         function closeRoomTemplatePanel() {
             const m = document.getElementById('room-template-modal');
             if (m) m.style.display = 'none';
@@ -5912,7 +5935,7 @@ function getCurrentCeilingPayload() {
         }
 
         </script>
-        <script src="draw3d.js?v=20261026d"></script>
+        <script src="draw3d.js?v=20261026f"></script>
         <!-- 3D-модуль вынесен в draw3d.js (не встраивать обратно целиком) -->
         <script>
         // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
@@ -6235,31 +6258,55 @@ function getCurrentCeilingPayload() {
             try { if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.disableVerticalSwipes) window.Telegram.WebApp.disableVerticalSwipes(); } catch (e) {}
         };
         window.welcomeStart = function (mode) {
-            closeClientWelcome();
+            try { closeClientWelcome(); } catch (e0) {}
+            var hasPoints = (typeof points !== 'undefined' && Array.isArray(points) && points.length > 0);
+            var hasCeilings = (typeof completedCeilings !== 'undefined' && Array.isArray(completedCeilings) && completedCeilings.length > 0);
+
             if (mode === 'plan') {
-                if ((points && points.length) || (completedCeilings && completedCeilings.length)) {
-                    showToast('Есть сохранённый проект. Продолжите его или начните новый проект.', 3500);
-                    const w = document.getElementById('client-welcome'); if (w) w.style.display = 'flex';
-                    updateResumeButton(true);
+                // Если есть только незакрытый контур — не блокируем, предлагаем план
+                if (hasCeilings) {
+                    showToast('Есть сохранённый проект. Нажмите «Продолжить» или «Начать новый проект».', 3500);
+                    var w1 = document.getElementById('client-welcome'); if (w1) w1.style.display = 'flex';
+                    try { updateResumeButton(true); } catch (e1) {}
                     return;
                 }
                 showToast('Загрузите фото плана или начните с шаблона комнаты.', 3000);
-                if (typeof triggerPlanPhotoUpload === 'function') triggerPlanPhotoUpload();
-                else if (typeof openRoomTemplatePanel === 'function') openRoomTemplatePanel();
+                if (typeof triggerPlanPhotoUpload === 'function') {
+                    try { triggerPlanPhotoUpload(); } catch (e2) { console.error(e2); }
+                } else if (typeof openRoomTemplatePanel === 'function') {
+                    try { openRoomTemplatePanel(); } catch (e3) { console.error(e3); }
+                }
                 return;
             }
-            if (mode === 'quick' && typeof openRoomTemplatePanel === 'function' && state === 'DRAWING' && (!points || points.length === 0) && (!completedCeilings || completedCeilings.length === 0)) {
-                openRoomTemplatePanel();
-                showToast('Шаблон ускорит построение формы. Вводите реальные размеры, если они известны.', 3600);
+
+            // mode === 'quick' (и любой другой)
+            if (hasCeilings) {
+                showToast('Есть сохранённый проект. Нажмите «Продолжить» или «Начать новый проект».', 3500);
+                var w2 = document.getElementById('client-welcome'); if (w2) w2.style.display = 'flex';
+                try { updateResumeButton(true); } catch (e4) {}
                 return;
             }
-            if (mode === 'quick' && ((points && points.length) || (completedCeilings && completedCeilings.length))) {
-                showToast('Есть сохранённый проект. Продолжите его или выберите «Начать новый проект».', 3500);
-                const w = document.getElementById('client-welcome'); if (w) w.style.display = 'flex';
-                updateResumeButton(true);
-                return;
+            // Незавершённый контур без сохранённых потолков — сбрасываем, чтобы шаблон открылся
+            if (hasPoints) {
+                try {
+                    if (typeof resetCurrentDrawing === 'function') resetCurrentDrawing(true);
+                    else { points = []; edges = []; isClosed = false; }
+                } catch (e5) {
+                    try { points = []; } catch (e6) {}
+                }
             }
-            showToast('Тапните по экрану, чтобы добавить углы комнаты. Можно начать с кнопки «Шаблон».', 3800);
+            try { if (typeof state !== 'undefined') state = 'DRAWING'; } catch (e7) {}
+            if (typeof openRoomTemplatePanel === 'function') {
+                try {
+                    openRoomTemplatePanel();
+                    showToast('Выберите шаблон комнаты и укажите размеры.', 3200);
+                } catch (e8) {
+                    console.error(e8);
+                    showToast('Тапните по экрану, чтобы добавить углы комнаты.', 3000);
+                }
+            } else {
+                showToast('Тапните по экрану, чтобы добавить углы комнаты. Можно начать с кнопки «Шаблон».', 3800);
+            }
         };
         window.openClientPortfolio = function () {
             const m = document.getElementById('client-portfolio-modal'); if (m) m.style.display = 'flex';
