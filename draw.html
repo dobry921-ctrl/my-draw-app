@@ -662,7 +662,7 @@
             <button type="button" class="btn btn-accent" style="width:100%;padding:12px;font-size:1.05rem;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,0.18);" onclick="showClientPreview('3d')">🏛 Показать в 3D</button>
         </div>
         <div id="client-order-actions">
-            <button type="button" class="btn btn-success" onclick="openLeadRequest()">✅ Заказать замер / получить смету</button>
+            <button type="button" class="btn btn-success" onclick="requestEstimateFromMaster()">✅ Заказать замер / получить смету</button>
             <button class="send-btn" id="send-btn" onclick="sendToBot()">📨 Отправить проект мастеру</button>
         </div>
         <button class="copy-btn" id="copy-data-btn" onclick="copyData()">📋 Скопировать данные (отладка)</button>
@@ -684,7 +684,7 @@
         <div id="client-preview-footer" style="z-index:2;">
             <div class="dm-preview-hint">Проведите пальцем, чтобы осмотреть комнату. Джойстик — прогулка. Сценарии света находятся в панели «Сцена».</div>
             <button type="button" class="btn btn-outline" style="color:#fff;border-color:#566173;" onclick="downloadClientPreview()">📸 Сохранить</button>
-            <button type="button" class="btn btn-success" onclick="closeClientPreview();openLeadRequest()">Получить смету →</button>
+            <button type="button" class="btn btn-success" onclick="closeClientPreview();requestEstimateFromMaster()">Получить смету →</button>
         </div>
     </div>
 
@@ -4920,11 +4920,47 @@ function getCurrentCeilingPayload() {
         }
 
         function resetAll() {
-            if (confirm('Сбросить всё (включая уже добавленные потолки)?')) {
+            dmConfirm('Сбросить всё (включая уже добавленные потолки)?', function (ok) {
+                if (!ok) return;
                 resetCurrentDrawing(true);
                 showToast('Всё сброшено.', 2000);
+            }, { title: 'Сброс проекта', okText: 'Сбросить' });
+        }
+
+        var _dmConfirmCb = null;
+        function dmConfirm(message, callback, opts) {
+            opts = opts || {};
+            _dmConfirmCb = typeof callback === 'function' ? callback : null;
+            var modal = document.getElementById('dm-confirm-modal');
+            var textEl = document.getElementById('dm-confirm-text');
+            var titleEl = document.getElementById('dm-confirm-title');
+            var okBtn = document.getElementById('dm-confirm-ok');
+            if (textEl) textEl.textContent = message || '';
+            if (titleEl) titleEl.textContent = opts.title || 'Подтверждение';
+            if (okBtn) okBtn.textContent = opts.okText || 'OK';
+            if (modal) {
+                modal.style.display = 'flex';
+                modal.style.alignItems = 'center';
+                modal.style.justifyContent = 'center';
+            } else {
+                // fallback без native confirm (чтобы не светить домен хостинга)
+                if (_dmConfirmCb) {
+                    var cb = _dmConfirmCb; _dmConfirmCb = null;
+                    cb(true);
+                }
             }
         }
+        function closeDmConfirm(result) {
+            var modal = document.getElementById('dm-confirm-modal');
+            if (modal) modal.style.display = 'none';
+            var cb = _dmConfirmCb;
+            _dmConfirmCb = null;
+            if (cb) {
+                try { cb(!!result); } catch (e) { console.warn(e); }
+            }
+        }
+        window.dmConfirm = dmConfirm;
+        window.closeDmConfirm = closeDmConfirm;
 
         function autoFitCamera() {
             if (points.length === 0) return;
@@ -11446,6 +11482,30 @@ async function captureCeilingPhotoForKP() {
             const m = document.getElementById('client-lead-modal'); if (m) m.style.display = 'flex';
             try { const p = document.getElementById('lead-phone'); if (p) setTimeout(() => p.focus(), 120); } catch (e) {}
         };
+        /** «Получить смету» — сразу отправить проект мастеру, без формы имени/телефона. */
+        window.requestEstimateFromMaster = function () {
+            try { closeLeadRequest(); } catch (e0) {}
+            try { closeClientPreview(); } catch (e1) {}
+            var hasProject = false;
+            try {
+                hasProject = (Array.isArray(completedCeilings) && completedCeilings.length > 0) ||
+                    (Array.isArray(points) && points.length >= 3 && isClosed &&
+                        ['SELECT_MATERIAL','INSTALL','DONE'].indexOf(state) >= 0);
+            } catch (e2) {}
+            if (!hasProject) {
+                showToast('Сначала соберите проект потолка — затем отправьте его на расчёт.', 3500);
+                return;
+            }
+            showToast('Отправляю проект мастеру на расчёт…', 3500);
+            if (typeof sendToBot === 'function') {
+                Promise.resolve(sendToBot()).catch(function (e) {
+                    console.error(e);
+                    showToast('Не удалось отправить проект. Попробуйте ещё раз.', 3500);
+                });
+            } else {
+                showToast('Отправка недоступна. Откройте приложение через кнопку Telegram-бота.', 4000);
+            }
+        };
         window.closeLeadRequest = function () {
             const m = document.getElementById('client-lead-modal'); if (m) m.style.display = 'none';
         };
@@ -11672,6 +11732,22 @@ async function captureCeilingPhotoForKP() {
         } catch (e) {}
     })();
     </script>
+
+    
+    <div id="dm-confirm-modal" class="dm-overlay" role="dialog" aria-modal="true" style="display:none;z-index:900;">
+        <div class="dm-card" style="width:min(100%,360px);">
+            <div class="dm-modal-title"><strong id="dm-confirm-title">Подтверждение</strong>
+                <button class="dm-close" type="button" onclick="closeDmConfirm(false)" aria-label="Закрыть">×</button>
+            </div>
+            <div class="dm-body">
+                <div id="dm-confirm-text" style="font-size:14px;line-height:1.45;color:#334155;margin-bottom:14px;"></div>
+                <div style="display:flex;gap:8px;">
+                    <button type="button" class="dm-outline" style="flex:1;" onclick="closeDmConfirm(false)">Отмена</button>
+                    <button type="button" class="dm-primary" style="flex:1;background:linear-gradient(135deg,#b42318,#dc3545);box-shadow:0 5px 13px rgba(180,35,24,.2);" id="dm-confirm-ok" onclick="closeDmConfirm(true)">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="plan-calib-modal" style="display:none;position:fixed;inset:0;z-index:750;background:rgba(10,12,16,0.55);align-items:center;justify-content:center;padding:16px;">
         <div style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,0.35);">
