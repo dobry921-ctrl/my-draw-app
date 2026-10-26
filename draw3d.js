@@ -3584,18 +3584,25 @@
                 camera.fov = fovS;
                 camera.updateProjectionMatrix();
                 if (sideViewOn) {
-                    // Вид снизу вверх: орбита, можно опустить почти к полу
+                    // Вид снизу вверх: орбита, камера может уходить НИЖЕ пола
                     const cx = roomBounds.cx, cz = roomBounds.cz;
-                    const cy = roomH * 0.08;
+                    const cy = 0; // центр орбиты на уровне пола
                     const cp = Math.cos(sideOrbitPitch), sp = Math.sin(sideOrbitPitch);
                     const sy = Math.sin(sideOrbitYaw), cyw = Math.cos(sideOrbitYaw);
                     const px = cx + sy * cp * sideOrbitRadius;
-                    const py = Math.max(0.05, cy + sp * sideOrbitRadius);
+                    // без нижней отсечки у 0 — можно смотреть «из-под пола»
+                    let py = cy + sp * sideOrbitRadius;
+                    if (py < -roomH * 1.2) py = -roomH * 1.2;
+                    if (py > roomH * 2.5) py = roomH * 2.5;
                     const pz = cz + cyw * cp * sideOrbitRadius;
                     camera.up.set(0, 1, 0);
                     camera.position.set(px, py, pz);
-                    camera.lookAt(cx, roomH * 0.95, cz);
+                    camera.lookAt(cx, roomH * 0.92, cz);
                     updateSideOccluderTransparency();
+                    // пол всегда «призрак» в этом режиме (на случай если не выставили при входе)
+                    if (floorMat && (!floorMat.transparent || floorMat.opacity > 0.05)) {
+                        setSideFloorGhost(true);
+                    }
                 } else if (topDownOn) {
                     camera.position.set(camXS, eyeHS, camZS);
                     // Строго вниз: up = «север» карты ( -Z ), иначе gimbal lock при pitch≈-90°
@@ -3678,15 +3685,38 @@
             function setSideFloorGhost(on) {
                 if (!floorMat) return;
                 if (on) {
+                    if (!floorMat.userData) floorMat.userData = {};
+                    if (floorMat.userData._floorGhostSaved == null) {
+                        floorMat.userData._floorGhostSaved = {
+                            transparent: !!floorMat.transparent,
+                            opacity: floorMat.opacity != null ? floorMat.opacity : 1,
+                            depthWrite: floorMat.depthWrite !== false,
+                            side: floorMat.side
+                        };
+                    }
                     floorMat.transparent = true;
-                    floorMat.opacity = 0.08;
+                    floorMat.opacity = 0.04; // почти не мешает обзору потолка
                     floorMat.depthWrite = false;
+                    // DoubleSide — корректная прозрачность и при взгляде снизу
+                    try { floorMat.side = THREE.DoubleSide; } catch (e) {}
                     floorMat.needsUpdate = true;
-                    if (floorMeshRef) floorMeshRef.renderOrder = 1;
+                    if (floorMeshRef) {
+                        floorMeshRef.renderOrder = 1;
+                        floorMeshRef.visible = true;
+                    }
                 } else {
-                    floorMat.transparent = false;
-                    floorMat.opacity = 1;
-                    floorMat.depthWrite = true;
+                    const s = floorMat.userData && floorMat.userData._floorGhostSaved;
+                    if (s) {
+                        floorMat.transparent = s.transparent;
+                        floorMat.opacity = s.opacity;
+                        floorMat.depthWrite = s.depthWrite;
+                        floorMat.side = s.side;
+                        delete floorMat.userData._floorGhostSaved;
+                    } else {
+                        floorMat.transparent = false;
+                        floorMat.opacity = 1;
+                        floorMat.depthWrite = true;
+                    }
                     floorMat.needsUpdate = true;
                     if (floorMeshRef) floorMeshRef.renderOrder = 0;
                 }
@@ -4632,8 +4662,8 @@
                 // Радиус — чтобы вся комната была в кадре
                 sideOrbitRadius = Math.max(4.5, roomBounds.maxR * 2.2 + 1.2);
                 sideOrbitYaw = yaw || 0.6;
-                // сильно снизу: камера почти у пола, взгляд на потолок
-                sideOrbitPitch = -0.95;
+                // стартуем уже ниже пола, взгляд на потолок
+                sideOrbitPitch = -1.15;
                 camFov = 55;
                 fovS = camFov;
                 syncZoomSlider();
@@ -4645,7 +4675,7 @@
                 applyCam();
                 sideViewBtn.textContent = '🚶 Выйти сбоку';
                 sideViewBtn.style.background = 'rgba(20,120,80,0.7)';
-                showToast('Пальцем вращайте · вид снизу · передние стены/двери/шторы прозрачные', 3500);
+                showToast('Пальцем вращайте · можно опустить камеру ниже пола · пол прозрачный', 3500);
             }
             sideViewBtn.onclick = function (e) {
                 e.preventDefault();
@@ -5026,8 +5056,8 @@ async function captureCeilingPhotoForKP() {
                 if (sideViewOn) {
                     // Орбита вокруг комнаты
                     sideOrbitYaw -= dx * 0.01;
-                    // почти с пола вверх (-1.2) … выше потолка (0.9)
-                    sideOrbitPitch = Math.max(-1.25, Math.min(0.9, sideOrbitPitch + dy * 0.008));
+                    // ниже пола (−1.45 ≈ почти вертикально снизу) … выше потолка (0.9)
+                    sideOrbitPitch = Math.max(-1.45, Math.min(0.9, sideOrbitPitch + dy * 0.009));
                     applyCam();
                     e.preventDefault && e.preventDefault();
                     return;
