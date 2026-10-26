@@ -266,23 +266,21 @@
 
         var _threeJsLoadPromise = null;
         function loadThreeJs() {
-            if (window.THREE) {
+            if (window.THREE && window.THREE.WebGLRenderer) {
                 return Promise.resolve(window.THREE);
             }
             if (_threeJsLoadPromise) return _threeJsLoadPromise;
-            function loadScript(src, timeoutMs) {
+
+            function injectScript(src, timeoutMs) {
                 return new Promise(function (resolve, reject) {
-                    var existing = document.querySelector('script[data-dm-three="' + src + '"],script[src="' + src + '"]');
+                    var existing = document.querySelector('script[data-dm-src="' + src + '"]');
                     if (existing) {
                         var tries = 0;
                         (function waitReady() {
-                            if (src.indexOf('three.min') >= 0 && window.THREE) return resolve();
-                            if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve();
-                            if (src.indexOf('DRACOLoader') >= 0 && window.THREE && window.THREE.DRACOLoader) return resolve();
-                            if (++tries > 80) {
-                                if (src.indexOf('three.min') >= 0 && !window.THREE) return reject(new Error('Таймаут: ' + src));
-                                return resolve();
-                            }
+                            if (src.indexOf('three.min') >= 0 && window.THREE) return resolve(src);
+                            if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve(src);
+                            if (src.indexOf('DRACOLoader') >= 0 && window.THREE && window.THREE.DRACOLoader) return resolve(src);
+                            if (++tries > 40) return reject(new Error('wait timeout ' + src));
                             setTimeout(waitReady, 50);
                         })();
                         return;
@@ -291,77 +289,96 @@
                     s.src = src;
                     s.async = true;
                     s.crossOrigin = 'anonymous';
-                    s.setAttribute('data-dm-three', src);
+                    s.setAttribute('data-dm-src', src);
                     var done = false;
                     var timer = setTimeout(function () {
                         if (done) return;
                         done = true;
-                        try { s.onload = s.onerror = null; } catch (e) {}
-                        reject(new Error('Таймаут загрузки: ' + src));
-                    }, timeoutMs || 10000);
+                        reject(new Error('timeout ' + src));
+                    }, timeoutMs || 5000);
                     s.onload = function () {
                         if (done) return;
                         done = true;
                         clearTimeout(timer);
-                        resolve();
+                        resolve(src);
                     };
                     s.onerror = function () {
                         if (done) return;
                         done = true;
                         clearTimeout(timer);
-                        reject(new Error('Не загрузился: ' + src));
+                        reject(new Error('error ' + src));
                     };
                     document.head.appendChild(s);
                 });
             }
-            function loadFirst(urls) {
-                var i = 0;
-                function next() {
-                    if (i >= urls.length) return Promise.reject(new Error('CDN недоступен (Three.js). Проверьте интернет или откройте вне ограниченной сети.'));
-                    var url = urls[i++];
-                    return loadScript(url, 10000).then(function () {
-                        if (url.indexOf('three.min') >= 0 && !window.THREE) {
-                            return Promise.reject(new Error('Скрипт загружен, но THREE нет: ' + url));
-                        }
-                    }).catch(function (err) {
-                        console.warn('[Dobry_Master] CDN fail', url, err && err.message);
-                        return next();
+
+            // Параллельный race: кто первый отдал three.min — тот и победил
+            function raceScripts(urls, timeoutMs) {
+                return new Promise(function (resolve, reject) {
+                    if (!urls.length) return reject(new Error('empty urls'));
+                    var left = urls.length;
+                    var lastErr = null;
+                    var settled = false;
+                    urls.forEach(function (url) {
+                        injectScript(url, timeoutMs).then(function (u) {
+                            if (settled) return;
+                            settled = true;
+                            resolve(u);
+                        }).catch(function (e) {
+                            lastErr = e;
+                            left--;
+                            if (!settled && left <= 0) reject(lastErr || new Error('all failed'));
+                        });
                     });
-                }
-                return next();
+                });
             }
+
             var threeUrls = [
                 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
-                'https://fastly.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
-                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
                 'https://unpkg.com/three@0.128.0/build/three.min.js',
-                'https://cdn.bootcdn.net/ajax/libs/three.js/r128/three.min.js'
+                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
             ];
             var dracoUrls = [
                 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js',
-                'https://fastly.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js',
                 'https://unpkg.com/three@0.128.0/examples/js/loaders/DRACOLoader.js'
             ];
             var gltfUrls = [
                 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
-                'https://fastly.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
                 'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js'
             ];
-            _threeJsLoadPromise = loadFirst(threeUrls).then(function () {
-                if (!window.THREE) throw new Error('Three.js не загрузился ни с одного CDN');
-                return loadFirst(dracoUrls).catch(function (e) { console.warn('DRACOLoader skip', e); });
+
+            _threeJsLoadPromise = raceScripts(threeUrls, 6000).then(function () {
+                if (!window.THREE) throw new Error('Three.js не загрузился');
+                // DRACO не блокирует: пробуем быстро, иначе идём дальше
+                return raceScripts(dracoUrls, 4000).catch(function () { return null; });
             }).then(function () {
-                return loadFirst(gltfUrls).catch(function (e) { console.warn('GLTFLoader skip', e); });
+                return raceScripts(gltfUrls, 5000).catch(function () { return null; });
             }).then(function () {
-                if (!window.THREE.GLTFLoader) {
-                    console.warn('GLTFLoader missing after CDN load — мебель GLB может не загрузиться');
-                }
+                if (!window.THREE.WebGLRenderer) throw new Error('Three.js без WebGLRenderer');
                 return window.THREE;
             }).catch(function (e) {
-                _threeJsLoadPromise = null; // allow retry
+                _threeJsLoadPromise = null;
                 throw e;
             });
             return _threeJsLoadPromise;
+        }
+
+        /** Фоновый прогрев Three.js — чтобы «Показать в 3D» открывалось быстрее */
+        function preloadThreeJsInBackground() {
+            try {
+                setTimeout(function () {
+                    loadThreeJs().catch(function (e) {
+                        console.warn('[Dobry_Master] preload Three.js', e && e.message);
+                    });
+                }, 800);
+            } catch (e) {}
+        }
+        if (typeof document !== 'undefined') {
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                preloadThreeJsInBackground();
+            } else {
+                document.addEventListener('DOMContentLoaded', preloadThreeJsInBackground);
+            }
         }
 
         function show3DPreviewError(message) {
@@ -472,11 +489,8 @@
                     showToast('Загрузка 3D…', 1500);
                     // Даем оверлею отрисоваться и получить размеры (важно для Telegram WebView)
                     await new Promise(function (r) {
-                        requestAnimationFrame(function () {
-                            requestAnimationFrame(function () { r(); });
-                        });
+                        requestAnimationFrame(function () { r(); });
                     });
-                    await new Promise(function (r) { setTimeout(r, 50); });
                     await renderClient3DRealistic();
                 } catch (e) {
                     console.error('3D preview initialization failed:', e);
@@ -2267,44 +2281,25 @@
 
             // ===== Общие загрузчики GLB (Draco) — мебель + люстра =====
                         const FURNITURE_ASSET_CANDIDATES = (function () {
-                // CDN первыми: в Telegram WebView локальный ./models/ часто 404 и тормозит цепочку
-                var list = [
-                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/',
-                    'https://fastly.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/',
+                // Только быстрые рабочие CDN (без локальных 404 в Telegram)
+                return [
                     'https://dobry921-ctrl.github.io/my-draw-app/models/',
-                    'https://raw.githubusercontent.com/dobry921-ctrl/my-draw-app/main/models/',
-                    // папка в репозитории может называться models или Модели
-                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/%D0%9C%D0%BE%D0%B4%D0%B5%D0%BB%D0%B8/',
-                    'https://dobry921-ctrl.github.io/my-draw-app/%D0%9C%D0%BE%D0%B4%D0%B5%D0%BB%D0%B8/'
+                    'https://cdn.jsdelivr.net/gh/dobry921-ctrl/my-draw-app@main/models/'
                 ];
-                try {
-                    var path = (window.location.pathname || '/').replace(/\/[^\/]*$/, '/');
-                    list.push(path + 'models/');
-                    list.push(path + 'Модели/');
-                    list.push(path + encodeURIComponent('Модели') + '/');
-                } catch (e0) {}
-                list.push('./models/', 'models/', './Модели/', 'Модели/');
-                return list;
             })();
             var _gltfLoaderShared = null;
             var _glbSceneCache = window._apexGlbCache || (window._apexGlbCache = {});
             var _glbInflight = window._apexGlbInflight || (window._apexGlbInflight = {});
-            var _dracoDecoderPaths = [
-                'https://www.gstatic.com/draco/versioned/decoders/1.5.6/',
-                'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/draco/',
-                'https://unpkg.com/three@0.128.0/examples/js/libs/draco/'
-            ];
             function getGltfLoader() {
                 if (_gltfLoaderShared) return _gltfLoaderShared;
                 if (!THREE.GLTFLoader) {
                     throw new Error('GLTFLoader not ready');
                 }
-                // DRACO опционален: без него несжатые glb всё ещё грузятся
                 var loader = new THREE.GLTFLoader();
                 if (THREE.DRACOLoader) {
                     try {
                         var draco = new THREE.DRACOLoader();
-                        draco.setDecoderPath(_dracoDecoderPaths[0]);
+                        draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
                         try { draco.setDecoderConfig({ type: 'js' }); } catch (e) {}
                         loader.setDRACOLoader(draco);
                     } catch (eD) {
@@ -2341,9 +2336,8 @@
                         var timer = setTimeout(function () {
                             if (done) return;
                             done = true;
-                            console.warn('GLB timeout', url);
                             reject(new Error('timeout ' + url));
-                        }, 12000);
+                        }, 4000);
                         try {
                             loader.load(url, function (gltf) {
                                 if (done) return;
@@ -2354,7 +2348,6 @@
                                 if (done) return;
                                 done = true;
                                 clearTimeout(timer);
-                                console.warn('GLB fail', url, err && (err.message || err));
                                 reject(err || new Error('fail ' + url));
                             });
                         } catch (eLoad) {
@@ -2421,27 +2414,36 @@
                 });
                 return root;
             }
-            // Предзагрузка люстры + прогрев кэша мебели (параллельно)
+            // Люстра и мебель — НЕ блокируют первый кадр сцены
             var chandelierTemplate = null;
-            try {
-                var warmFurniture = Promise.allSettled([
-                    Promise.resolve().then(function () { return loadGltfWithFallback('sofa.glb'); }),
-                    Promise.resolve().then(function () { return loadGltfWithFallback('stol-v1.glb'); }),
-                    Promise.resolve().then(function () { return loadGltfWithFallback('kover-v1.glb'); }),
-                    Promise.resolve().then(function () { return loadGltfWithFallback('TV-v1.glb'); })
-                ]);
-                chandelierTemplate = await loadGltfWithFallback('lustra.glb').catch(function () {
-                    return loadGltfWithFallback('chandelier.glb');
-                }).catch(function () { return null; });
-                if (chandelierTemplate) console.log('Chandelier GLB loaded');
-                else console.warn('Chandelier GLB not found (models/lustra.glb)');
-                warmFurniture.then(function () { console.log('Furniture cache warmed'); });
-            } catch (eCh) {
-                console.warn('Chandelier preload', eCh);
+            var _chandelierReady = loadGltfWithFallback('lustra.glb').catch(function () {
+                return loadGltfWithFallback('chandelier.glb');
+            }).then(function (root) {
+                chandelierTemplate = root;
+                console.log('Chandelier GLB loaded');
+                return root;
+            }).catch(function (eCh) {
+                console.warn('Chandelier GLB skip', eCh && eCh.message);
                 chandelierTemplate = null;
-            }
+                return null;
+            });
+            // Прогрев кэша дивана/стола/ковра/ТВ в фоне
+            Promise.allSettled([
+                loadGltfWithFallback('sofa.glb'),
+                loadGltfWithFallback('stol-v1.glb'),
+                loadGltfWithFallback('kover-v1.glb'),
+                loadGltfWithFallback('TV-v1.glb')
+            ]).then(function () { console.log('Furniture cache warmed'); });
 
             // Модели: люстра / спот (цилиндр 10см) / светильник (точка)
+            // Даем люстре до 2с догнать — сцена уже строится, не ждём вечно
+            try {
+                await Promise.race([
+                    _chandelierReady,
+                    new Promise(function (r) { setTimeout(r, 2000); })
+                ]);
+            } catch (eWaitCh) {}
+
             const ceilingLights = [];
             // Группы для перетаскивания приборов в виде «сверху» (реалтайм + синхронизация с fixtures)
             const movableGroups = [];
