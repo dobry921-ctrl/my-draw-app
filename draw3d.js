@@ -1158,6 +1158,9 @@
                 side: THREE.FrontSide
             });
             const floorGeo = makeRoomPlaneGeometry(0, 0);
+            let floorMeshRef = null;
+            // Стены с нормалями — для режима «Вид сбоку» (передние стены прозрачные)
+            const wallMeshList = [];
             if (floorGeo) {
                 const pos = floorGeo.attributes.position;
                 const uvs = [];
@@ -1174,6 +1177,7 @@
                 const floorMesh = new THREE.Mesh(floorGeo, floorMat);
                 floorMesh.receiveShadow = true;
                 scene.add(floorMesh);
+                floorMeshRef = floorMesh;
             }
 
             // Стены
@@ -1272,10 +1276,18 @@
             function addWallPanel(midX, midZ, ang, ux, uz, alongOff, yCenter, w, h, mat) {
                 if (w < 0.02 || h < 0.02) return;
                 const geo = scaleWallUV(new THREE.PlaneGeometry(w, h), w, h);
-                const m = new THREE.Mesh(geo, mat);
+                // Клон материала — в режиме «сбоку» передние стены делают прозрачными по отдельности
+                const panelMat = (mat && mat.clone) ? mat.clone() : mat;
+                const m = new THREE.Mesh(geo, panelMat);
                 m.position.set(midX + ux * alongOff, yCenter, midZ + uz * alongOff);
                 m.rotation.y = ang;
                 m.receiveShadow = true;
+                // Нормаль плоскости стены (наружу/внутрь — не важно, берём обе стороны по dot)
+                const nx = -Math.sin(ang), nz = -Math.cos(ang);
+                m.userData.wallNormal = { x: nx, z: nz };
+                m.userData.isWallPanel = true;
+                m.userData.baseOpacity = 1;
+                wallMeshList.push(m);
                 scene.add(m);
             }
 
@@ -1493,10 +1505,15 @@
                     })();
                 } else {
                     const wallGeo = scaleWallUV(new THREE.PlaneGeometry(len + 0.004, wallH), len + 0.004, wallH);
-                    const wall = new THREE.Mesh(wallGeo, wallMat);
+                    const solidMat = wallMat.clone ? wallMat.clone() : wallMat;
+                    const wall = new THREE.Mesh(wallGeo, solidMat);
                     wall.position.set(midX, wallH / 2, midZ);
                     wall.rotation.y = ang;
                     wall.receiveShadow = true;
+                    wall.userData.wallNormal = { x: nx, z: nz };
+                    wall.userData.isWallPanel = true;
+                    wall.userData.baseOpacity = 1;
+                    wallMeshList.push(wall);
                     scene.add(wall);
                 }
 
@@ -2448,6 +2465,10 @@
             // Группы для перетаскивания приборов в виде «сверху» (реалтайм + синхронизация с fixtures)
             const movableGroups = [];
             let topDownOn = false; // объявлен рано — applyCam читает флаг
+            let sideViewOn = false; // вид сбоку: орбита + передние стены прозрачные
+            let sideOrbitYaw = 0.6;
+            let sideOrbitPitch = 0.35; // 0 = горизонт, + вверх к потолку
+            let sideOrbitRadius = 6;
             let lightsOn = false;
             const _presentKinds = {};
             (fixtures || []).forEach(function (f) {
@@ -3496,12 +3517,27 @@
             function applyCam() {
                 camera.fov = fovS;
                 camera.updateProjectionMatrix();
-                camera.position.set(camXS, eyeHS, camZS);
-                if (topDownOn) {
+                if (sideViewOn) {
+                    // Орбита вокруг центра комнаты: только задние стены + потолок
+                    const cx = roomBounds.cx, cz = roomBounds.cz;
+                    const cy = roomH * 0.55;
+                    const cp = Math.cos(sideOrbitPitch), sp = Math.sin(sideOrbitPitch);
+                    const sy = Math.sin(sideOrbitYaw), cyw = Math.cos(sideOrbitYaw);
+                    const px = cx + sy * cp * sideOrbitRadius;
+                    const py = cy + sp * sideOrbitRadius;
+                    const pz = cz + cyw * cp * sideOrbitRadius;
+                    camera.up.set(0, 1, 0);
+                    camera.position.set(px, Math.max(0.3, py), pz);
+                    // Смотрим чуть выше центра — потолок в кадре, пол не перекрывает
+                    camera.lookAt(cx, roomH * 0.72, cz);
+                    updateSideWallTransparency();
+                } else if (topDownOn) {
+                    camera.position.set(camXS, eyeHS, camZS);
                     // Строго вниз: up = «север» карты ( -Z ), иначе gimbal lock при pitch≈-90°
                     camera.up.set(0, 0, -1);
                     camera.lookAt(camXS, 0, camZS);
                 } else {
+                    camera.position.set(camXS, eyeHS, camZS);
                     const lookDist = 2;
                     const lx = camXS + Math.sin(yawS) * Math.cos(pitchS) * lookDist;
                     const ly = eyeHS + Math.sin(pitchS) * lookDist;
@@ -3510,6 +3546,61 @@
                     camera.lookAt(lx, ly, lz);
                 }
                 needsRender = true;
+            }
+            function updateSideWallTransparency() {
+                if (!wallMeshList || !wallMeshList.length) return;
+                const cam = camera.position;
+                const cx = roomBounds.cx, cz = roomBounds.cz;
+                wallMeshList.forEach(function (m) {
+                    const n = m.userData.wallNormal;
+                    if (!n || !m.material) return;
+                    const wx = m.position.x, wz = m.position.z;
+                    const camSide = n.x * (cam.x - wx) + n.z * (cam.z - wz);
+                    const centerSide = n.x * (cx - wx) + n.z * (cz - wz);
+                    // Стена между камерой и центром комнаты — «передняя», делаем прозрачной
+                    const isFront = camSide * centerSide < 0;
+                    const mat = m.material;
+                    if (isFront) {
+                        mat.transparent = true;
+                        mat.opacity = 0.06;
+                        mat.depthWrite = false;
+                        mat.needsUpdate = true;
+                        m.renderOrder = 2;
+                    } else {
+                        mat.transparent = false;
+                        mat.opacity = 1;
+                        mat.depthWrite = true;
+                        mat.needsUpdate = true;
+                        m.renderOrder = 0;
+                    }
+                });
+            }
+            function setSideFloorGhost(on) {
+                if (!floorMat) return;
+                if (on) {
+                    floorMat.transparent = true;
+                    floorMat.opacity = 0.22;
+                    floorMat.depthWrite = false;
+                    floorMat.needsUpdate = true;
+                    if (floorMeshRef) floorMeshRef.renderOrder = 1;
+                } else {
+                    floorMat.transparent = false;
+                    floorMat.opacity = 1;
+                    floorMat.depthWrite = true;
+                    floorMat.needsUpdate = true;
+                    if (floorMeshRef) floorMeshRef.renderOrder = 0;
+                }
+            }
+            function resetWallOpacity() {
+                if (!wallMeshList) return;
+                wallMeshList.forEach(function (m) {
+                    if (!m.material) return;
+                    m.material.transparent = false;
+                    m.material.opacity = 1;
+                    m.material.depthWrite = true;
+                    m.material.needsUpdate = true;
+                    m.renderOrder = 0;
+                });
             }
             function stepCam(dt) {
                 const k = 1 - Math.exp(-dt * 11);
@@ -3541,12 +3632,14 @@
             }
             let zoomSlider = null;
 
-            // Джойстик перемещения на экране (крупнее + выше z-index для телефона)
+            // Джойстик перемещения (крупнее + z-index 40 — Telegram WebView часто «съедает» нижние 20)
             const pad = document.createElement('div');
-            // Джойстик ниже панели: панель max-height оставляет ~175px снизу под pad
-            pad.style.cssText = 'position:absolute;left:12px;bottom:10px;width:118px;height:118px;border-radius:59px;background:rgba(255,255,255,0.14);border:2px solid rgba(255,255,255,0.35);touch-action:none;-webkit-user-select:none;user-select:none;z-index:20;pointer-events:auto;';
+            pad.style.cssText = 'position:absolute;left:10px;bottom:max(14px, env(safe-area-inset-bottom, 0px));' +
+                'width:132px;height:132px;border-radius:66px;background:rgba(255,255,255,0.16);' +
+                'border:2px solid rgba(255,255,255,0.4);touch-action:none;-webkit-user-select:none;user-select:none;' +
+                'z-index:40;pointer-events:auto;-webkit-touch-callout:none;';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:39px;top:39px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.55);pointer-events:none;';
+            knob.style.cssText = 'position:absolute;left:46px;top:46px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.65);pointer-events:none;';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
@@ -4282,6 +4375,7 @@
                         overviewOn = false;
                         overviewBtn.textContent = '🔝 Весь потолок';
                     }
+                    if (typeof exitSideView === 'function' && sideViewOn) exitSideView(false);
                     topDownOn = true; // ДО goTopDownCam — applyCam читает флаг
                     setCeilingTransparent(true);
                     if (furnitureGroup) furnitureGroup.visible = false;
@@ -4327,6 +4421,72 @@
                 showToast('Камера по центру комнаты', 1500);
             };
             lightPanel.appendChild(topCenterBtn);
+
+            // ===== Вид сбоку: орбита, передние стены прозрачные, пол «призрак» =====
+            let sideViewSaved = null;
+            const sideViewBtn = document.createElement('button');
+            sideViewBtn.type = 'button';
+            sideViewBtn.textContent = '↔️ Вид сбоку';
+            sideViewBtn.style.cssText = 'padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.3);background:rgba(40,60,100,0.55);color:#fff;font-size:12px;margin-top:4px;';
+            function exitSideView(restore) {
+                if (!sideViewOn) return;
+                sideViewOn = false;
+                setSideFloorGhost(false);
+                resetWallOpacity();
+                if (furnitureGroup) furnitureGroup.visible = true;
+                if (restore && sideViewSaved) {
+                    camX = sideViewSaved.camX; camZ = sideViewSaved.camZ;
+                    eyeH = sideViewSaved.eyeH; pitch = sideViewSaved.pitch;
+                    yaw = sideViewSaved.yaw; camFov = sideViewSaved.fov;
+                    yawS = yaw; pitchS = pitch; camXS = camX; camZS = camZ; eyeHS = eyeH; fovS = camFov;
+                    syncZoomSlider();
+                    applyCam();
+                }
+                sideViewBtn.textContent = '↔️ Вид сбоку';
+                sideViewBtn.style.background = 'rgba(40,60,100,0.55)';
+                if (pad) pad.style.display = '';
+                invalidate();
+            }
+            function enterSideView() {
+                // Выходим из других спец-режимов
+                if (topDownOn) {
+                    topDownOn = false;
+                    setCeilingTransparent(false);
+                    showTopMarkers(false);
+                    topDownBtn.textContent = '📐 Сверху';
+                    topDownBtn.style.background = 'rgba(40,60,100,0.55)';
+                }
+                if (overviewOn) {
+                    overviewOn = false;
+                    overviewBtn.textContent = '🔝 Весь потолок';
+                }
+                sideViewSaved = {
+                    camX: camX, camZ: camZ, eyeH: eyeH,
+                    pitch: pitch, yaw: yaw, fov: camFov
+                };
+                sideViewOn = true;
+                // Радиус — чтобы вся комната была в кадре
+                sideOrbitRadius = Math.max(4.5, roomBounds.maxR * 2.2 + 1.2);
+                sideOrbitYaw = yaw || 0.6;
+                sideOrbitPitch = 0.28;
+                camFov = 48;
+                fovS = camFov;
+                syncZoomSlider();
+                setSideFloorGhost(true);
+                if (furnitureGroup) furnitureGroup.visible = false;
+                if (pad) pad.style.display = 'none'; // джойстик ходьбы не нужен в орбите
+                applyCam();
+                sideViewBtn.textContent = '🚶 Выйти сбоку';
+                sideViewBtn.style.background = 'rgba(20,120,80,0.7)';
+                showToast('Пальцем вращайте комнату · передние стены прозрачные', 3500);
+            }
+            sideViewBtn.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!sideViewOn) enterSideView();
+                else exitSideView(true);
+            };
+            lightPanel.appendChild(sideViewBtn);
 
             // Фото потолка для коммерческого предложения
             // Снимок → загрузка на хостинг → короткая URL в payload (лимит Telegram 4096 байт)
@@ -4562,7 +4722,7 @@ async function captureCeilingPhotoForKP() {
             const hint = document.createElement('div');
             hint.className = 'p3d-hint';
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;font-size:11px;text-align:right;max-width:52%;z-index:5;pointer-events:none;';
-            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Щипок / колёсико — зум · «Сцена» — настройки<br>📐 Сверху — прозрачный потолок, тяните свет';
+            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Щипок / колёсико — зум · «Сцена» — настройки<br>📐 Сверху · ↔️ Сбоку — вращение комнаты';
             host.style.position = 'relative';
             host.appendChild(pad);
             host.appendChild(zoomWrap);
@@ -4574,18 +4734,24 @@ async function captureCeilingPhotoForKP() {
             let padActive = false, padId = null;
 
             function setKnob(nx, ny) {
-                // nx,ny -1..1; pad 140×140, knob 40×40 → центр 50, ход ~42
-                knob.style.left = (50 + nx * 42) + 'px';
-                knob.style.top = (50 + ny * 42) + 'px';
+                // nx,ny -1..1; pad 132×132, knob 40×40 → центр 46, ход ~42
+                knob.style.left = (46 + nx * 42) + 'px';
+                knob.style.top = (46 + ny * 42) + 'px';
             }
 
             const el = renderer.domElement;
 
-            // Осмотр (drag по canvas) + перетаскивание света в режиме «сверху»
+            // Осмотр (drag по canvas) + перетаскивание света в режиме «сверху» + орбита «сбоку»
             const onLookDown = (e) => {
                 if (e.target.closest && (e.target.closest('.p3d-pad') || e.target.closest('.p3d-zoom') || e.target.closest('.p3d-panel'))) return;
                 const t = e.touches ? e.touches[0] : e;
                 if (!t) return;
+                if (sideViewOn) {
+                    draggingLook = true;
+                    lx0 = t.clientX; ly0 = t.clientY;
+                    e.preventDefault && e.preventDefault();
+                    return;
+                }
                 if (topDownOn) {
                     const w0 = worldFromPointer(t.clientX, t.clientY);
                     // Только хитбоксы (сферы) — не меши, чтобы не путать приборы
@@ -4689,6 +4855,14 @@ async function captureCeilingPhotoForKP() {
                 if (!draggingLook) return;
                 const dx = t.clientX - lx0, dy = t.clientY - ly0;
                 lx0 = t.clientX; ly0 = t.clientY;
+                if (sideViewOn) {
+                    // Орбита вокруг комнаты
+                    sideOrbitYaw -= dx * 0.008;
+                    sideOrbitPitch = Math.max(-0.15, Math.min(1.15, sideOrbitPitch + dy * 0.006));
+                    applyCam();
+                    e.preventDefault && e.preventDefault();
+                    return;
+                }
                 yaw -= dx * 0.005;
                 pitch = Math.max(-1.2, Math.min(1.35, pitch - dy * 0.004));
                 applyCam();
@@ -4736,12 +4910,14 @@ async function captureCeilingPhotoForKP() {
             // Зум щипком
             let pinchStartDist = 0;
             let pinchStartFov = 60;
+            let pinchStartRadius = 6;
             el.addEventListener('touchstart', (e) => {
                 if (e.touches && e.touches.length === 2) {
                     const dx = e.touches[0].clientX - e.touches[1].clientX;
                     const dy = e.touches[0].clientY - e.touches[1].clientY;
                     pinchStartDist = Math.hypot(dx, dy) || 1;
                     pinchStartFov = camFov;
+                    pinchStartRadius = sideOrbitRadius;
                     draggingLook = false;
                     topDrag = null;
                     topPanLast = null;
@@ -4756,36 +4932,30 @@ async function captureCeilingPhotoForKP() {
                     const dy = e.touches[0].clientY - e.touches[1].clientY;
                     const d = Math.hypot(dx, dy) || 1;
                     const scale = pinchStartDist / d;
-                    camFov = Math.max(FOV_MIN, Math.min(FOV_MAX, pinchStartFov * scale));
-                    // В top-down зум меняет высоту ощущение — оставляем FOV
-                    syncZoomSlider();
+                    if (sideViewOn) {
+                        // В виде сбоку щипок меняет дистанцию орбиты
+                        sideOrbitRadius = Math.max(2.8, Math.min(18, pinchStartRadius * scale));
+                    } else {
+                        camFov = Math.max(FOV_MIN, Math.min(FOV_MAX, pinchStartFov * scale));
+                        syncZoomSlider();
+                    }
                     applyCam();
                     e.preventDefault();
                     return;
                 }
                 if (padActive) return;
-                if (topDownOn) e.preventDefault();
+                if (topDownOn || sideViewOn) e.preventDefault();
                 onLookMove(e);
             }, { passive: false });
             el.addEventListener('touchend', onLookUp);
 
-            // Джойстик: Pointer Events + setPointerCapture (надёжно на iOS/Android/Telegram)
-            function padPointerDown(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                padActive = true;
-                padId = e.pointerId;
-                try { pad.setPointerCapture(e.pointerId); } catch (err) {}
-                padPointerMove(e);
-            }
-            function padPointerMove(e) {
-                if (!padActive) return;
-                if (padId != null && e.pointerId !== padId) return;
-                e.preventDefault();
-                e.stopPropagation();
+            // Джойстик: touch + pointer, move всегда на window (Telegram/iOS WebView часто
+            // не шлёт pointermove на элемент и ломает setPointerCapture).
+            function padApplyFromClient(clientX, clientY) {
                 const rect = pad.getBoundingClientRect();
-                let nx = (e.clientX - rect.left) / rect.width * 2 - 1;
-                let ny = (e.clientY - rect.top) / rect.height * 2 - 1;
+                if (!rect.width || !rect.height) return;
+                let nx = (clientX - rect.left) / rect.width * 2 - 1;
+                let ny = (clientY - rect.top) / rect.height * 2 - 1;
                 const mag = Math.hypot(nx, ny) || 1;
                 if (mag > 1) { nx /= mag; ny /= mag; }
                 setKnob(nx, ny);
@@ -4794,65 +4964,76 @@ async function captureCeilingPhotoForKP() {
                 moveZ = -ny;
                 needsRender = true;
             }
-            function padPointerUp(e) {
-                if (padId != null && e.pointerId !== padId) return;
+            function padEndAll() {
                 padActive = false;
                 padId = null;
                 moveX = 0; moveZ = 0;
                 setKnob(0, 0);
-                try { if (e && e.pointerId != null) pad.releasePointerCapture(e.pointerId); } catch (err) {}
+            }
+            function onPadWindowMove(e) {
+                if (!padActive) return;
+                if (e.touches && e.touches.length) {
+                    var t = e.touches[0];
+                    if (padId != null && t.identifier !== padId && e.touches.length > 1) {
+                        for (var i = 0; i < e.touches.length; i++) {
+                            if (e.touches[i].identifier === padId) { t = e.touches[i]; break; }
+                        }
+                    }
+                    padApplyFromClient(t.clientX, t.clientY);
+                    e.preventDefault();
+                    return;
+                }
+                if (padId != null && e.pointerId != null && e.pointerId !== padId) return;
+                padApplyFromClient(e.clientX, e.clientY);
+                e.preventDefault();
+            }
+            function onPadWindowUp(e) {
+                if (!padActive) return;
+                if (e.pointerId != null && padId != null && e.pointerId !== padId) return;
+                if (e.changedTouches && padId != null) {
+                    var still = false;
+                    for (var i = 0; i < (e.touches ? e.touches.length : 0); i++) {
+                        if (e.touches[i].identifier === padId) { still = true; break; }
+                    }
+                    if (still) return;
+                }
+                padEndAll();
+            }
+            function padPointerDown(e) {
+                if (sideViewOn || topDownOn) return; // в спец-режимах ходьба отключена
+                e.preventDefault();
+                e.stopPropagation();
+                padActive = true;
+                padId = e.pointerId != null ? e.pointerId : 'mouse';
+                try { pad.setPointerCapture && pad.setPointerCapture(e.pointerId); } catch (err) {}
+                padApplyFromClient(e.clientX, e.clientY);
+            }
+            function padTouchStart(e) {
+                if (sideViewOn || topDownOn) return;
+                if (!e.touches || !e.touches.length) return;
+                e.preventDefault();
+                e.stopPropagation();
+                padActive = true;
+                padId = e.touches[0].identifier;
+                padApplyFromClient(e.touches[0].clientX, e.touches[0].clientY);
             }
             pad.addEventListener('pointerdown', padPointerDown, { passive: false });
-            pad.addEventListener('pointermove', padPointerMove, { passive: false });
-            pad.addEventListener('pointerup', padPointerUp, { passive: false });
-            pad.addEventListener('pointercancel', padPointerUp, { passive: false });
-            pad.addEventListener('lostpointercapture', padPointerUp);
-            // Запасной путь для старых WebView без Pointer Events
-            if (!window.PointerEvent) {
-                function padStart(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    padActive = true;
-                    const t = e.touches ? e.touches[0] : e;
-                    padId = t.identifier !== undefined ? t.identifier : 'mouse';
-                    padMoveLegacy(e);
-                }
-                function padMoveLegacy(e) {
-                    if (!padActive) return;
-                    const t = e.touches
-                        ? Array.from(e.touches).find(function (tt) { return tt.identifier === padId; }) || e.touches[0]
-                        : e;
-                    if (!t) return;
-                    e.preventDefault();
-                    const rect = pad.getBoundingClientRect();
-                    let nx = (t.clientX - rect.left) / rect.width * 2 - 1;
-                    let ny = (t.clientY - rect.top) / rect.height * 2 - 1;
-                    const mag = Math.hypot(nx, ny) || 1;
-                    if (mag > 1) { nx /= mag; ny /= mag; }
-                    setKnob(nx, ny);
-                    moveX = -nx;
-                    moveZ = -ny;
-                    needsRender = true;
-                }
-                function padEndLegacy() {
-                    padActive = false;
-                    padId = null;
-                    moveX = 0; moveZ = 0;
-                    setKnob(0, 0);
-                }
-                pad.addEventListener('touchstart', padStart, { passive: false });
-                window.addEventListener('touchmove', function (e) {
-                    if (!padActive) return;
-                    padMoveLegacy(e);
-                }, { passive: false });
-                window.addEventListener('touchend', function (e) {
-                    if (!padActive) return;
-                    padEndLegacy();
-                });
-                pad.addEventListener('mousedown', padStart);
-                window.addEventListener('mousemove', padMoveLegacy);
-                window.addEventListener('mouseup', padEndLegacy);
-            }
+            pad.addEventListener('touchstart', padTouchStart, { passive: false });
+            window.addEventListener('pointermove', onPadWindowMove, { passive: false });
+            window.addEventListener('pointerup', onPadWindowUp, { passive: false });
+            window.addEventListener('pointercancel', onPadWindowUp, { passive: false });
+            window.addEventListener('touchmove', onPadWindowMove, { passive: false });
+            window.addEventListener('touchend', onPadWindowUp, { passive: false });
+            window.addEventListener('touchcancel', onPadWindowUp, { passive: false });
+            // Сохраняем для cleanup
+            pad._dmPadCleanup = function () {
+                window.removeEventListener('pointermove', onPadWindowMove);
+                window.removeEventListener('pointerup', onPadWindowUp);
+                window.removeEventListener('pointercancel', onPadWindowUp);
+                window.removeEventListener('touchmove', onPadWindowMove);
+                window.removeEventListener('touchend', onPadWindowUp);
+                window.removeEventListener('touchcancel', onPadWindowUp);
+            };
 
             // Клавиатура
             const keys = {};
@@ -5153,10 +5334,8 @@ async function captureCeilingPhotoForKP() {
                     el.removeEventListener('wheel', onWheel);
                     el.removeEventListener('touchend', onLookUp);
                     pad.removeEventListener('pointerdown', padPointerDown);
-                    pad.removeEventListener('pointermove', padPointerMove);
-                    pad.removeEventListener('pointerup', padPointerUp);
-                    pad.removeEventListener('pointercancel', padPointerUp);
-                    pad.removeEventListener('lostpointercapture', padPointerUp);
+                    pad.removeEventListener('touchstart', padTouchStart);
+                    try { if (pad._dmPadCleanup) pad._dmPadCleanup(); } catch (e) {}
                     window.removeEventListener('keydown', onKeyDown);
                     window.removeEventListener('keyup', onKeyUp);
                     try {
@@ -5216,7 +5395,7 @@ async function captureCeilingPhotoForKP() {
                 const mlen = Math.hypot(mx, mz);
                 if (mlen > 1) { mx /= mlen; mz /= mlen; }
 
-                if (mx || mz) {
+                if ((mx || mz) && !sideViewOn && !topDownOn) {
                     // движение относительно взгляда (yaw): вперёд + вправо без зеркала
                     const fx = Math.sin(yaw), fz = Math.cos(yaw);
                     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -5225,7 +5404,8 @@ async function captureCeilingPhotoForKP() {
                     if (canStand(nx, camZ)) camX = nx;
                     if (canStand(camX, nz)) camZ = nz;
                 }
-                stepCam(dt);
+                if (!sideViewOn) stepCam(dt);
+                else if (needsRender) { /* side view applies cam directly */ }
 
                 // рендерим только когда что-то изменилось — экономия батареи
                 if (needsRender) {
