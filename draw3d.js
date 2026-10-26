@@ -3526,17 +3526,17 @@
                 camera.fov = fovS;
                 camera.updateProjectionMatrix();
                 if (sideViewOn) {
-                    // Вид снизу вверх: камера низко, смотрим на потолок
+                    // Вид снизу вверх: орбита, можно опустить почти к полу
                     const cx = roomBounds.cx, cz = roomBounds.cz;
-                    const cy = roomH * 0.18;
+                    const cy = roomH * 0.08;
                     const cp = Math.cos(sideOrbitPitch), sp = Math.sin(sideOrbitPitch);
                     const sy = Math.sin(sideOrbitYaw), cyw = Math.cos(sideOrbitYaw);
                     const px = cx + sy * cp * sideOrbitRadius;
-                    const py = Math.max(0.12, cy + sp * sideOrbitRadius);
+                    const py = Math.max(0.05, cy + sp * sideOrbitRadius);
                     const pz = cz + cyw * cp * sideOrbitRadius;
                     camera.up.set(0, 1, 0);
                     camera.position.set(px, py, pz);
-                    camera.lookAt(cx, roomH * 0.92, cz);
+                    camera.lookAt(cx, roomH * 0.95, cz);
                     updateSideOccluderTransparency();
                 } else if (topDownOn) {
                     camera.position.set(camXS, eyeHS, camZS);
@@ -3658,6 +3658,12 @@
 
             const FOV_MIN = 28, FOV_MAX = 85; // MIN = макс. приближение, MAX = широкий угол
             function zoomBy(delta) {
+                if (sideViewOn) {
+                    // ПК-колёсико / зум в виде сбоку — дистанция орбиты
+                    sideOrbitRadius = Math.max(1.8, Math.min(22, sideOrbitRadius + delta * 0.18));
+                    applyCam();
+                    return;
+                }
                 camFov = Math.max(FOV_MIN, Math.min(FOV_MAX, camFov + delta));
                 applyCam();
                 syncZoomSlider();
@@ -3672,58 +3678,21 @@
             }
             let zoomSlider = null;
 
-            // Джойстик + D-pad (кнопки надёжнее в Telegram WebView, чем один стик)
+            // Виртуальный джойстик (только стик)
+            // События — на document (см. ниже), pad только визуал + hit-zone.
             const pad = document.createElement('div');
-            pad.style.cssText = 'position:absolute;left:10px;bottom:18px;' +
-                'width:120px;height:120px;border-radius:60px;background:rgba(255,255,255,0.18);' +
-                'border:2px solid rgba(255,255,255,0.45);touch-action:none;-webkit-user-select:none;user-select:none;' +
-                'z-index:60;pointer-events:auto;-webkit-touch-callout:none;';
+            pad.style.cssText = 'position:absolute;left:12px;bottom:20px;' +
+                'width:128px;height:128px;border-radius:64px;background:rgba(255,255,255,0.22);' +
+                'border:2px solid rgba(255,255,255,0.55);touch-action:none;-webkit-user-select:none;user-select:none;' +
+                'z-index:9999;pointer-events:auto;-webkit-touch-callout:none;' +
+                'box-shadow:0 4px 18px rgba(0,0,0,0.4);';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.7);pointer-events:none;';
+            knob.style.cssText = 'position:absolute;left:44px;top:44px;width:40px;height:40px;border-radius:20px;' +
+                'background:rgba(255,255,255,0.9);pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.35);';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
-
-            // Крест-кнопки — запасной способ ходить на телефоне
-            const dpad = document.createElement('div');
-            dpad.className = 'p3d-dpad';
-            dpad.style.cssText = 'position:absolute;left:138px;bottom:18px;width:108px;height:108px;z-index:60;pointer-events:auto;touch-action:none;';
-            function mkDpadBtn(label, mx, mz, left, top) {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.textContent = label;
-                b.style.cssText = 'position:absolute;left:' + left + 'px;top:' + top + 'px;width:34px;height:34px;' +
-                    'border-radius:10px;border:1px solid rgba(255,255,255,0.4);background:rgba(20,24,32,0.72);' +
-                    'color:#fff;font-size:14px;line-height:1;padding:0;touch-action:none;-webkit-user-select:none;';
-                function press(e) {
-                    e.preventDefault(); e.stopPropagation();
-                    if (sideViewOn || topDownOn) return;
-                    moveX = mx; moveZ = mz; needsRender = true;
-                    b.style.background = 'rgba(40,120,80,0.85)';
-                }
-                function release(e) {
-                    if (e) { e.preventDefault(); e.stopPropagation(); }
-                    moveX = 0; moveZ = 0;
-                    b.style.background = 'rgba(20,24,32,0.72)';
-                    needsRender = true;
-                }
-                b.addEventListener('pointerdown', press, { passive: false });
-                b.addEventListener('pointerup', release, { passive: false });
-                b.addEventListener('pointercancel', release, { passive: false });
-                b.addEventListener('pointerleave', release, { passive: false });
-                b.addEventListener('touchstart', press, { passive: false });
-                b.addEventListener('touchend', release, { passive: false });
-                b.addEventListener('touchcancel', release, { passive: false });
-                dpad.appendChild(b);
-                return b;
-            }
-            // moveX/moveZ ещё не объявлены — кнопки пишут в замыкание после объявления через window-хук
-            // Временно храним целевые значения; ниже перепривяжем после let moveX
-            dpad._pending = [];
-            mkDpadBtn('▲', 0, 1, 37, 2);
-            mkDpadBtn('▼', 0, -1, 37, 72);
-            mkDpadBtn('◀', 1, 0, 2, 37);
-            mkDpadBtn('▶', -1, 0, 72, 37);
+            const dpad = { style: { display: '' } }; // совместимость со старыми hide/show
 
             // Зум ползунком — по требованию, отдельно от щипка/колёсика
             const zoomWrap = document.createElement('div');
@@ -4584,9 +4553,9 @@
                 // Радиус — чтобы вся комната была в кадре
                 sideOrbitRadius = Math.max(4.5, roomBounds.maxR * 2.2 + 1.2);
                 sideOrbitYaw = yaw || 0.6;
-                // отрицательный pitch = камера ниже, взгляд на потолок снизу
-                sideOrbitPitch = -0.42;
-                camFov = 52;
+                // сильно снизу: камера почти у пола, взгляд на потолок
+                sideOrbitPitch = -0.95;
+                camFov = 55;
                 fovS = camFov;
                 syncZoomSlider();
                 setSideFloorGhost(true);
@@ -4841,11 +4810,10 @@ async function captureCeilingPhotoForKP() {
             const hint = document.createElement('div');
             hint.className = 'p3d-hint';
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;font-size:11px;text-align:right;max-width:52%;z-index:5;pointer-events:none;';
-            hint.innerHTML = 'Пальцем — смотреть · стик/стрелки — ходить<br>Щипок — зум · ↔️ Сбоку — вид снизу<br>📐 Сверху — расстановка света';
+            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Колёсико/щипок — зум · ↔️ Сбоку — вид снизу';
             host.style.position = 'relative';
             host.appendChild(pad);
-            host.appendChild(dpad);
-            host.appendChild(zoomWrap);
+                        host.appendChild(zoomWrap);
             host.appendChild(lightPanel);
             host.appendChild(hint);
 
@@ -4854,9 +4822,9 @@ async function captureCeilingPhotoForKP() {
             let padActive = false, padId = null;
 
             function setKnob(nx, ny) {
-                // nx,ny -1..1; pad 120×120, knob 40×40 → центр 40, ход ~36
-                knob.style.left = (40 + nx * 36) + 'px';
-                knob.style.top = (40 + ny * 36) + 'px';
+                // nx,ny -1..1; pad 128×128, knob 40×40 → центр 44, ход ~40
+                knob.style.left = (44 + nx * 40) + 'px';
+                knob.style.top = (44 + ny * 40) + 'px';
             }
 
             const el = renderer.domElement;
@@ -4977,8 +4945,9 @@ async function captureCeilingPhotoForKP() {
                 lx0 = t.clientX; ly0 = t.clientY;
                 if (sideViewOn) {
                     // Орбита вокруг комнаты
-                    sideOrbitYaw -= dx * 0.008;
-                    sideOrbitPitch = Math.max(-0.85, Math.min(0.95, sideOrbitPitch + dy * 0.006));
+                    sideOrbitYaw -= dx * 0.01;
+                    // почти с пола вверх (-1.2) … выше потолка (0.9)
+                    sideOrbitPitch = Math.max(-1.25, Math.min(0.9, sideOrbitPitch + dy * 0.008));
                     applyCam();
                     e.preventDefault && e.preventDefault();
                     return;
@@ -5069,8 +5038,9 @@ async function captureCeilingPhotoForKP() {
             }, { passive: false });
             el.addEventListener('touchend', onLookUp);
 
-            // Джойстик: touch + pointer, move всегда на window (Telegram/iOS WebView часто
-            // не шлёт pointermove на элемент и ломает setPointerCapture).
+            // ===== Джойстик: document-level (Telegram WebView) =====
+            // События ловим на document — canvas часто перехватывает touch раньше absolute-pad.
+            // Зона стика = getBoundingClientRect(pad); визуальный pad только для отображения.
             function padApplyFromClient(clientX, clientY) {
                 const rect = pad.getBoundingClientRect();
                 if (!rect.width || !rect.height) return;
@@ -5079,80 +5049,115 @@ async function captureCeilingPhotoForKP() {
                 const mag = Math.hypot(nx, ny) || 1;
                 if (mag > 1) { nx /= mag; ny /= mag; }
                 setKnob(nx, ny);
-                // вверх стика = вперёд; вправо стика = вправо
+                // вверх = вперёд, вправо = вправо
                 moveX = -nx;
                 moveZ = -ny;
                 needsRender = true;
             }
             function padEndAll() {
+                if (!padActive) return;
                 padActive = false;
                 padId = null;
-                moveX = 0; moveZ = 0;
+                moveX = 0;
+                moveZ = 0;
                 setKnob(0, 0);
+                needsRender = true;
             }
-            function onPadWindowMove(e) {
-                if (!padActive) return;
-                if (e.touches && e.touches.length) {
-                    var t = e.touches[0];
-                    if (padId != null && t.identifier !== padId && e.touches.length > 1) {
-                        for (var i = 0; i < e.touches.length; i++) {
-                            if (e.touches[i].identifier === padId) { t = e.touches[i]; break; }
-                        }
-                    }
-                    padApplyFromClient(t.clientX, t.clientY);
-                    e.preventDefault();
+            function pointInPad(clientX, clientY) {
+                const r = pad.getBoundingClientRect();
+                // небольшой запас вокруг круга
+                const pad_ = 12;
+                return clientX >= r.left - pad_ && clientX <= r.right + pad_ &&
+                    clientY >= r.top - pad_ && clientY <= r.bottom + pad_;
+            }
+            function walkAllowed() {
+                return !sideViewOn && !topDownOn && pad.style.display !== 'none';
+            }
+            function onDocPointerDown(e) {
+                if (!walkAllowed()) return;
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                // если ткнули в UI-панель — не трогаем
+                if (e.target && e.target.closest && (
+                    e.target.closest('.p3d-panel') || e.target.closest('.p3d-zoom') ||
+                    e.target.closest('.p3d-head')
+                )) return;
+                if (!pointInPad(e.clientX, e.clientY) && e.target !== pad && !(e.target && e.target.classList && e.target.classList.contains('p3d-knob'))) {
                     return;
                 }
+                padActive = true;
+                padId = e.pointerId != null ? e.pointerId : 'mouse';
+                padApplyFromClient(e.clientX, e.clientY);
+                try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
+            }
+            function onDocPointerMove(e) {
+                if (!padActive) return;
                 if (padId != null && e.pointerId != null && e.pointerId !== padId) return;
                 padApplyFromClient(e.clientX, e.clientY);
-                e.preventDefault();
+                try { e.preventDefault(); } catch (err) {}
             }
-            function onPadWindowUp(e) {
+            function onDocPointerUp(e) {
                 if (!padActive) return;
-                if (e.pointerId != null && padId != null && e.pointerId !== padId) return;
-                if (e.changedTouches && padId != null) {
-                    var still = false;
-                    for (var i = 0; i < (e.touches ? e.touches.length : 0); i++) {
-                        if (e.touches[i].identifier === padId) { still = true; break; }
+                if (padId != null && e.pointerId != null && e.pointerId !== padId) return;
+                padEndAll();
+            }
+            function onDocTouchStart(e) {
+                if (!walkAllowed()) return;
+                if (!e.touches || !e.touches.length) return;
+                // multitouch (zoom) — не джойстик
+                if (e.touches.length >= 2) { padEndAll(); return; }
+                const t0 = e.touches[0];
+                if (e.target && e.target.closest && (
+                    e.target.closest('.p3d-panel') || e.target.closest('.p3d-zoom')
+                )) return;
+                if (!pointInPad(t0.clientX, t0.clientY)) return;
+                padActive = true;
+                padId = t0.identifier;
+                padApplyFromClient(t0.clientX, t0.clientY);
+                try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
+            }
+            function onDocTouchMove(e) {
+                if (!padActive) return;
+                if (!e.touches || !e.touches.length) return;
+                if (e.touches.length >= 2) { padEndAll(); return; }
+                let t0 = e.touches[0];
+                if (padId != null) {
+                    for (let i = 0; i < e.touches.length; i++) {
+                        if (e.touches[i].identifier === padId) { t0 = e.touches[i]; break; }
                     }
-                    if (still) return;
+                }
+                padApplyFromClient(t0.clientX, t0.clientY);
+                try { e.preventDefault(); } catch (err) {}
+            }
+            function onDocTouchEnd(e) {
+                if (!padActive) return;
+                // если палец стика ещё на экране — не сбрасываем
+                if (e.touches && padId != null) {
+                    for (let i = 0; i < e.touches.length; i++) {
+                        if (e.touches[i].identifier === padId) return;
+                    }
                 }
                 padEndAll();
             }
-            function padPointerDown(e) {
-                if (sideViewOn || topDownOn) return; // в спец-режимах ходьба отключена
-                e.preventDefault();
-                e.stopPropagation();
-                padActive = true;
-                padId = e.pointerId != null ? e.pointerId : 'mouse';
-                try { pad.setPointerCapture && pad.setPointerCapture(e.pointerId); } catch (err) {}
-                padApplyFromClient(e.clientX, e.clientY);
-            }
-            function padTouchStart(e) {
-                if (sideViewOn || topDownOn) return;
-                if (!e.touches || !e.touches.length) return;
-                e.preventDefault();
-                e.stopPropagation();
-                padActive = true;
-                padId = e.touches[0].identifier;
-                padApplyFromClient(e.touches[0].clientX, e.touches[0].clientY);
-            }
-            pad.addEventListener('pointerdown', padPointerDown, { passive: false });
-            pad.addEventListener('touchstart', padTouchStart, { passive: false });
-            window.addEventListener('pointermove', onPadWindowMove, { passive: false });
-            window.addEventListener('pointerup', onPadWindowUp, { passive: false });
-            window.addEventListener('pointercancel', onPadWindowUp, { passive: false });
-            window.addEventListener('touchmove', onPadWindowMove, { passive: false });
-            window.addEventListener('touchend', onPadWindowUp, { passive: false });
-            window.addEventListener('touchcancel', onPadWindowUp, { passive: false });
-            // Сохраняем для cleanup
+            // pointer на pad-элементе (десктоп / современные WebView)
+            pad.addEventListener('pointerdown', onDocPointerDown, { passive: false });
+            // document: ловим move/up даже если палец ушёл с pad
+            document.addEventListener('pointermove', onDocPointerMove, { passive: false });
+            document.addEventListener('pointerup', onDocPointerUp, { passive: false });
+            document.addEventListener('pointercancel', onDocPointerUp, { passive: false });
+            // touch на document — главный путь для Telegram Android/iOS
+            document.addEventListener('touchstart', onDocTouchStart, { passive: false, capture: true });
+            document.addEventListener('touchmove', onDocTouchMove, { passive: false, capture: true });
+            document.addEventListener('touchend', onDocTouchEnd, { passive: false, capture: true });
+            document.addEventListener('touchcancel', onDocTouchEnd, { passive: false, capture: true });
             pad._dmPadCleanup = function () {
-                window.removeEventListener('pointermove', onPadWindowMove);
-                window.removeEventListener('pointerup', onPadWindowUp);
-                window.removeEventListener('pointercancel', onPadWindowUp);
-                window.removeEventListener('touchmove', onPadWindowMove);
-                window.removeEventListener('touchend', onPadWindowUp);
-                window.removeEventListener('touchcancel', onPadWindowUp);
+                pad.removeEventListener('pointerdown', onDocPointerDown);
+                document.removeEventListener('pointermove', onDocPointerMove);
+                document.removeEventListener('pointerup', onDocPointerUp);
+                document.removeEventListener('pointercancel', onDocPointerUp);
+                document.removeEventListener('touchstart', onDocTouchStart, true);
+                document.removeEventListener('touchmove', onDocTouchMove, true);
+                document.removeEventListener('touchend', onDocTouchEnd, true);
+                document.removeEventListener('touchcancel', onDocTouchEnd, true);
             };
 
             // Клавиатура
@@ -5453,15 +5458,12 @@ async function captureCeilingPhotoForKP() {
                     window.removeEventListener('mouseup', onLookUp);
                     el.removeEventListener('wheel', onWheel);
                     el.removeEventListener('touchend', onLookUp);
-                    pad.removeEventListener('pointerdown', padPointerDown);
-                    pad.removeEventListener('touchstart', padTouchStart);
                     try { if (pad._dmPadCleanup) pad._dmPadCleanup(); } catch (e) {}
                     window.removeEventListener('keydown', onKeyDown);
                     window.removeEventListener('keyup', onKeyUp);
                     try {
                         host.removeChild(pad);
-                        host.removeChild(dpad);
-                        host.removeChild(hint);
+                                                host.removeChild(hint);
                         host.removeChild(lightPanel);
                     } catch (e) {}
                 }
