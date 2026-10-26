@@ -317,6 +317,30 @@
             });
         }
 
+        function show3DPreviewError(message) {
+            const host = document.getElementById('client-preview-3d');
+            if (!host) { showToast('Не удалось запустить 3D: ' + String(message || 'ошибка'), 5000); return; }
+            host.style.display = 'block';
+            host.style.position = 'relative';
+            host.style.width = '100%';
+            host.style.height = '100%';
+            host.style.minHeight = '280px';
+            host.innerHTML = '';
+            const panel = document.createElement('div');
+            panel.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;box-sizing:border-box;background:radial-gradient(circle at 50% 35%,#273345,#10141b 70%);color:#fff;font:14px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;';
+            const icon = document.createElement('div'); icon.textContent = '🏠'; icon.style.cssText = 'font-size:42px;';
+            const title = document.createElement('strong'); title.textContent = '3D-сцена не запустилась'; title.style.cssText = 'font-size:18px;';
+            const detail = document.createElement('div'); detail.textContent = String(message || 'Неизвестная ошибка').slice(0,240); detail.style.cssText = 'max-width:420px;color:#cbd5e1;overflow-wrap:anywhere;';
+            const actions = document.createElement('div'); actions.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:4px;';
+            const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '↻ Повторить'; retry.style.cssText = 'border:0;border-radius:9px;padding:10px 14px;background:#e7a44d;color:#151a21;font-weight:700;';
+            retry.onclick = function () { renderClient3DRealistic().catch(function (e) { show3DPreviewError(e && e.message ? e.message : e); }); };
+            const plan = document.createElement('button'); plan.type = 'button'; plan.textContent = 'Посмотреть 2D-план'; plan.style.cssText = 'border:1px solid #6b7788;border-radius:9px;padding:10px 14px;background:#202938;color:#fff;font-weight:600;';
+            plan.onclick = function () { showClientPreview('2d'); };
+            actions.appendChild(retry); actions.appendChild(plan);
+            panel.appendChild(icon); panel.appendChild(title); panel.appendChild(detail); panel.appendChild(actions);
+            host.appendChild(panel);
+        }
+
         async function showClientPreview(mode) {
             if (!points || points.length < 3) {
                 showToast('Сначала постройте контур потолка', 2500);
@@ -350,9 +374,9 @@
                     });
                     await renderClient3DRealistic();
                 } catch (e) {
-                    console.error(e);
-                    var msg = (e && e.message) ? String(e.message).slice(0, 80) : 'ошибка';
-                    showToast('3D: ' + msg, 4000);
+                    console.error('3D preview initialization failed:', e);
+                    var msg = (e && e.message) ? String(e.message).slice(0, 240) : String(e || 'ошибка');
+                    show3DPreviewError(msg);
                 }
             } else {
                 disposeThreePreview();
@@ -653,7 +677,7 @@
                 });
             } catch (eGl) {
                 console.error('WebGLRenderer failed', eGl);
-                showToast('WebGL недоступен на устройстве', 3500);
+                show3DPreviewError('WebGL недоступен на этом устройстве или заблокирован браузером. ' + ((eGl && eGl.message) || ''));
                 return;
             }
             renderer.setSize(W, H);
@@ -734,7 +758,9 @@
             host.style.position = 'relative';
             host.style.width = '100%';
             host.style.height = '100%';
-            host.style.minHeight = '200px';
+            host.style.minHeight = '280px';
+            host.style.flex = '1 1 auto';
+            host.style.overflow = 'hidden';
 
             // Контур комнаты в метрах (XZ), CCW для корректной заливки
             const roomContour = points.map(p => toM(p.x, p.y));
@@ -5047,6 +5073,10 @@ async function captureCeilingPhotoForKP() {
                     renderFrame();
                 }
             };
+            // Принудительно выводим первый кадр сразу после сборки сцены.
+            // Если постобработка не поддерживается, renderFrame сам переключится на обычный рендер.
+            needsRender = true;
+            try { renderFrame(); } catch (firstFrameErr) { console.warn('Initial 3D frame failed:', firstFrameErr); }
             animate();
         }
 
