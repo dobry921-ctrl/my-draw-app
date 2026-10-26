@@ -381,6 +381,55 @@
             }
         }
 
+        function show3DLoadingScreen(hostEl) {
+            var host = hostEl || document.getElementById('client-preview-host') || document.getElementById('client-preview-3d');
+            if (!host) return;
+            try {
+                var prev = document.getElementById('p3d-loading');
+                if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+            } catch (e0) {}
+            var tips = [
+                'Проведите пальцем по экрану — осмотрите комнату со всех сторон.',
+                'Джойстик слева внизу — «прогулка» по комнате.',
+                'В панели «Сцена» можно сменить цвет стен, пола и штор.',
+                'Режим «Вид сбоку» — удобно оценить потолок снизу.',
+                'Щипок двумя пальцами (или колёсико мыши) — приблизить / отдалить.',
+                'Сценарии света: день, уют, споты, линии — в панели «Сцена».',
+                'Когда всё понравится — нажмите «Получить смету».'
+            ];
+            var tip = tips[Math.floor(Math.random() * tips.length)];
+            try {
+                var cs = window.getComputedStyle(host);
+                if (cs && cs.position === 'static') host.style.position = 'relative';
+            } catch (e1) {}
+            var box = document.createElement('div');
+            box.id = 'p3d-loading';
+            box.setAttribute('role', 'status');
+            box.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+                'padding:24px 20px;box-sizing:border-box;background:linear-gradient(165deg,#0e121a 0%,#1a2233 45%,#121820 100%);' +
+                'color:#e8eef6;text-align:center;z-index:5;font-family:system-ui,-apple-system,sans-serif;';
+            box.innerHTML =
+                '<div style="width:42px;height:42px;border:3px solid rgba(255,255,255,0.15);border-top-color:#ffd6a0;' +
+                'border-radius:50%;animation:p3dspin 0.85s linear infinite;margin-bottom:18px;"></div>' +
+                '<div style="font-size:17px;font-weight:700;letter-spacing:0.02em;margin-bottom:8px;">Собираем вашу комнату в 3D…</div>' +
+                '<div style="font-size:13px;line-height:1.45;color:#a8b4c4;max-width:320px;margin-bottom:18px;">' +
+                'Пока сцена загружается, загляните в подсказку ниже — так будет проще осмотреть потолок и свет.</div>' +
+                '<div style="max-width:340px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.07);' +
+                'border:1px solid rgba(255,255,255,0.12);font-size:13px;line-height:1.5;color:#d7e0ec;">💡 ' + tip + '</div>' +
+                '<div style="margin-top:16px;font-size:11px;color:#7a8796;">Обычно это занимает несколько секунд</div>';
+            if (!document.getElementById('p3d-spin-style')) {
+                var st = document.createElement('style');
+                st.id = 'p3d-spin-style';
+                st.textContent = '@keyframes p3dspin{to{transform:rotate(360deg)}}';
+                document.head.appendChild(st);
+            }
+            host.appendChild(box);
+        }
+        function hide3DLoadingScreen() {
+            var el = document.getElementById('p3d-loading');
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+
         function show3DPreviewError(message) {
             const host = document.getElementById('client-preview-3d');
             if (!host) { showToast('Не удалось запустить 3D: ' + String(message || 'ошибка'), 5000); return; }
@@ -484,12 +533,13 @@
                     d3.style.width = '100%';
                     d3.style.height = '100%';
                     d3.style.minHeight = '280px';
+                    // Информационный экран на родителе (не стирается host.innerHTML='')
+                    try { show3DLoadingScreen(hostWrap || d3); } catch (eL) {}
                 }
                 try {
-                    showToast('Загрузка 3D…', 1500);
                     // Даем оверлею отрисоваться и получить размеры (важно для Telegram WebView)
                     await new Promise(function (r) {
-                        requestAnimationFrame(function () { r(); });
+                        requestAnimationFrame(function () { requestAnimationFrame(function () { r(); }); });
                     });
                     await renderClient3DRealistic();
                 } catch (e) {
@@ -729,6 +779,14 @@
             const host = document.getElementById('client-preview-3d');
             if (!host) throw new Error('Контейнер 3D не найден (#client-preview-3d)');
             host.innerHTML = '';
+            // старый джойстик мог остаться на #client-preview-host
+            try {
+                var oldJoy = document.getElementById('p3d-joystick');
+                if (oldJoy && oldJoy.parentNode) oldJoy.parentNode.removeChild(oldJoy);
+                document.querySelectorAll('.p3d-pad,.p3d-zoom,.p3d-panel,.p3d-hint').forEach(function (n) {
+                    if (n && n.parentNode && n.parentNode.id === 'client-preview-host') n.parentNode.removeChild(n);
+                });
+            } catch (eOld) {}
             host.style.display = 'block';
             host.style.position = 'absolute';
             host.style.inset = '0';
@@ -3678,21 +3736,24 @@
             }
             let zoomSlider = null;
 
-            // Виртуальный джойстик (только стик)
-            // События — на document (см. ниже), pad только визуал + hit-zone.
+            // Виртуальный джойстик (только стик). Вешаем на #client-preview-host (sibling 3d),
+            // иначе в Telegram WebView canvas часто перекрывает absolute-дети внутри #client-preview-3d.
             const pad = document.createElement('div');
-            pad.style.cssText = 'position:absolute;left:12px;bottom:20px;' +
-                'width:128px;height:128px;border-radius:64px;background:rgba(255,255,255,0.22);' +
-                'border:2px solid rgba(255,255,255,0.55);touch-action:none;-webkit-user-select:none;user-select:none;' +
-                'z-index:9999;pointer-events:auto;-webkit-touch-callout:none;' +
-                'box-shadow:0 4px 18px rgba(0,0,0,0.4);';
+            pad.id = 'p3d-joystick';
+            pad.style.cssText = 'position:absolute;left:10px;bottom:14px;' +
+                'width:136px;height:136px;border-radius:68px;background:rgba(30,36,48,0.55);' +
+                'border:2px solid rgba(255,255,255,0.65);touch-action:none;-webkit-user-select:none;user-select:none;' +
+                'z-index:10050;pointer-events:auto;-webkit-touch-callout:none;' +
+                'box-shadow:0 6px 22px rgba(0,0,0,0.45);';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:44px;top:44px;width:40px;height:40px;border-radius:20px;' +
-                'background:rgba(255,255,255,0.9);pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.35);';
+            knob.style.cssText = 'position:absolute;left:48px;top:48px;width:40px;height:40px;border-radius:20px;' +
+                'background:rgba(255,255,255,0.92);pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,0.4);';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
             const dpad = { style: { display: '' } }; // совместимость со старыми hide/show
+            // UI-слой: host 3d или его родитель
+            const uiLayer = document.getElementById('client-preview-host') || host;
 
             // Зум ползунком — по требованию, отдельно от щипка/колёсика
             const zoomWrap = document.createElement('div');
@@ -4141,10 +4202,28 @@
             }
             addColorRow('Стены', preferredWallColor || '#ebe6dc', function (hex) {
                 preferredWallColor = hex;
-                if (wallMat) {
-                    wallMat.color.set(hex);
-                    wallMat.needsUpdate = true;
+                function applyWallColor(mat) {
+                    if (!mat) return;
+                    try { mat.color.setStyle(hex); }
+                    catch (e1) {
+                        try {
+                            var n = parseInt(String(hex).replace('#', ''), 16);
+                            if (Number.isFinite(n)) mat.color.setHex(n);
+                        } catch (e2) {}
+                    }
+                    // карта обоев остаётся, color её тонирует
+                    mat.needsUpdate = true;
                 }
+                applyWallColor(wallMat);
+                // панели стен — клоны material, их тоже обновляем
+                if (wallMeshList && wallMeshList.length) {
+                    wallMeshList.forEach(function (m) {
+                        if (!m) return;
+                        if (Array.isArray(m.material)) m.material.forEach(applyWallColor);
+                        else applyWallColor(m.material);
+                    });
+                }
+                invalidate();
                 try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
             });
             addColorRow('Пол', preferredFloorColor || '#c9a66b', function (hex) {
@@ -4812,19 +4891,20 @@ async function captureCeilingPhotoForKP() {
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;font-size:11px;text-align:right;max-width:52%;z-index:5;pointer-events:none;';
             hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Колёсико/щипок — зум · ↔️ Сбоку — вид снизу';
             host.style.position = 'relative';
-            host.appendChild(pad);
-                        host.appendChild(zoomWrap);
-            host.appendChild(lightPanel);
-            host.appendChild(hint);
+            uiLayer.appendChild(pad);
+            uiLayer.appendChild(zoomWrap);
+            uiLayer.appendChild(lightPanel);
+            uiLayer.appendChild(hint);
+            try { hide3DLoadingScreen(); } catch (eH) {}
 
             let moveX = 0, moveZ = 0; // локальные ввод
             let draggingLook = false, lx0 = 0, ly0 = 0;
             let padActive = false, padId = null;
 
             function setKnob(nx, ny) {
-                // nx,ny -1..1; pad 128×128, knob 40×40 → центр 44, ход ~40
-                knob.style.left = (44 + nx * 40) + 'px';
-                knob.style.top = (44 + ny * 40) + 'px';
+                // nx,ny -1..1; pad 136×136, knob 40×40 → центр 48, ход ~44
+                knob.style.left = (48 + nx * 44) + 'px';
+                knob.style.top = (48 + ny * 44) + 'px';
             }
 
             const el = renderer.domElement;
@@ -5462,9 +5542,12 @@ async function captureCeilingPhotoForKP() {
                     window.removeEventListener('keydown', onKeyDown);
                     window.removeEventListener('keyup', onKeyUp);
                     try {
-                        host.removeChild(pad);
-                                                host.removeChild(hint);
-                        host.removeChild(lightPanel);
+                        if (pad.parentNode) pad.parentNode.removeChild(pad);
+                        if (hint.parentNode) hint.parentNode.removeChild(hint);
+                        if (lightPanel.parentNode) lightPanel.parentNode.removeChild(lightPanel);
+                        if (zoomWrap && zoomWrap.parentNode) zoomWrap.parentNode.removeChild(zoomWrap);
+                        var oldJoy = document.getElementById('p3d-joystick');
+                        if (oldJoy && oldJoy.parentNode) oldJoy.parentNode.removeChild(oldJoy);
                     } catch (e) {}
                 }
             };
