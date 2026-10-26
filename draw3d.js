@@ -2494,102 +2494,104 @@
                 }
 
                 if (t === 'strip' && f.points && f.points.length >= 2) {
-                    try {
-                        const isTrack = /трек|track/i.test((f.material || f.name || '').toString());
-                        const sk = isTrack ? 'track' : 'strip';
-                        const r = isTrack ? 0.022 : 0.016;
-                        const stripMat = new THREE.MeshLambertMaterial({
-                            color: isTrack ? 0x333333 : 0xfff2aa,
-                            emissive: isTrack ? 0x222222 : 0xffe08a,
-                            emissiveIntensity: isTrack ? 0.4 : 1.2,
-                            side: THREE.DoubleSide
-                        });
-                        const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
-                        for (let i = 0; i < ptsM.length - 1; i++) {
-                            const a = ptsM[i], b = ptsM[i + 1];
-                            const dx = b.x - a.x, dz = b.z - a.z;
-                            const len = Math.hypot(dx, dz) || 0.01;
-                            const mesh = new THREE.Mesh(
-                                new THREE.CylinderGeometry(r, r, len, 10),
-                                stripMat
-                            );
-                            mesh.position.set((a.x + b.x) / 2, roomH - 0.04, (a.z + b.z) / 2);
-                            mesh.rotation.z = Math.PI / 2;
-                            mesh.rotation.y = -Math.atan2(dz, dx);
-                            scene.add(mesh);
-                            ceilingLights.push({
-                                kind: sk, light: null, mesh: mesh,
-                                baseIntensity: 0,
-                                baseEmissive: stripMat.emissiveIntensity,
-                                onColor: isTrack ? 0x333333 : 0xfff2aa,
-                                offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
-                            });
-                            _track(mesh);
-                        }
-                        // равномерный свет вдоль полосы — реально освещает комнату
-                        let totalLen = 0;
-                        const segs = [];
-                        for (let i = 0; i < ptsM.length - 1; i++) {
-                            const a = ptsM[i], b = ptsM[i + 1];
-                            const dx = b.x - a.x, dz = b.z - a.z;
-                            const len = Math.hypot(dx, dz) || 0.01;
-                            segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
-                            totalLen += len;
-                        }
-                        // Световая полоса 15 Вт/м (трек — та же шкала)
-                        // на мобиле режем число точечных, чтобы не исчерпать _plBudget и не упасть на null
-                        const nWant = Math.max(2, Math.min(isMobile3d ? 3 : 6, Math.ceil(totalLen / 1.2)));
-                        const stripWatts = totalLen * LIGHT_WATTS.strip_per_m;
-                        const baseI = wattsToIntensity(stripWatts) / nWant;
-                        for (let k = 0; k < nWant; k++) {
-                            const dist = ((k + 0.5) / nWant) * totalLen;
-                            let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
-                            for (let s = 0; s < segs.length; s++) {
-                                if (acc + segs[s].len >= dist) {
-                                    const tt = (dist - acc) / segs[s].len;
-                                    px = segs[s].a.x + segs[s].dx * tt;
-                                    pz = segs[s].a.z + segs[s].dz * tt;
-                                    break;
-                                }
-                                acc += segs[s].len;
-                            }
-                            // addStripPointLight на мобиле может вернуть null (лимит PointLight)
-                            const pl = addStripPointLight(isTrack ? 0xe8e0ff : 0xfff2d0, baseI, 6.5, 2.4);
-                            if (pl) {
-                                pl.position.set(px, roomH - 0.35, pz);
-                                ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
-                                _track(pl);
-                            }
-                        }
-                        // общий мягкий fill ~25% мощности полосы
-                        const fillI = wattsToIntensity(stripWatts) * 0.25 * (isTrack ? 0.85 : 1);
-                        const fill = new THREE.HemisphereLight(
-                            isTrack ? 0xe8e0ff : 0xfff5e0,
-                            isTrack ? 0x2a2830 : 0x2a2820,
-                            fillI
+                    const isTrack = /трек|track/i.test((f.material || '').toString());
+                    const sk = isTrack ? 'track' : 'strip';
+                    const r = isTrack ? 0.022 : 0.016;
+                    const stripMat = new THREE.MeshLambertMaterial({
+                        color: isTrack ? 0x333333 : 0xfff2aa,
+                        emissive: isTrack ? 0x222222 : 0xffe08a,
+                        emissiveIntensity: isTrack ? 0.4 : 1.2,
+                        side: THREE.DoubleSide
+                    });
+                    const ptsM = f.points.map(function (p) { return toM(p.x, p.y); });
+                    for (let i = 0; i < ptsM.length - 1; i++) {
+                        const a = ptsM[i], b = ptsM[i + 1];
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const len = Math.hypot(dx, dz) || 0.01;
+                        const mesh = new THREE.Mesh(
+                            new THREE.CylinderGeometry(r, r, len, 10),
+                            stripMat
                         );
-                        scene.add(fill);
-                        ceilingLights.push({ kind: sk, light: fill, mesh: null, baseIntensity: fillI, baseEmissive: 0, onColor: 0xfff8e0 });
-                        // HemisphereLight — глобальный, не трекаем в группу полосы
-                        // шары на углах — плавная стыковка сегментов
-                        for (let i = 0; i < ptsM.length; i++) {
-                            const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.05, 10, 10), stripMat);
-                            j.position.set(ptsM[i].x, roomH - 0.04, ptsM[i].z);
-                            scene.add(j);
-                            ceilingLights.push({
-                                kind: sk, light: null, mesh: j,
-                                baseIntensity: 0,
-                                baseEmissive: stripMat.emissiveIntensity,
-                                onColor: isTrack ? 0x333333 : 0xfff2aa,
-                                offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
-                            });
-                            _track(j);
-                        }
-                        const mid = ptsM[Math.floor(ptsM.length / 2)] || ptsM[0];
-                        _registerMoveGroup(sk, mid.x, mid.z);
-                    } catch (eStrip) {
-                        console.warn('strip 3D place failed', eStrip);
+                        mesh.position.set((a.x + b.x) / 2, roomH - 0.04, (a.z + b.z) / 2);
+                        mesh.rotation.z = Math.PI / 2;
+                        mesh.rotation.y = -Math.atan2(dz, dx);
+                        scene.add(mesh);
+                        ceilingLights.push({
+                            kind: sk, light: null, mesh,
+                            baseIntensity: 0,
+                            baseEmissive: stripMat.emissiveIntensity,
+                            onColor: isTrack ? 0x333333 : 0xfff2aa,
+                            offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
+                        });
                     }
+                    // равномерный свет вдоль полосы — реально освещает комнату
+                    let totalLen = 0;
+                    const segs = [];
+                    for (let i = 0; i < ptsM.length - 1; i++) {
+                        const a = ptsM[i], b = ptsM[i + 1];
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const len = Math.hypot(dx, dz) || 0.01;
+                        segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
+                        totalLen += len;
+                    }
+                    // Световая полоса 15 Вт/м (трек — та же шкала)
+                    const nWant = Math.max(2, Math.min(6, Math.ceil(totalLen / 1.2)));
+                    const stripWatts = totalLen * LIGHT_WATTS.strip_per_m;
+                    const baseI = wattsToIntensity(stripWatts) / nWant;
+                    for (let k = 0; k < nWant; k++) {
+                        const dist = ((k + 0.5) / nWant) * totalLen;
+                        let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
+                        for (let s = 0; s < segs.length; s++) {
+                            if (acc + segs[s].len >= dist) {
+                                const t = (dist - acc) / segs[s].len;
+                                px = segs[s].a.x + segs[s].dx * t;
+                                pz = segs[s].a.z + segs[s].dz * t;
+                                break;
+                            }
+                            acc += segs[s].len;
+                        }
+                        // большой радиус, слабая яркость, сильное затухание → без «бликов» на стенах
+                        const pl = addStripPointLight(isTrack ? 0xe8e0ff : 0xfff2d0, baseI, 6.5, 2.4);
+                        pl.position.set(px, roomH - 0.35, pz);
+                        ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
+                        _track(pl);
+                    }
+                    // общий мягкий fill ~25% мощности полосы
+                    const fillI = wattsToIntensity(stripWatts) * 0.25 * (isTrack ? 0.85 : 1);
+                    const fill = new THREE.HemisphereLight(
+                        isTrack ? 0xe8e0ff : 0xfff5e0,
+                        isTrack ? 0x2a2830 : 0x2a2820,
+                        fillI
+                    );
+                    scene.add(fill);
+                    ceilingLights.push({ kind: sk, light: fill, mesh: null, baseIntensity: fillI, baseEmissive: 0, onColor: 0xfff8e0 });
+                    // HemisphereLight — глобальный, не трекаем в группу полосы
+                    // шары на углах — плавная стыковка сегментов
+                    for (let i = 0; i < ptsM.length; i++) {
+                        const j = new THREE.Mesh(new THREE.SphereGeometry(r * 1.05, 10, 10), stripMat);
+                        j.position.set(ptsM[i].x, roomH - 0.04, ptsM[i].z);
+                        scene.add(j);
+                        ceilingLights.push({
+                            kind: sk, light: null, mesh: j,
+                            baseIntensity: 0,
+                            baseEmissive: stripMat.emissiveIntensity,
+                            onColor: isTrack ? 0x333333 : 0xfff2aa,
+                            offColor: isTrack ? 0x9a9a9a : 0xb8b8b8
+                        });
+                        _track(j);
+                    }
+                    // цилиндры сегментов уже в сцене — подтянем по позиции
+                    scene.children.forEach(function (obj) {
+                        if (!obj || !obj.position || obj.geometry == null) return;
+                        if (Math.abs(obj.position.y - (roomH - 0.04)) > 0.02) return;
+                        for (let i = 0; i < ptsM.length - 1; i++) {
+                            const a = ptsM[i], b = ptsM[i + 1];
+                            const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+                            if (Math.hypot(obj.position.x - mx, obj.position.z - mz) < 0.04) _track(obj);
+                        }
+                    });
+                    const mid = ptsM[Math.floor(ptsM.length / 2)] || ptsM[0];
+                    _registerMoveGroup(sk, mid.x, mid.z);
                     return;
                 }
 
@@ -3492,6 +3494,104 @@
                 }
             };
             lightPanel.appendChild(nightBtn);
+
+            // Понятные клиенту готовые сценарии света. Они меняют только превью,
+            // не записывая новый монтажный набор в заявку.
+            const presetHead = document.createElement('div');
+            presetHead.textContent = 'Готовые сценарии';
+            presetHead.style.cssText = 'color:#dce6f4;font-weight:700;font-size:11px;margin-top:7px;padding:2px 1px;';
+            lightPanel.appendChild(presetHead);
+            const presetGrid = document.createElement('div');
+            presetGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:4px;';
+            const presetButtons = {};
+            let compareButton = null;
+            let comparingBaseline = false;
+            let compareReturnPreset = 'cozy';
+            function syncPresetControls() {
+                try {
+                    Object.keys(presetButtons).forEach(function (k) {
+                        const b = presetButtons[k];
+                        const active = (window._dobryDesignPreset || 'day') === k;
+                        b.style.borderColor = active ? '#7db7ff' : 'rgba(255,255,255,.25)';
+                        b.style.background = active ? 'rgba(35,116,216,.75)' : 'rgba(0,0,0,.42)';
+                    });
+                    kindLabels.forEach(function (item) {
+                        const b = kindBtns[item.k]; if (!b) return;
+                        b.style.opacity = lightKindState[item.k] ? '1' : '0.45';
+                        b.textContent = (lightKindState[item.k] ? '💡 ' : '💤 ') + item.lab;
+                    });
+                    allBtn.textContent = Object.values(lightKindState).some(Boolean) ? 'Все выкл' : 'Все вкл';
+                    nightBtn.textContent = isNight ? '☀️ День' : '🌙 Ночь';
+                    if (window._p3dQuickDayIcon) window._p3dQuickDayIcon.textContent = isNight ? '☀️' : '🌙';
+                    if (window._p3dQuickLightIcon) window._p3dQuickLightIcon.textContent = Object.values(lightKindState).some(Boolean) ? '💡' : '💤';
+                    if (window._p3dQuickKindIcons) Object.keys(window._p3dQuickKindIcons).forEach(function(k) { const b=window._p3dQuickKindIcons[k]; if(b) b.style.opacity=lightKindState[k] ? '1':'0.45'; });
+                } catch (e) {}
+            }
+            function applyDobryPreset(preset, isComparisonStep) {
+                const allowed = ['day','cozy','spots','lines','floating'];
+                if (allowed.indexOf(preset) < 0) preset = 'day';
+                if (!isComparisonStep && comparingBaseline) {
+                    comparingBaseline = false;
+                    if (compareButton) compareButton.textContent = '↔ Сравнить свет';
+                }
+                window._dobryDesignPreset = preset;
+                Object.keys(lightKindState).forEach(function (k) { lightKindState[k] = false; });
+                if (preset === 'day') {
+                    isNight = false;
+                } else {
+                    isNight = true;
+                    ceilingLights.forEach(function (item) {
+                        if (!item || !item.kind) return;
+                        const k = item.kind;
+                        if (preset === 'cozy') lightKindState[k] = true;
+                        else if (preset === 'spots') lightKindState[k] = (k === 'spot' || k === 'light_point' || k === 'chandelier');
+                        else if (preset === 'lines') lightKindState[k] = (k === 'strip' || k === 'track' || k === 'cornice' || k === 'floating');
+                        else if (preset === 'floating') lightKindState[k] = (k === 'floating' || k === 'cornice');
+                    });
+                }
+                applyDayNight();
+                applyLightKindVisibility();
+                syncPresetControls();
+                invalidate();
+                try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
+            }
+            [
+                { k: 'day', label: '☀️ Дневной' },
+                { k: 'cozy', label: '🌙 Уютный вечер' },
+                { k: 'spots', label: '🔵 Споты' },
+                { k: 'lines', label: '✨ Линии/контур' },
+                { k: 'floating', label: '〰 Парящий' }
+            ].forEach(function (p) {
+                const b = document.createElement('button');
+                b.type = 'button'; b.textContent = p.label;
+                b.style.cssText = 'padding:7px 5px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:rgba(0,0,0,.42);color:#fff;font-size:10px;line-height:1.2;min-height:30px;';
+                b.onclick = function(e) { e.preventDefault(); e.stopPropagation(); applyDobryPreset(p.k); };
+                presetButtons[p.k] = b; presetGrid.appendChild(b);
+            });
+            lightPanel.appendChild(presetGrid);
+            compareButton = document.createElement('button');
+            compareButton.type = 'button';
+            compareButton.textContent = '↔ Сравнить свет';
+            compareButton.style.cssText = 'margin-top:5px;padding:7px 8px;border:1px solid rgba(255,255,255,.3);border-radius:8px;background:rgba(35,55,75,.78);color:#fff;font-size:11px;';
+            compareButton.onclick = function (e) {
+                e.preventDefault(); e.stopPropagation();
+                if (!comparingBaseline) {
+                    compareReturnPreset = window._dobryDesignPreset || 'day';
+                    if (compareReturnPreset === 'day') compareReturnPreset = 'cozy';
+                    comparingBaseline = true;
+                    applyDobryPreset('day', true);
+                    compareButton.textContent = 'Показать выбранный вариант';
+                } else {
+                    comparingBaseline = false;
+                    applyDobryPreset(compareReturnPreset, true);
+                    compareButton.textContent = '↔ Сравнить свет';
+                }
+            };
+            lightPanel.appendChild(compareButton);
+            window._dobryApplyScenePreset = applyDobryPreset;
+            // Use a preset selected in the welcome/gallery only for the visualization.
+            const initialPreset = window._dobryDesignPreset || 'day';
+            applyDobryPreset(initialPreset);
             // Применяем день/ночь сразу при открытии (по умолчанию — день)
             applyDayNight();
             invalidate();
@@ -3691,6 +3791,7 @@
                     (fixtures || []).forEach(function (f) {
                         if (f && f.type === 'cornice') f.curtain_color = hex;
                     });
+                    try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
                 });
             }
             addColorRow('Стены', preferredWallColor || '#ebe6dc', function (hex) {
@@ -3699,6 +3800,7 @@
                     wallMat.color.set(hex);
                     wallMat.needsUpdate = true;
                 }
+                try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
             });
             addColorRow('Пол', preferredFloorColor || '#c9a66b', function (hex) {
                 preferredFloorColor = hex;
@@ -3713,6 +3815,7 @@
                     floorMat.needsUpdate = true;
                 }
                 invalidate();
+                try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
             });
 
             // Синхронизировать кнопку подсветки карниза с начальным состоянием
@@ -4257,6 +4360,7 @@ async function captureCeilingPhotoForKP() {
                     e.stopPropagation();
                     roomHeightM = Math.max(2.2, Math.min(4.0, Math.round((roomH + delta) * 20) / 20));
                     hLab.textContent = 'Высота ' + roomHeightM.toFixed(2) + ' м';
+                    try { if (typeof window.scheduleProjectAutosave === 'function') window.scheduleProjectAutosave(); } catch (e) {}
                     if (window._p3dHeightTimer) clearTimeout(window._p3dHeightTimer);
                     window._p3dHeightTimer = setTimeout(function () {
                         renderClient3DRealistic().catch(function () {});
