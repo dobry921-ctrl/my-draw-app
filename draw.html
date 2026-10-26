@@ -6140,61 +6140,101 @@ function getCurrentCeilingPayload() {
             document.head.appendChild(st);
         }
 
+        var _threeJsLoadPromise = null;
         function loadThreeJs() {
             if (window.THREE) {
                 return Promise.resolve(window.THREE);
             }
-            function loadScript(src) {
+            if (_threeJsLoadPromise) return _threeJsLoadPromise;
+            function loadScript(src, timeoutMs) {
                 return new Promise(function (resolve, reject) {
-                    var existing = document.querySelector('script[src="' + src + '"]');
+                    var existing = document.querySelector('script[data-dm-three="' + src + '"],script[src="' + src + '"]');
                     if (existing) {
                         var tries = 0;
                         (function waitReady() {
                             if (src.indexOf('three.min') >= 0 && window.THREE) return resolve();
                             if (src.indexOf('GLTFLoader') >= 0 && window.THREE && window.THREE.GLTFLoader) return resolve();
                             if (src.indexOf('DRACOLoader') >= 0 && window.THREE && window.THREE.DRACOLoader) return resolve();
-                            if (++tries > 50) return resolve();
-                            setTimeout(waitReady, 40);
+                            if (++tries > 80) {
+                                if (src.indexOf('three.min') >= 0 && !window.THREE) return reject(new Error('Таймаут: ' + src));
+                                return resolve();
+                            }
+                            setTimeout(waitReady, 50);
                         })();
                         return;
                     }
                     var s = document.createElement('script');
                     s.src = src;
                     s.async = true;
-                    s.onload = function () { resolve(); };
-                    s.onerror = function () { reject(new Error('Не загрузился: ' + src)); };
+                    s.crossOrigin = 'anonymous';
+                    s.setAttribute('data-dm-three', src);
+                    var done = false;
+                    var timer = setTimeout(function () {
+                        if (done) return;
+                        done = true;
+                        try { s.onload = s.onerror = null; } catch (e) {}
+                        reject(new Error('Таймаут загрузки: ' + src));
+                    }, timeoutMs || 10000);
+                    s.onload = function () {
+                        if (done) return;
+                        done = true;
+                        clearTimeout(timer);
+                        resolve();
+                    };
+                    s.onerror = function () {
+                        if (done) return;
+                        done = true;
+                        clearTimeout(timer);
+                        reject(new Error('Не загрузился: ' + src));
+                    };
                     document.head.appendChild(s);
                 });
             }
             function loadFirst(urls) {
                 var i = 0;
                 function next() {
-                    if (i >= urls.length) return Promise.reject(new Error('CDN недоступен'));
-                    return loadScript(urls[i++]).catch(function () { return next(); });
+                    if (i >= urls.length) return Promise.reject(new Error('CDN недоступен (Three.js). Проверьте интернет или откройте вне ограниченной сети.'));
+                    var url = urls[i++];
+                    return loadScript(url, 10000).then(function () {
+                        if (url.indexOf('three.min') >= 0 && !window.THREE) {
+                            return Promise.reject(new Error('Скрипт загружен, но THREE нет: ' + url));
+                        }
+                    }).catch(function (err) {
+                        console.warn('[Dobry_Master] CDN fail', url, err && err.message);
+                        return next();
+                    });
                 }
                 return next();
             }
             var threeUrls = [
-                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
                 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
-                'https://unpkg.com/three@0.128.0/build/three.min.js'
+                'https://fastly.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+                'https://unpkg.com/three@0.128.0/build/three.min.js',
+                'https://cdn.bootcdn.net/ajax/libs/three.js/r128/three.min.js'
             ];
             var dracoUrls = [
                 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js',
+                'https://fastly.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js',
                 'https://unpkg.com/three@0.128.0/examples/js/loaders/DRACOLoader.js'
             ];
             var gltfUrls = [
                 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
+                'https://fastly.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
                 'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js'
             ];
-            return loadFirst(threeUrls).then(function () {
-                if (!window.THREE) throw new Error('Three.js не загрузился');
+            _threeJsLoadPromise = loadFirst(threeUrls).then(function () {
+                if (!window.THREE) throw new Error('Three.js не загрузился ни с одного CDN');
                 return loadFirst(dracoUrls).catch(function (e) { console.warn('DRACOLoader skip', e); });
             }).then(function () {
                 return loadFirst(gltfUrls).catch(function (e) { console.warn('GLTFLoader skip', e); });
             }).then(function () {
                 return window.THREE;
+            }).catch(function (e) {
+                _threeJsLoadPromise = null; // allow retry
+                throw e;
             });
+            return _threeJsLoadPromise;
         }
 
         function show3DPreviewError(message) {
@@ -6221,8 +6261,54 @@ function getCurrentCeilingPayload() {
             host.appendChild(panel);
         }
 
+        /** Точки контура в см для 3D/2D-превью: текущий чертёж или сохранённый потолок. */
+        function resolvePointsCmForPreview() {
+            try {
+                if (points && points.length >= 3) return points;
+            } catch (e0) {}
+            try {
+                var c = null;
+                if (typeof completedCeilings !== 'undefined' && completedCeilings && completedCeilings.length) {
+                    if (typeof editCeilingIndex === 'number' && editCeilingIndex >= 0 && editCeilingIndex < completedCeilings.length) {
+                        c = completedCeilings[editCeilingIndex];
+                    } else {
+                        c = completedCeilings[completedCeilings.length - 1];
+                    }
+                }
+                if (c && c.points && c.points.length >= 3) {
+                    var maxAbs = 0;
+                    for (var i = 0; i < c.points.length; i++) {
+                        var p = c.points[i];
+                        maxAbs = Math.max(maxAbs, Math.abs(Number(p.x) || 0), Math.abs(Number(p.y) || 0));
+                    }
+                    // completedCeilings хранит метры (unit:'m'); чертёж — сантиметры
+                    var scale = 1;
+                    if (c.unit === 'm' || (maxAbs > 0 && maxAbs < 80)) scale = 100;
+                    return c.points.map(function (pt) {
+                        return { x: (Number(pt.x) || 0) * scale, y: (Number(pt.y) || 0) * scale, letter: pt.letter };
+                    });
+                }
+            } catch (e1) { console.warn('resolvePointsCmForPreview ceilings', e1); }
+            try {
+                if (typeof aptRooms !== 'undefined' && aptRooms && aptRooms.length) {
+                    var r = aptRooms[0];
+                    if (r && r.points && r.points.length >= 3) return r.points;
+                }
+            } catch (e2) {}
+            return null;
+        }
+
+        /** Подставить points из сохранённого потолка, если текущий контур пуст (экран «Готово»). */
+        function ensurePointsForPreview() {
+            if (points && points.length >= 3) return true;
+            var resolved = resolvePointsCmForPreview();
+            if (!resolved || resolved.length < 3) return false;
+            points = resolved.map(function (p) { return { x: p.x, y: p.y, letter: p.letter }; });
+            return points.length >= 3;
+        }
+
         async function showClientPreview(mode) {
-            if (!points || points.length < 3) {
+            if (!ensurePointsForPreview()) {
                 showToast('Сначала постройте контур потолка', 2500);
                 return;
             }
@@ -6231,10 +6317,19 @@ function getCurrentCeilingPayload() {
             const title = document.getElementById('client-preview-title');
             const c2d = document.getElementById('client-preview-canvas');
             const d3 = document.getElementById('client-preview-3d');
+            const hostWrap = document.getElementById('client-preview-host');
             if (title) title.textContent = _clientPreviewMode === '3d' ? '3D для клиента (вид снизу)' : '2D план для клиента';
             if (ov) {
                 ov.style.display = 'flex';
                 ov.style.flexDirection = 'column';
+                ov.style.visibility = 'visible';
+                ov.style.opacity = '1';
+            }
+            if (hostWrap) {
+                hostWrap.style.flex = '1';
+                hostWrap.style.position = 'relative';
+                hostWrap.style.minHeight = '280px';
+                hostWrap.style.height = 'auto';
             }
             if (_clientPreviewMode === '3d') {
                 if (c2d) c2d.style.display = 'none';
@@ -6244,14 +6339,17 @@ function getCurrentCeilingPayload() {
                     d3.style.inset = '0';
                     d3.style.width = '100%';
                     d3.style.height = '100%';
+                    d3.style.minHeight = '280px';
                 }
                 try {
                     showToast('Загрузка 3D…', 1500);
+                    // Даем оверлею отрисоваться и получить размеры (важно для Telegram WebView)
                     await new Promise(function (r) {
                         requestAnimationFrame(function () {
                             requestAnimationFrame(function () { r(); });
                         });
                     });
+                    await new Promise(function (r) { setTimeout(r, 50); });
                     await renderClient3DRealistic();
                 } catch (e) {
                     console.error('3D preview initialization failed:', e);
@@ -6478,18 +6576,34 @@ function getCurrentCeilingPayload() {
 
         /** Реалистичный 3D: вид снизу вверх, стены, пол, горящий свет. */
         async function renderClient3DRealistic() {
+            if (!ensurePointsForPreview()) {
+                throw new Error('Нет контура комнаты для 3D. Постройте потолок и повторите.');
+            }
             const THREE = await loadThreeJs();
+            if (!THREE || !THREE.WebGLRenderer) {
+                throw new Error('Three.js загружен некорректно (нет WebGLRenderer)');
+            }
             disposeThreePreview();
 
             const host = document.getElementById('client-preview-3d');
-            if (!host) return;
+            if (!host) throw new Error('Контейнер 3D не найден (#client-preview-3d)');
             host.innerHTML = '';
+            host.style.display = 'block';
+            host.style.position = 'absolute';
+            host.style.inset = '0';
+            host.style.width = '100%';
+            host.style.height = '100%';
+            host.style.minHeight = '280px';
+            // Принудительный reflow после показа оверлея
+            try { void host.offsetWidth; } catch (eRef) {}
             var W = host.clientWidth || 0;
             var H = host.clientHeight || 0;
             if (W < 40 || H < 40) {
                 var parent = host.parentElement;
                 W = (parent && parent.clientWidth) || window.innerWidth || 360;
                 H = (parent && parent.clientHeight) || Math.max(320, (window.innerHeight || 600) - 110);
+                if (W < 40) W = window.innerWidth || 360;
+                if (H < 40) H = Math.max(320, (window.innerHeight || 600) - 110);
                 host.style.width = '100%';
                 host.style.height = H + 'px';
                 host.style.minHeight = '280px';
