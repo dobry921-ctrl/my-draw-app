@@ -889,13 +889,16 @@
             renderer.domElement.style.height = '100%';
             renderer.domElement.style.display = 'block';
             renderer.domElement.style.touchAction = 'none';
-            // НЕ position:absolute на canvas — иначе host схлопывается (absolute вне потока) → чёрный экран
+            // canvas ниже UI-контролов по z-index, но в потоке (не absolute — иначе host схлопывается)
+            renderer.domElement.style.position = 'relative';
+            renderer.domElement.style.zIndex = '1';
             host.style.position = 'relative';
             host.style.width = '100%';
             host.style.height = '100%';
             host.style.minHeight = '280px';
             host.style.flex = '1 1 auto';
             host.style.overflow = 'hidden';
+            host.style.touchAction = 'none';
 
             // Контур комнаты в метрах (XZ), CCW для корректной заливки
             const roomContour = points.map(p => toM(p.x, p.y));
@@ -1159,8 +1162,9 @@
             });
             const floorGeo = makeRoomPlaneGeometry(0, 0);
             let floorMeshRef = null;
-            // Стены с нормалями — для режима «Вид сбоку» (передние стены прозрачные)
+            // Стены/двери с нормалями — для режима «Вид сбоку» (передние прозрачные)
             const wallMeshList = [];
+            const doorMeshList = [];
             if (floorGeo) {
                 const pos = floorGeo.attributes.position;
                 const uvs = [];
@@ -1456,6 +1460,8 @@
                         core.rotation.y = ang;
                         core.castShadow = false;
                         core.receiveShadow = true;
+                        core.userData.wallNormal = { x: nx, z: nz };
+                        doorMeshList.push(core);
                         scene.add(core);
 
                         const frontMat = new THREE.MeshPhongMaterial({ map: makeDoorTexture(), shininess: 32, specular: 0x2a2a2a });
@@ -1467,6 +1473,8 @@
                         );
                         front.rotation.y = ang;
                         front.receiveShadow = true;
+                        front.userData.wallNormal = { x: nx, z: nz };
+                        doorMeshList.push(front);
                         scene.add(front);
 
                         // Ручка со стороны, противоположной дверной коробке-петле
@@ -3518,19 +3526,18 @@
                 camera.fov = fovS;
                 camera.updateProjectionMatrix();
                 if (sideViewOn) {
-                    // Орбита вокруг центра комнаты: только задние стены + потолок
+                    // Вид снизу вверх: камера низко, смотрим на потолок
                     const cx = roomBounds.cx, cz = roomBounds.cz;
-                    const cy = roomH * 0.55;
+                    const cy = roomH * 0.18;
                     const cp = Math.cos(sideOrbitPitch), sp = Math.sin(sideOrbitPitch);
                     const sy = Math.sin(sideOrbitYaw), cyw = Math.cos(sideOrbitYaw);
                     const px = cx + sy * cp * sideOrbitRadius;
-                    const py = cy + sp * sideOrbitRadius;
+                    const py = Math.max(0.12, cy + sp * sideOrbitRadius);
                     const pz = cz + cyw * cp * sideOrbitRadius;
                     camera.up.set(0, 1, 0);
-                    camera.position.set(px, Math.max(0.3, py), pz);
-                    // Смотрим чуть выше центра — потолок в кадре, пол не перекрывает
-                    camera.lookAt(cx, roomH * 0.72, cz);
-                    updateSideWallTransparency();
+                    camera.position.set(px, py, pz);
+                    camera.lookAt(cx, roomH * 0.92, cz);
+                    updateSideOccluderTransparency();
                 } else if (topDownOn) {
                     camera.position.set(camXS, eyeHS, camZS);
                     // Строго вниз: up = «север» карты ( -Z ), иначе gimbal lock при pitch≈-90°
@@ -3547,39 +3554,74 @@
                 }
                 needsRender = true;
             }
-            function updateSideWallTransparency() {
-                if (!wallMeshList || !wallMeshList.length) return;
-                const cam = camera.position;
-                const cx = roomBounds.cx, cz = roomBounds.cz;
-                wallMeshList.forEach(function (m) {
-                    const n = m.userData.wallNormal;
-                    if (!n || !m.material) return;
-                    const wx = m.position.x, wz = m.position.z;
-                    const camSide = n.x * (cam.x - wx) + n.z * (cam.z - wz);
-                    const centerSide = n.x * (cx - wx) + n.z * (cz - wz);
-                    // Стена между камерой и центром комнаты — «передняя», делаем прозрачной
-                    const isFront = camSide * centerSide < 0;
-                    const mat = m.material;
-                    if (isFront) {
+            function setMeshGhost(m, on, opacity) {
+                if (!m || !m.material) return;
+                const mats = Array.isArray(m.material) ? m.material : [m.material];
+                mats.forEach(function (mat) {
+                    if (!mat) return;
+                    if (on) {
+                        if (!mat.userData) mat.userData = {};
+                        if (mat.userData._ghostSaved == null) {
+                            mat.userData._ghostSaved = {
+                                transparent: !!mat.transparent,
+                                opacity: mat.opacity != null ? mat.opacity : 1,
+                                depthWrite: mat.depthWrite !== false
+                            };
+                        }
                         mat.transparent = true;
-                        mat.opacity = 0.06;
+                        mat.opacity = opacity != null ? opacity : 0.08;
                         mat.depthWrite = false;
                         mat.needsUpdate = true;
-                        m.renderOrder = 2;
+                    } else if (mat.userData && mat.userData._ghostSaved) {
+                        const s = mat.userData._ghostSaved;
+                        mat.transparent = s.transparent;
+                        mat.opacity = s.opacity;
+                        mat.depthWrite = s.depthWrite;
+                        mat.needsUpdate = true;
+                        delete mat.userData._ghostSaved;
                     } else {
                         mat.transparent = false;
                         mat.opacity = 1;
                         mat.depthWrite = true;
                         mat.needsUpdate = true;
-                        m.renderOrder = 0;
                     }
                 });
+                m.renderOrder = on ? 2 : 0;
+            }
+            function isFrontOccluder(m, cam, cx, cz) {
+                const n = m.userData && m.userData.wallNormal;
+                if (!n) {
+                    const dx = m.position.x - cx, dz = m.position.z - cz;
+                    const toCamX = cam.x - cx, toCamZ = cam.z - cz;
+                    return (dx * toCamX + dz * toCamZ) > 0;
+                }
+                const wx = m.position.x, wz = m.position.z;
+                const camSide = n.x * (cam.x - wx) + n.z * (cam.z - wz);
+                const centerSide = n.x * (cx - wx) + n.z * (cz - wz);
+                return camSide * centerSide < 0;
+            }
+            function updateSideOccluderTransparency() {
+                const cam = camera.position;
+                const cx = roomBounds.cx, cz = roomBounds.cz;
+                function applyList(list, opacity) {
+                    if (!list) return;
+                    list.forEach(function (m) {
+                        setMeshGhost(m, isFrontOccluder(m, cam, cx, cz), opacity);
+                    });
+                }
+                applyList(wallMeshList, 0.06);
+                applyList(doorMeshList, 0.06);
+                if (curtainMeshes && curtainMeshes.length) {
+                    curtainMeshes.forEach(function (m) {
+                        setMeshGhost(m, true, 0.08);
+                    });
+                }
             }
             function setSideFloorGhost(on) {
                 if (!floorMat) return;
                 if (on) {
                     floorMat.transparent = true;
-                    floorMat.opacity = 0.22;
+                    floorMat.opacity = 0.08;
                     floorMat.depthWrite = false;
                     floorMat.needsUpdate = true;
                     if (floorMeshRef) floorMeshRef.renderOrder = 1;
@@ -3592,15 +3634,13 @@
                 }
             }
             function resetWallOpacity() {
-                if (!wallMeshList) return;
-                wallMeshList.forEach(function (m) {
-                    if (!m.material) return;
-                    m.material.transparent = false;
-                    m.material.opacity = 1;
-                    m.material.depthWrite = true;
-                    m.material.needsUpdate = true;
-                    m.renderOrder = 0;
-                });
+                function resetList(list) {
+                    if (!list) return;
+                    list.forEach(function (m) { setMeshGhost(m, false); });
+                }
+                resetList(wallMeshList);
+                resetList(doorMeshList);
+                resetList(curtainMeshes);
             }
             function stepCam(dt) {
                 const k = 1 - Math.exp(-dt * 11);
@@ -3632,17 +3672,58 @@
             }
             let zoomSlider = null;
 
-            // Джойстик перемещения (крупнее + z-index 40 — Telegram WebView часто «съедает» нижние 20)
+            // Джойстик + D-pad (кнопки надёжнее в Telegram WebView, чем один стик)
             const pad = document.createElement('div');
-            pad.style.cssText = 'position:absolute;left:10px;bottom:max(14px, env(safe-area-inset-bottom, 0px));' +
-                'width:132px;height:132px;border-radius:66px;background:rgba(255,255,255,0.16);' +
-                'border:2px solid rgba(255,255,255,0.4);touch-action:none;-webkit-user-select:none;user-select:none;' +
-                'z-index:40;pointer-events:auto;-webkit-touch-callout:none;';
+            pad.style.cssText = 'position:absolute;left:10px;bottom:18px;' +
+                'width:120px;height:120px;border-radius:60px;background:rgba(255,255,255,0.18);' +
+                'border:2px solid rgba(255,255,255,0.45);touch-action:none;-webkit-user-select:none;user-select:none;' +
+                'z-index:60;pointer-events:auto;-webkit-touch-callout:none;';
             const knob = document.createElement('div');
-            knob.style.cssText = 'position:absolute;left:46px;top:46px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.65);pointer-events:none;';
+            knob.style.cssText = 'position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,0.7);pointer-events:none;';
             pad.className = 'p3d-pad';
             knob.className = 'p3d-knob';
             pad.appendChild(knob);
+
+            // Крест-кнопки — запасной способ ходить на телефоне
+            const dpad = document.createElement('div');
+            dpad.className = 'p3d-dpad';
+            dpad.style.cssText = 'position:absolute;left:138px;bottom:18px;width:108px;height:108px;z-index:60;pointer-events:auto;touch-action:none;';
+            function mkDpadBtn(label, mx, mz, left, top) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.style.cssText = 'position:absolute;left:' + left + 'px;top:' + top + 'px;width:34px;height:34px;' +
+                    'border-radius:10px;border:1px solid rgba(255,255,255,0.4);background:rgba(20,24,32,0.72);' +
+                    'color:#fff;font-size:14px;line-height:1;padding:0;touch-action:none;-webkit-user-select:none;';
+                function press(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    if (sideViewOn || topDownOn) return;
+                    moveX = mx; moveZ = mz; needsRender = true;
+                    b.style.background = 'rgba(40,120,80,0.85)';
+                }
+                function release(e) {
+                    if (e) { e.preventDefault(); e.stopPropagation(); }
+                    moveX = 0; moveZ = 0;
+                    b.style.background = 'rgba(20,24,32,0.72)';
+                    needsRender = true;
+                }
+                b.addEventListener('pointerdown', press, { passive: false });
+                b.addEventListener('pointerup', release, { passive: false });
+                b.addEventListener('pointercancel', release, { passive: false });
+                b.addEventListener('pointerleave', release, { passive: false });
+                b.addEventListener('touchstart', press, { passive: false });
+                b.addEventListener('touchend', release, { passive: false });
+                b.addEventListener('touchcancel', release, { passive: false });
+                dpad.appendChild(b);
+                return b;
+            }
+            // moveX/moveZ ещё не объявлены — кнопки пишут в замыкание после объявления через window-хук
+            // Временно храним целевые значения; ниже перепривяжем после let moveX
+            dpad._pending = [];
+            mkDpadBtn('▲', 0, 1, 37, 2);
+            mkDpadBtn('▼', 0, -1, 37, 72);
+            mkDpadBtn('◀', 1, 0, 2, 37);
+            mkDpadBtn('▶', -1, 0, 72, 37);
 
             // Зум ползунком — по требованию, отдельно от щипка/колёсика
             const zoomWrap = document.createElement('div');
@@ -3994,6 +4075,22 @@
                     window._p3dQuickKindIcons[item.k] = b;
                     bar.appendChild(b);
                 });
+
+                // Быстрая кнопка «Вид сбоку» на главном экране 3D
+                var sideQuickBtn = mkIconBtn('↔️', 'Вид сбоку', true);
+                sideQuickBtn.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                        if (typeof sideViewOn !== 'undefined' && sideViewOn) {
+                            if (typeof exitSideView === 'function') exitSideView(true);
+                        } else if (typeof enterSideView === 'function') {
+                            enterSideView();
+                        }
+                    } catch (err) { console.warn(err); }
+                };
+                window._p3dSideQuickBtn = sideQuickBtn;
+                bar.appendChild(sideQuickBtn);
 
                 host.appendChild(bar);
             })();
@@ -4381,6 +4478,8 @@
                     if (furnitureGroup) furnitureGroup.visible = false;
                     showTopMarkers(true);
                     goTopDownCam();
+                    if (pad) pad.style.display = 'none';
+                    if (typeof dpad !== 'undefined' && dpad) dpad.style.display = 'none';
                     topDownBtn.textContent = '🚶 Выйти сверху';
                     topDownBtn.style.background = 'rgba(20,120,80,0.7)';
                     showToast('Тяните синие маркеры светильников · пустое место — панорама · ⌖ центр', 4000);
@@ -4401,6 +4500,8 @@
                     topPanLast = null;
                     topDownBtn.textContent = '📐 Сверху';
                     topDownBtn.style.background = 'rgba(40,60,100,0.55)';
+                    if (pad) pad.style.display = '';
+                    if (typeof dpad !== 'undefined' && dpad) dpad.style.display = '';
                     invalidate();
                 }
             };
@@ -4424,6 +4525,19 @@
 
             // ===== Вид сбоку: орбита, передние стены прозрачные, пол «призрак» =====
             let sideViewSaved = null;
+            function syncSideQuickBtn() {
+                try {
+                    var b = window._p3dSideQuickBtn;
+                    if (!b) return;
+                    if (sideViewOn) {
+                        b.style.background = 'rgba(20,120,80,0.85)';
+                        b.style.opacity = '1';
+                    } else {
+                        b.style.background = '';
+                        b.style.opacity = '1';
+                    }
+                } catch (e) {}
+            }
             const sideViewBtn = document.createElement('button');
             sideViewBtn.type = 'button';
             sideViewBtn.textContent = '↔️ Вид сбоку';
@@ -4445,6 +4559,8 @@
                 sideViewBtn.textContent = '↔️ Вид сбоку';
                 sideViewBtn.style.background = 'rgba(40,60,100,0.55)';
                 if (pad) pad.style.display = '';
+                if (typeof dpad !== 'undefined' && dpad) dpad.style.display = '';
+                if (typeof syncSideQuickBtn === 'function') syncSideQuickBtn();
                 invalidate();
             }
             function enterSideView() {
@@ -4468,17 +4584,20 @@
                 // Радиус — чтобы вся комната была в кадре
                 sideOrbitRadius = Math.max(4.5, roomBounds.maxR * 2.2 + 1.2);
                 sideOrbitYaw = yaw || 0.6;
-                sideOrbitPitch = 0.28;
-                camFov = 48;
+                // отрицательный pitch = камера ниже, взгляд на потолок снизу
+                sideOrbitPitch = -0.42;
+                camFov = 52;
                 fovS = camFov;
                 syncZoomSlider();
                 setSideFloorGhost(true);
                 if (furnitureGroup) furnitureGroup.visible = false;
-                if (pad) pad.style.display = 'none'; // джойстик ходьбы не нужен в орбите
+                if (pad) pad.style.display = 'none';
+                if (typeof dpad !== 'undefined' && dpad) dpad.style.display = 'none';
+                if (typeof syncSideQuickBtn === 'function') syncSideQuickBtn();
                 applyCam();
                 sideViewBtn.textContent = '🚶 Выйти сбоку';
                 sideViewBtn.style.background = 'rgba(20,120,80,0.7)';
-                showToast('Пальцем вращайте комнату · передние стены прозрачные', 3500);
+                showToast('Пальцем вращайте · вид снизу · передние стены/двери/шторы прозрачные', 3500);
             }
             sideViewBtn.onclick = function (e) {
                 e.preventDefault();
@@ -4722,9 +4841,10 @@ async function captureCeilingPhotoForKP() {
             const hint = document.createElement('div');
             hint.className = 'p3d-hint';
             hint.style.cssText = 'position:absolute;right:12px;bottom:16px;font-size:11px;text-align:right;max-width:52%;z-index:5;pointer-events:none;';
-            hint.innerHTML = 'Пальцем — смотреть · джойстик — ходить<br>Щипок / колёсико — зум · «Сцена» — настройки<br>📐 Сверху · ↔️ Сбоку — вращение комнаты';
+            hint.innerHTML = 'Пальцем — смотреть · стик/стрелки — ходить<br>Щипок — зум · ↔️ Сбоку — вид снизу<br>📐 Сверху — расстановка света';
             host.style.position = 'relative';
             host.appendChild(pad);
+            host.appendChild(dpad);
             host.appendChild(zoomWrap);
             host.appendChild(lightPanel);
             host.appendChild(hint);
@@ -4734,9 +4854,9 @@ async function captureCeilingPhotoForKP() {
             let padActive = false, padId = null;
 
             function setKnob(nx, ny) {
-                // nx,ny -1..1; pad 132×132, knob 40×40 → центр 46, ход ~42
-                knob.style.left = (46 + nx * 42) + 'px';
-                knob.style.top = (46 + ny * 42) + 'px';
+                // nx,ny -1..1; pad 120×120, knob 40×40 → центр 40, ход ~36
+                knob.style.left = (40 + nx * 36) + 'px';
+                knob.style.top = (40 + ny * 36) + 'px';
             }
 
             const el = renderer.domElement;
@@ -4858,7 +4978,7 @@ async function captureCeilingPhotoForKP() {
                 if (sideViewOn) {
                     // Орбита вокруг комнаты
                     sideOrbitYaw -= dx * 0.008;
-                    sideOrbitPitch = Math.max(-0.15, Math.min(1.15, sideOrbitPitch + dy * 0.006));
+                    sideOrbitPitch = Math.max(-0.85, Math.min(0.95, sideOrbitPitch + dy * 0.006));
                     applyCam();
                     e.preventDefault && e.preventDefault();
                     return;
@@ -5340,6 +5460,7 @@ async function captureCeilingPhotoForKP() {
                     window.removeEventListener('keyup', onKeyUp);
                     try {
                         host.removeChild(pad);
+                        host.removeChild(dpad);
                         host.removeChild(hint);
                         host.removeChild(lightPanel);
                     } catch (e) {}
