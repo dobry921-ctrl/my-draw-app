@@ -2659,15 +2659,17 @@
 
                 // Подсветка ПЕРЕД шторой: только мягкий свет, без видимой полосы
                 const blOn = opts.backlight !== false;
-                const nLights = Math.max(2, Math.min(4, Math.ceil(len * 1.1)));
+                // карниз: меньше точек при нехватке бюджета, мощность сохраняем
+                var nIdealCorn = Math.max(2, Math.min(isMobile3d ? 3 : 5, Math.ceil(len * 1.1)));
+                var nLights = Math.min(nIdealCorn, Math.max(1, remainingMainLights()));
+                const cornWatts = len * LIGHT_WATTS.cornice_per_m;
+                const baseI = wattsToIntensity(cornWatts) / Math.max(1, nLights);
                 for (let i = 0; i < nLights; i++) {
                     const t = (i + 0.5) / nLights;
                     // чуть ближе к центру комнаты, чем штора
                     const lx = a.x + ux * (t * len) + nx * (inset + 0.12);
                     const lz = a.z + uz * (t * len) + nz * (inset + 0.12);
                     // карниз с подсветкой: 8 Вт/м, делим на число точек
-                    const cornWatts = len * LIGHT_WATTS.cornice_per_m;
-                    const baseI = wattsToIntensity(cornWatts) / Math.max(1, nLights);
                     const pl = addCappedPointLight(0xfff2dc, blOn ? baseI : 0, 2.6, 2);
                     if (pl) {
                         pl.position.set(lx, roomH - 0.14, lz);
@@ -2694,6 +2696,20 @@
             if (!fxEntries.length && fxList && fxList.length) {
                 fxList.forEach(function (f) { fxEntries.push({ f: f, idx: -1 }); });
             }
+            // Приоритет источников: сначала точечные/споты/люстры (основной бюджет),
+            // полосы/карнизы — после (своя квота). Так ни один тип не «съедает» весь лимит.
+            var _lightPri = {
+                chandelier: 0, spot: 1, light_point: 2, light: 2, point: 2,
+                strip: 5, track: 5, floating: 6, cornice: 7
+            };
+            fxEntries.sort(function (a, b) {
+                var ta = ((a.f && a.f.type) || '').toString();
+                var tb = ((b.f && b.f.type) || '').toString();
+                var pa = _lightPri.hasOwnProperty(ta) ? _lightPri[ta] : 9;
+                var pb = _lightPri.hasOwnProperty(tb) ? _lightPri[tb] : 9;
+                if (pa !== pb) return pa - pb;
+                return (a.idx|0) - (b.idx|0);
+            });
             fxEntries.forEach(function (entry) {
                 const f = entry.f;
                 const fixtureIdx = entry.idx;
@@ -2810,27 +2826,40 @@
                         segs.push({ a: a, b: b, len: len, dx: dx, dz: dz });
                         totalLen += len;
                     }
-                    // Световая полоса 15 Вт/м (трек — та же шкала)
-                    const nWant = Math.max(2, Math.min(6, Math.ceil(totalLen / 1.2)));
+                    // Световая полоса 15 Вт/м — число точек подстраиваем под оставшийся бюджет
                     const stripWatts = totalLen * LIGHT_WATTS.strip_per_m;
+                    var nIdeal = Math.max(2, Math.min(isMobile3d ? 5 : 8, Math.ceil(totalLen / 1.15)));
+                    var nCap = Math.max(1, remainingStripLights());
+                    var nWant = Math.min(nIdeal, nCap);
+                    if (nWant < 1) nWant = 1; // хотя бы попробуем одну
                     const baseI = wattsToIntensity(stripWatts) / nWant;
+                    var placedStrip = 0;
                     for (let k = 0; k < nWant; k++) {
                         const dist = ((k + 0.5) / nWant) * totalLen;
                         let acc = 0, px = ptsM[0].x, pz = ptsM[0].z;
                         for (let s = 0; s < segs.length; s++) {
                             if (acc + segs[s].len >= dist) {
-                                const t = (dist - acc) / segs[s].len;
-                                px = segs[s].a.x + segs[s].dx * t;
-                                pz = segs[s].a.z + segs[s].dz * t;
+                                const tt = (dist - acc) / segs[s].len;
+                                px = segs[s].a.x + segs[s].dx * tt;
+                                pz = segs[s].a.z + segs[s].dz * tt;
                                 break;
                             }
                             acc += segs[s].len;
                         }
                         // большой радиус, слабая яркость, сильное затухание → без «бликов» на стенах
                         const pl = addStripPointLight(isTrack ? 0xe8e0ff : 0xfff2d0, baseI, 6.5, 2.4);
+                        if (!pl) break;
                         pl.position.set(px, roomH - 0.35, pz);
                         ceilingLights.push({ kind: sk, light: pl, mesh: null, baseIntensity: baseI, baseEmissive: 0, onColor: 0xfff8e0 });
                         _track(pl);
+                        placedStrip++;
+                    }
+                    // если точек меньше ideal — усилим emissive полосы, чтобы визуально не «проседала»
+                    if (placedStrip > 0 && placedStrip < nIdeal && stripMat) {
+                        try {
+                            stripMat.emissiveIntensity = Math.min(2.4, (stripMat.emissiveIntensity || 1) * (nIdeal / placedStrip) * 0.85);
+                            stripMat.needsUpdate = true;
+                        } catch (eEm) {}
                     }
                     // общий мягкий fill ~25% мощности полосы
                     const fillI = wattsToIntensity(stripWatts) * 0.25 * (isTrack ? 0.85 : 1);
@@ -3030,9 +3059,13 @@
                         sl.position.set(m.x, roomH - bodyLen - 0.03, m.z);
                         sl.target.position.set(m.x, 0, m.z);
                         sl.target.updateMatrixWorld();
+                    } else if (glowMat) {
+                        // нет слота — усилим emissive корпуса, чтобы спот не «гаснул» визуально
+                        glowMat.emissiveIntensity = Math.min(1.6, (glowMat.emissiveIntensity || 0.14) * 3.2);
+                        glowMat.needsUpdate = true;
                     }
                     const halo = addCeilingHalo(m.x, roomH - 0.012, m.z, 0.3, 0.35);
-                    ceilingLights.push({ kind: 'spot', light: sl, mesh: glow, halo: halo, baseIntensity: intensity, baseEmissive: 0.14, onColor: 0xfff8e8, offColor: 0x666660 });
+                    ceilingLights.push({ kind: 'spot', light: sl, mesh: glow, halo: halo, baseIntensity: intensity, baseEmissive: glowMat.emissiveIntensity || 0.14, onColor: 0xfff8e8, offColor: 0x666660 });
                     _track(body); _track(bezel); _track(glow); _track(sl); _track(halo);
                     if (sl && sl.target) _track(sl.target);
                     _registerMoveGroup('spot', m.x, m.z);
@@ -3059,8 +3092,12 @@
                     const intensity = Math.max(0.6, wattsToIntensity(LIGHT_WATTS.light_point) * 5.5);
                     const pl = addCappedPointLight(0xfff8e0, intensity, 4.2, 2);
                     if (pl) pl.position.set(m.x, roomH - 0.06, m.z);
+                    else if (discMat) {
+                        discMat.emissiveIntensity = Math.min(3.2, (discMat.emissiveIntensity || 1.9) * 1.55);
+                        discMat.needsUpdate = true;
+                    }
                     const halo = addCeilingHalo(m.x, roomH - 0.012, m.z, 0.38, 0.3);
-                    ceilingLights.push({ kind: 'light_point', light: pl, mesh: disc, halo: halo, baseIntensity: intensity, baseEmissive: 1.9, onColor: 0xfff8e0, offColor: 0x888880 });
+                    ceilingLights.push({ kind: 'light_point', light: pl, mesh: disc, halo: halo, baseIntensity: intensity, baseEmissive: discMat.emissiveIntensity || 1.9, onColor: 0xfff8e0, offColor: 0x888880 });
                     _track(disc); _track(ring); _track(pl); _track(halo);
                     _registerMoveGroup('light_point', m.x, m.z);
                 }
