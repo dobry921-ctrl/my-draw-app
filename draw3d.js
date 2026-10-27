@@ -1220,9 +1220,10 @@
             });
             const floorGeo = makeRoomPlaneGeometry(0, 0);
             let floorMeshRef = null;
-            // Стены/двери с нормалями — для режима «Вид сбоку» (передние прозрачные)
+            // Стены/двери/плинтусы с нормалями — для режима «Вид сбоку» (передние прозрачные)
             const wallMeshList = [];
             const doorMeshList = [];
+            const trimMeshList = []; // плинтус + галтель
             if (floorGeo) {
                 const pos = floorGeo.attributes.position;
                 const uvs = [];
@@ -1360,16 +1361,23 @@
             // Плинтус и потолочная галтель — без них комната читается как «бумажная коробка»
             const trimMat = new THREE.MeshPhongMaterial({ color: 0xf4f2ee, shininess: 30, specular: 0x222222 });
             function addBaseboard(midX, midZ, ang, nx, nz, len) {
-                const bb = new THREE.Mesh(new THREE.BoxGeometry(len, 0.075, 0.018), trimMat);
+                // клон материала — иначе прозрачность «сбоку» затрагивала бы все плинтусы сразу
+                const mat = trimMat.clone ? trimMat.clone() : trimMat;
+                const bb = new THREE.Mesh(new THREE.BoxGeometry(len, 0.075, 0.018), mat);
                 bb.position.set(midX + nx * 0.011, 0.0375, midZ + nz * 0.011);
                 bb.rotation.y = ang;
                 bb.receiveShadow = true;
+                bb.userData.wallNormal = { x: nx, z: nz };
+                trimMeshList.push(bb);
                 scene.add(bb);
             }
             function addCove(midX, midZ, ang, nx, nz, len, wallH) {
-                const cv = new THREE.Mesh(new THREE.BoxGeometry(len, 0.035, 0.022), trimMat);
+                const mat = trimMat.clone ? trimMat.clone() : trimMat;
+                const cv = new THREE.Mesh(new THREE.BoxGeometry(len, 0.035, 0.022), mat);
                 cv.position.set(midX + nx * 0.013, wallH - 0.018, midZ + nz * 0.013);
                 cv.rotation.y = ang;
+                cv.userData.wallNormal = { x: nx, z: nz };
+                trimMeshList.push(cv);
                 scene.add(cv);
             }
 
@@ -3676,6 +3684,7 @@
                 }
                 applyList(wallMeshList, 0.06);
                 applyList(doorMeshList, 0.06);
+                applyList(trimMeshList, 0.06); // плинтус/галтель на передних стенах
                 if (curtainMeshes && curtainMeshes.length) {
                     curtainMeshes.forEach(function (m) {
                         setMeshGhost(m, true, 0.08);
@@ -3728,6 +3737,7 @@
                 }
                 resetList(wallMeshList);
                 resetList(doorMeshList);
+                resetList(trimMeshList);
                 resetList(curtainMeshes);
             }
             function stepCam(dt) {
