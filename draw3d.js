@@ -856,8 +856,10 @@
             camera.up.set(0, 0, -1);
             camera.lookAt(0, roomH - 0.05, 0);
 
-            const isMobile3d = (W < 900) || /Android|iPhone|iPad|Mobile|Telegram/i.test(navigator.userAgent || '');
-            const useMSAA = !isMobile3d;   // MSAA только на десктопе, на мобиле полагаемся на FXAA
+            // Узкое окно на ПК ≠ мобила: иначе лимит света падал до 10 при ширине < 900
+            const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+            const isMobile3d = isMobileUA; // для бюджета света / DPR
+            const useMSAA = !isMobileUA && W >= 700; // MSAA только на нормальном десктопе
             var renderer;
             try {
                 renderer = new THREE.WebGLRenderer({
@@ -896,35 +898,85 @@
             }
             if (isMobile3d) _maxAniso = 2;  // 8× на мобиле — лишний расход без видимого выигрыша
 
-            // лимит PointLight — иначе большие потолки тормозят
-            let _plBudget = isMobile3d ? 10 : 16;
-            function addCappedPointLight(color, intensity, distance, decay) {
-                if (_plBudget <= 0) return null;
-                _plBudget--;
-                const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
-                scene.add(pl);
-                return pl;
-            }
-            // полосы всегда освещают комнату (без лимита)
-            function addStripPointLight(color, intensity, distance, decay) {
-                // на мобиле тоже в бюджете — иначе полосы убивают FPS
-                if (isMobile3d) {
-                    if (_plBudget <= 0) return null;
-                    _plBudget--;
+            // ===== Свет: раздельные бюджеты =====
+            // env  — окна/солнце/ТВ (не отнимают слоты у приборов)
+            // main — споты, светильники, люстры, карнизы
+            // strip — световые полосы / треки
+            // Раньше окна брали 2 PointLight из общего лимита 10 → в сцене 10+10
+            // оставалось только 8 слотов, и светильники не зажигались.
+            const _plLimits = isMobile3d
+                ? { total: 56, strip: 12, main: 40, env: 6 }
+                : { total: 80, strip: 16, main: 56, env: 8 };
+            let _plBudgetMain = _plLimits.main;
+            let _plBudgetStrip = _plLimits.strip;
+            let _plBudgetEnv = _plLimits.env;
+            let _plUsedTotal = 0;
+            function _canTakeLight(kind) {
+                // kind: 'main' | 'strip' | 'env'
+                if (_plUsedTotal >= _plLimits.total) return false;
+                if (kind === 'env') {
+                    if (_plBudgetEnv > 0) return 'env';
+                    return false;
                 }
+                if (kind === 'strip') {
+                    if (_plBudgetStrip > 0) return 'strip';
+                    if (_plBudgetMain > 0) return 'main';
+                    return false;
+                }
+                // main (приборы)
+                if (_plBudgetMain > 0) return 'main';
+                return false;
+            }
+            function _commitLight(bucket) {
+                _plUsedTotal++;
+                if (bucket === 'strip') _plBudgetStrip--;
+                else if (bucket === 'env') _plBudgetEnv--;
+                else _plBudgetMain--;
+            }
+            function addCappedPointLight(color, intensity, distance, decay) {
+                const bucket = _canTakeLight('main');
+                if (!bucket) return null;
+                _commitLight(bucket);
+                const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
+                if (pl.distance > 0 && isMobile3d) pl.distance = Math.min(pl.distance, 5.5);
+                scene.add(pl);
+                return pl;
+            }
+            /** Окна / ТВ / декоративный fill — отдельный env-бюджет */
+            function addEnvPointLight(color, intensity, distance, decay) {
+                const bucket = _canTakeLight('env');
+                if (!bucket) return null;
+                _commitLight(bucket);
                 const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
                 scene.add(pl);
                 return pl;
             }
-            // Направленный источник для спотов: даёт конус и световое пятно на полу
+            function addStripPointLight(color, intensity, distance, decay) {
+                const bucket = _canTakeLight('strip');
+                if (!bucket) return null;
+                _commitLight(bucket);
+                const pl = new THREE.PointLight(color, intensity, distance, decay != null ? decay : 2);
+                if (pl.distance > 0 && isMobile3d) pl.distance = Math.min(pl.distance, 6.0);
+                scene.add(pl);
+                return pl;
+            }
             function addCappedSpotLight(color, intensity, distance, angle, penumbra) {
-                if (_plBudget <= 0) return null;
-                _plBudget--;
+                const bucket = _canTakeLight('main');
+                if (!bucket) return null;
+                _commitLight(bucket);
                 const sl = new THREE.SpotLight(color, intensity, distance, angle, penumbra, 1.5);
+                if (sl.distance > 0 && isMobile3d) sl.distance = Math.min(sl.distance, 5.5);
                 scene.add(sl);
                 scene.add(sl.target);
                 return sl;
             }
+            function remainingMainLights() {
+                return Math.max(0, Math.min(_plBudgetMain, _plLimits.total - _plUsedTotal));
+            }
+            function remainingStripLights() {
+                return Math.max(0, Math.min(_plBudgetStrip + _plBudgetMain, _plLimits.total - _plUsedTotal));
+            }
+
             // Мягкий ореол на потолке вокруг светильника (дешёвая замена bloom)
             function addCeilingHalo(x, y, z, radius, opacity) {
                 const mat = new THREE.MeshBasicMaterial({
@@ -2264,9 +2316,9 @@
                 // shadow-камера не нужна — shadowMap.enabled = false глобально
                 scene.add(sun);
                 scene.add(sun.target);
-                const wl = addCappedPointLight(0xffd8a8, 0.14, 4.5, 1.8);
+                const wl = addEnvPointLight(0xffd8a8, 0.14, 4.5, 1.8);
                 if (wl) wl.position.set(mx + nx * 0.3, winY, mz + nz * 0.3);
-                const floorSpot = addCappedPointLight(0xffd0a0, 0.08, 2.8, 2);
+                const floorSpot = addEnvPointLight(0xffd0a0, 0.08, 2.8, 2);
                 if (floorSpot) floorSpot.position.set(mx - nx * 0.9, 0.35, mz - nz * 0.9);
                 windowDayLightsAll.push(sun, wl, floorSpot);
               }
@@ -3053,7 +3105,7 @@
                     glow.rotation.x = Math.PI / 2;
                     scene.add(glow);
                     // Спот 10 Вт (+25% к свечению)
-                    const intensity = Math.max(0.9, wattsToIntensity(LIGHT_WATTS.spot) * 8);
+                    const intensity = Math.max(1.0, wattsToIntensity(LIGHT_WATTS.spot) * 9);
                     const sl = addCappedSpotLight(0xfff6e8, intensity, 5.5, 0.55, 0.55);
                     if (sl) {
                         sl.position.set(m.x, roomH - bodyLen - 0.03, m.z);
@@ -3089,7 +3141,7 @@
                     ring.rotation.x = Math.PI / 2;
                     scene.add(ring);
                     // Светильник 10 Вт (+25% к свечению)
-                    const intensity = Math.max(0.6, wattsToIntensity(LIGHT_WATTS.light_point) * 5.5);
+                    const intensity = Math.max(0.85, wattsToIntensity(LIGHT_WATTS.light_point) * 7.5);
                     const pl = addCappedPointLight(0xfff8e0, intensity, 4.2, 2);
                     if (pl) pl.position.set(m.x, roomH - 0.06, m.z);
                     else if (discMat) {
@@ -3473,7 +3525,7 @@
                             furnitureGroup.add(tvGlow);
                         }
                         if (!isMobile3d) {
-                            const tvLight = addCappedPointLight(0xaecbff, 0.06, 1.8, 2);
+                            const tvLight = addEnvPointLight(0xaecbff, 0.06, 1.8, 2);
                             if (tvLight) tvLight.position.set(tMidX + tnx * 0.3, tvY, tMidZ + tnz * 0.3);
                         }
                     })();
