@@ -1275,6 +1275,7 @@
             // Стены/двери/плинтусы с нормалями — для режима «Вид сбоку» (передние прозрачные)
             const wallMeshList = [];
             const doorMeshList = [];
+            const windowMeshList = []; // стекло, рамы, подоконники и откосы для бокового режима
             const trimMeshList = []; // плинтус + галтель
             if (floorGeo) {
                 const pos = floorGeo.attributes.position;
@@ -1487,11 +1488,15 @@
                             midZ + uz * (wOff + sgn * half) + nz * dRev / 2
                         );
                         rv.rotation.y = ang;
+                        rv.userData.wallNormal = { x: nx, z: nz };
+                        doorMeshList.push(rv);
                         scene.add(rv);
                     });
                     const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorOpen.w + 0.04, 0.02, dRev), trimMat);
                     lintel.position.set(midX + ux * wOff + nx * dRev / 2, doorOpen.h, midZ + uz * wOff + nz * dRev / 2);
                     lintel.rotation.y = ang;
+                    lintel.userData.wallNormal = { x: nx, z: nz };
+                    doorMeshList.push(lintel);
                     scene.add(lintel);
 
                     // Наличник (плоская рамка вокруг проёма на лицевой стене) —
@@ -1506,6 +1511,8 @@
                             midZ + uz * (wOff + sgn * (half + casingW / 2 - 0.006)) + nz * (casingT / 2 + 0.001)
                         );
                         cs.rotation.y = ang;
+                        cs.userData.wallNormal = { x: nx, z: nz };
+                        doorMeshList.push(cs);
                         scene.add(cs);
                     });
                     const casingTop = new THREE.Mesh(new THREE.BoxGeometry(doorOpen.w + casingW * 2, casingW, casingT), trimMat);
@@ -1515,6 +1522,8 @@
                         midZ + uz * wOff + nz * (casingT / 2 + 0.001)
                     );
                     casingTop.rotation.y = ang;
+                    casingTop.userData.wallNormal = { x: nx, z: nz };
+                    doorMeshList.push(casingTop);
                     scene.add(casingTop);
 
                     // Дверное полотно — раньше проём был просто пустой дырой в
@@ -1604,6 +1613,8 @@
                         rosette.rotation.x = Math.PI / 2;
                         rosette.position.set(hx, 1.0, hz);
                         rosette.rotation.y = ang;
+                        rosette.userData.wallNormal = { x: nx, z: nz };
+                        doorMeshList.push(rosette);
                         scene.add(rosette);
                         const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.11, 10), handleMat);
                         lever.rotation.z = Math.PI / 2;
@@ -1613,6 +1624,8 @@
                             hz + nz * 0.05 - uz * 0.02
                         );
                         lever.rotation.y = ang;
+                        lever.userData.wallNormal = { x: nx, z: nz };
+                        doorMeshList.push(lever);
                         scene.add(lever);
 
                         // Петли — тонкие пластины у противоположного (петлевого) края
@@ -1887,16 +1900,20 @@
                 const leaf = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.04), leafMat);
                 leaf.position.set(mx + nx * d, doorH / 2, mz + nz * d);
                 leaf.rotation.y = doorEdge.ang;
+                leaf.userData.wallNormal = { x: nx, z: nz };
+                doorMeshList.push(leaf);
                 scene.add(leaf);
                 // Верхняя и нижняя филёнка (углубления)
                 const panelMat = new THREE.MeshPhongMaterial({ map: woodTex, color: 0xc9a06e, shininess: 18, side: THREE.DoubleSide });
                 const p1 = new THREE.Mesh(new THREE.BoxGeometry(doorW * 0.62, 0.7, 0.02), panelMat);
                 p1.position.set(mx + nx * (d + 0.025), 0.55, mz + nz * (d + 0.025));
                 p1.rotation.y = doorEdge.ang;
+                p1.userData.wallNormal = { x: nx, z: nz }; doorMeshList.push(p1);
                 scene.add(p1);
                 const p2 = new THREE.Mesh(new THREE.BoxGeometry(doorW * 0.62, 0.75, 0.02), panelMat);
                 p2.position.set(mx + nx * (d + 0.025), 1.45, mz + nz * (d + 0.025));
                 p2.rotation.y = doorEdge.ang;
+                p2.userData.wallNormal = { x: nx, z: nz }; doorMeshList.push(p2);
                 scene.add(p2);
                 // Наличники — на плоскости стены вокруг проёма (не на полотне)
                 const fw = 0.08;           // ширина наличника
@@ -1910,6 +1927,8 @@
                     );
                     m.rotation.y = doorEdge.ang;
                     m.castShadow = false;
+                    m.userData.wallNormal = { x: nx, z: nz };
+                    doorMeshList.push(m);
                     scene.add(m);
                 }
                 // боковые стойки: от пола до верха проёма
@@ -1921,14 +1940,30 @@
                 const hBase = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.02), metalMat);
                 hBase.position.set(mx + nx * (d + 0.04) + tx * (doorW * 0.3), 1.0, mz + nz * (d + 0.04) + tz * (doorW * 0.3));
                 hBase.rotation.y = doorEdge.ang;
+                hBase.userData.wallNormal = { x: nx, z: nz }; doorMeshList.push(hBase);
                 scene.add(hBase);
                 const hKnob = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 12), metalMat);
                 hKnob.position.set(mx + nx * (d + 0.055) + tx * (doorW * 0.3), 1.0, mz + nz * (d + 0.055) + tz * (doorW * 0.3));
+                hKnob.userData.wallNormal = { x: nx, z: nz }; doorMeshList.push(hKnob);
                 scene.add(hKnob);
             }
 
             // Окно: в вырезе стены (обои не перекрывают), вечерняя картинка
             const glassMats = [];
+            function registerWindowMesh(mesh) {
+                if (!mesh) return mesh;
+                // У каждого элемента своё состояние материала: иначе прозрачность
+                // одного окна случайно переключает соседнюю раму/стекло.
+                if (Array.isArray(mesh.material)) mesh.material = mesh.material.map(function (m) { return m && m.clone ? m.clone() : m; });
+                else if (mesh.material && mesh.material.clone) mesh.material = mesh.material.clone();
+                mesh.userData = mesh.userData || {};
+                if (windowEdgesList.length) {
+                    const e = windowEdgesList.find(function (edge) { return edge && mesh.userData.windowEdgeIndex === edge.i; });
+                    if (e) mesh.userData.wallNormal = { x: -Math.sin(e.ang), z: -Math.cos(e.ang) };
+                }
+                windowMeshList.push(mesh);
+                return mesh;
+            }
             const ceilReflectMats = []; // глянцевые материалы потолка — отражение зависит от дня/ночи
             const viewMatsList = []; // {mat, day, night} — вид за каждым окном, меняется день/ночь
             const windowDayLightsAll = [];
@@ -2211,8 +2246,10 @@
                 // иначе неактивная текстура каждый раз копилась бы в памяти GPU.
                 view.userData.dayTex = dayViewTex;
                 view.userData.nightTex = nightViewTex;
+                registerWindowMesh(view);
+                view.userData.wallNormal = { x: nx, z: nz };
                 scene.add(view);
-                viewMatsList.push({ mat: viewMat, day: dayViewTex, night: nightViewTex });
+                viewMatsList.push({ mat: view.material, day: dayViewTex, night: nightViewTex });
                 // Настоящее стекло поверх вида: лёгкий голубоватый тон + отражение
                 // комнаты (подключается ниже к кубической камере) — без этого
                 // окно выглядело как плоская картинка, а не остекление.
@@ -2229,8 +2266,10 @@
                 glassPane.position.set(mx + nx * 0.028, winY, mz + nz * 0.028);
                 glassPane.rotation.y = windowEdge.ang;
                 glassPane.renderOrder = 1;
+                registerWindowMesh(glassPane);
+                glassPane.userData.wallNormal = { x: nx, z: nz };
                 scene.add(glassPane);
-                glassMats.push(glassMat);
+                glassMats.push(glassPane.material);
                 // блик стекла — окно перестаёт выглядеть «дыркой с картинкой»
                 (function addGlassSheen() {
                     const gc = document.createElement('canvas');
@@ -2263,6 +2302,8 @@
                     sheen.position.set(mx + nx * 0.032, winY, mz + nz * 0.032);
                     sheen.rotation.y = windowEdge.ang;
                     sheen.renderOrder = 2;
+                    registerWindowMesh(sheen);
+                    sheen.userData.wallNormal = { x: nx, z: nz };
                     scene.add(sheen);
                 })();
                 // Переплёт: одна горизонтальная перекладина всегда, вертикальных —
@@ -2276,6 +2317,8 @@
                     const barH = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.94, 0.03, 0.032), frameMat);
                     barH.position.set(mx + nx * 0.035, winY + oy, mz + nz * 0.035);
                     barH.rotation.y = windowEdge.ang;
+                    registerWindowMesh(barH);
+                    barH.userData.wallNormal = { x: nx, z: nz };
                     scene.add(barH);
                 });
                 const vBars = winW > 1.15 ? [-winW / 6, winW / 6] : [0];
@@ -2283,12 +2326,16 @@
                     const barV = new THREE.Mesh(new THREE.BoxGeometry(0.03, winH * 0.94, 0.032), frameMat);
                     barV.position.set(mx + nx * 0.035 + tx * ox, winY, mz + nz * 0.035 + tz * ox);
                     barV.rotation.y = windowEdge.ang;
+                    registerWindowMesh(barV);
+                    barV.userData.wallNormal = { x: nx, z: nz };
                     scene.add(barV);
                 });
                 // подоконник внутрь комнаты
                 const sill = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.12, 0.035, 0.12), sillMat);
                 sill.position.set(mx + nx * 0.06, winY - winH / 2 - 0.02, mz + nz * 0.06);
                 sill.rotation.y = windowEdge.ang;
+                registerWindowMesh(sill);
+                sill.userData.wallNormal = { x: nx, z: nz };
                 scene.add(sill);
                 // откосы (лёгкие)
                 const slopeMat = new THREE.MeshLambertMaterial({ color: 0xf5f0e8 });
@@ -2300,6 +2347,8 @@
                         mz + nz * 0.03 + tz * side * (winW / 2 + 0.04)
                     );
                     slope.rotation.y = windowEdge.ang;
+                    registerWindowMesh(slope);
+                    slope.userData.wallNormal = { x: nx, z: nz };
                     scene.add(slope);
                 });
                 // Свет из окна — только днём; ночью гасится через windowDayLights.
@@ -2655,51 +2704,68 @@
                 const inset = opts.inset != null ? opts.inset : 0.1;
                 const hangTop = roomH - 0.06;
                 const hangBot = 0.1;
-                const mat = new THREE.MeshLambertMaterial({
+                // Ткань: матовая, слегка фактурная, без пластикового блеска.
+                const mat = new THREE.MeshStandardMaterial({
                     color: opts.color || 0xc4b5a0,
-                    side: THREE.DoubleSide
+                    roughness: 0.94,
+                    metalness: 0,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.96,
+                    depthWrite: true
                 });
 
-                // Одна половина шторы: t0..t1 вдоль карниза, глубокие складки
-                function addPanel(t0, t1) {
-                    const segs = Math.max(10, Math.ceil((t1 - t0) * len * 14));
+                // Каждая портьера строится полноценной сеткой. Складки идут
+                // вертикально, имеют глубину и немного раскрываются к низу.
+                function addPanel(t0, t1, panelSeed) {
+                    const across = Math.max(28, Math.ceil((t1 - t0) * len * 34));
+                    const down = 18;
                     const verts = [];
+                    const uvs = [];
                     const idxs = [];
-                    for (let i = 0; i <= segs; i++) {
-                        const u = i / segs;
-                        const t = t0 + (t1 - t0) * u;
-                        // глубокие вертикальные складки
-                        const fold = Math.sin(u * Math.PI * 6) * 0.07
-                            + Math.sin(u * Math.PI * 12) * 0.025;
-                        // к центру проёма штора чуть отходит от стены
-                        const openPush = Math.sin(u * Math.PI) * 0.06;
-                        const along = t * len;
-                        const px = a.x + ux * along + nx * (inset + Math.abs(fold) * 0.3);
-                        const pz = a.z + uz * along + nz * (inset + Math.abs(fold) * 0.3);
-                        // глубина складки вдоль направления шторы
-                        const sx = -uz * fold + nx * openPush;
-                        const sz = ux * fold + nz * openPush;
-                        const bx = a.x + ux * along + nx * (inset + 0.04) + sx * 0.6;
-                        const bz = a.z + uz * along + nz * (inset + 0.04) + sz * 0.6;
-                        verts.push(px + sx, hangTop, pz + sz);
-                        verts.push(bx, hangBot, bz);
+                    const panelLen = (t1 - t0) * len;
+                    const foldCount = Math.max(5, Math.round(panelLen * 8));
+                    for (let j = 0; j <= down; j++) {
+                        const v = j / down;
+                        for (let i = 0; i <= across; i++) {
+                            const u = i / across;
+                            const t = t0 + (t1 - t0) * u;
+                            const phase = u * Math.PI * 2 * foldCount + panelSeed;
+                            const pleat = Math.cos(phase) * 0.047 + Math.cos(phase * 2) * 0.012;
+                            const lowerFlow = Math.sin(u * Math.PI * 2.2 + panelSeed) * 0.018 * v;
+                            const edgeFall = Math.pow(Math.abs(u - 0.5) * 2, 2) * 0.025;
+                            const y = hangTop - v * (hangTop - hangBot) - edgeFall * v;
+                            const depth = inset + 0.035 + pleat + lowerFlow;
+                            const along = t * len + Math.sin(phase) * 0.009 * (0.35 + v * 0.65);
+                            const x = a.x + ux * along + nx * depth;
+                            const z = a.z + uz * along + nz * depth;
+                            verts.push(x, y, z);
+                            uvs.push(u * Math.max(1, panelLen * 2.2), v * 2.4);
+                        }
                     }
-                    for (let i = 0; i < segs; i++) {
-                        const i0 = i * 2, i1 = i0 + 1, i2 = i0 + 2, i3 = i0 + 3;
-                        idxs.push(i0, i1, i2, i2, i1, i3);
+                    for (let j = 0; j < down; j++) {
+                        for (let i = 0; i < across; i++) {
+                            const p = j * (across + 1) + i;
+                            idxs.push(p, p + across + 1, p + 1, p + 1, p + across + 1, p + across + 2);
+                        }
                     }
                     const geo = new THREE.BufferGeometry();
                     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+                    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
                     geo.setIndex(idxs);
                     geo.computeVertexNormals();
-                    const mesh = new THREE.Mesh(geo, mat);
+                    const panelMat = mat.clone ? mat.clone() : mat;
+                    const mesh = new THREE.Mesh(geo, panelMat);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.userData.wallNormal = { x: nx, z: nz };
                     scene.add(mesh);
                     curtainMeshes.push(mesh);
                 }
 
                 // Раздвинуты: слева ~30%, справа ~30%, центр открыт
-                addPanel(0.02, 0.30);
-                addPanel(0.70, 0.98);
+                addPanel(0.015, 0.31, 0.2);
+                addPanel(0.69, 0.985, 1.1);
 
                 // Карниз-рейка (тёмная, без светящейся полосы)
                 // Карниз почти невидим: белый, тонкий
@@ -2707,6 +2773,8 @@
                 const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.012, 0.018), railMat);
                 rail.position.set(midX + nx * inset, hangTop + 0.01, midZ + nz * inset);
                 rail.rotation.y = -Math.atan2(dz, dx);
+                rail.userData.wallNormal = { x: nx, z: nz };
+                curtainMeshes.push(rail);
                 scene.add(rail);
 
                 // Подсветка ПЕРЕД шторой: только мягкий свет, без видимой полосы
@@ -3773,6 +3841,7 @@
                 }
                 applyList(wallMeshList, 0.06);
                 applyList(doorMeshList, 0.06);
+                applyList(windowMeshList, 0.06);
                 applyList(trimMeshList, 0.06); // плинтус/галтель на передних стенах
                 if (curtainMeshes && curtainMeshes.length) {
                     curtainMeshes.forEach(function (m) {
@@ -3826,6 +3895,7 @@
                 }
                 resetList(wallMeshList);
                 resetList(doorMeshList);
+                resetList(windowMeshList);
                 resetList(trimMeshList);
                 resetList(curtainMeshes);
             }
