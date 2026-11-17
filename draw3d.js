@@ -2518,63 +2518,7 @@
                     try { return root.clone(true); } catch (e3) { return root; }
                 });
             }
-            // GLTFLoader clone(true) shares geometry/material/texture objects with the
-            // cached template. The preview disposer releases scene resources on every
-            // reopen, so each placed model must own its GPU resources.
-            function makeSceneLocalModelResources(root) {
-                if (!root || !root.traverse) return root;
-                var geometryCache = new Map();
-                var materialCache = new Map();
-                var textureCache = new Map();
-                var textureKeys = [
-                    'map', 'lightMap', 'aoMap', 'emissiveMap', 'bumpMap',
-                    'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap',
-                    'envMap', 'specularMap'
-                ];
-                function cloneTexture(tex) {
-                    if (!tex || !tex.isTexture) return tex;
-                    if (textureCache.has(tex)) return textureCache.get(tex);
-                    var copy = tex.clone ? tex.clone() : tex;
-                    textureCache.set(tex, copy);
-                    if (copy !== tex) copy.needsUpdate = true;
-                    return copy;
-                }
-                function cloneMaterial(mat) {
-                    if (!mat) return mat;
-                    if (materialCache.has(mat)) return materialCache.get(mat);
-                    var copy = mat.clone ? mat.clone() : mat;
-                    materialCache.set(mat, copy);
-                    if (copy !== mat) {
-                        textureKeys.forEach(function (key) {
-                            if (copy[key] && copy[key].isTexture) copy[key] = cloneTexture(copy[key]);
-                        });
-                    }
-                    return copy;
-                }
-                root.traverse(function (obj) {
-                    if (!obj || !obj.isMesh) return;
-                    if (obj.geometry && obj.geometry.clone) {
-                        if (!geometryCache.has(obj.geometry)) geometryCache.set(obj.geometry, obj.geometry.clone());
-                        obj.geometry = geometryCache.get(obj.geometry);
-                    }
-                    if (Array.isArray(obj.material)) {
-                        obj.material = obj.material.map(cloneMaterial);
-                    } else if (obj.material) {
-                        obj.material = cloneMaterial(obj.material);
-                    }
-                });
-                return root;
-            }
-
-            function cloneTextureForScene(tex) {
-                if (!tex) return tex;
-                var copy = tex.clone ? tex.clone() : tex;
-                if (copy !== tex) copy.needsUpdate = true;
-                return _sharpenTex(copy);
-            }
-
             function prepareHangingModel(root, targetSize) {
-                makeSceneLocalModelResources(root);
                 root.position.set(0, 0, 0);
                 root.rotation.set(0, 0, 0);
                 root.scale.set(1, 1, 1);
@@ -2600,6 +2544,7 @@
                         c.receiveShadow = false;
                         c.frustumCulled = true;
                         if (c.material) {
+                            c.material = c.material.clone ? c.material.clone() : c.material;
                             var mats = Array.isArray(c.material) ? c.material : [c.material];
                             mats.forEach(function (m) {
                                 if (!m) return;
@@ -3321,7 +3266,6 @@
             }
 
             function prepareModel(root, targetW, targetD, targetH) {
-                makeSceneLocalModelResources(root);
                 // сброс локальных трансформаций меша, полный пересчёт bbox
                 root.position.set(0, 0, 0);
                 root.rotation.set(0, 0, 0);
@@ -3497,7 +3441,7 @@
                     furnitureGroup.add(frame);
                     var canvasMat;
                     if (paintingTex) {
-                        canvasMat = new THREE.MeshBasicMaterial({ map: cloneTextureForScene(paintingTex) });
+                        canvasMat = new THREE.MeshBasicMaterial({ map: _sharpenTex(paintingTex) });
                     } else {
                         var fb = makeSharpPaintingTexture();
                         canvasMat = new THREE.MeshBasicMaterial({ map: fb });
@@ -3545,7 +3489,7 @@
                             screenMat = new THREE.MeshBasicMaterial({ map: makeSharpTvAdTexture() });
                         } catch (eAd) {
                             if (tvAdTex) {
-                                screenMat = new THREE.MeshBasicMaterial({ map: cloneTextureForScene(tvAdTex) });
+                                screenMat = new THREE.MeshBasicMaterial({ map: _sharpenTex(tvAdTex) });
                             } else {
                                 var fb2 = new THREE.TextureLoader().load(BOT_LOGO_DATAURL);
                                 screenMat = new THREE.MeshBasicMaterial({ map: _sharpenTex(fb2) });
@@ -3603,45 +3547,20 @@
                     if (item.halo) item.halo.visible = on;
                     if (item.mesh) {
                         item.mesh.visible = true;
-                        // Обычные элементы (споты/полосы) сохраняют прежнее поведение.
-                        // GLB-люстра является Group: гасим emissive у всех вложенных Mesh,
-                        // иначе корпус продолжал светиться даже при выключенном типе света.
-                        const applyOneMaterial = function (mat, isGroupChild) {
-                            if (!mat) return;
-                            if (!mat.userData) mat.userData = {};
-                            if (!mat.userData._dmLightState) {
-                                mat.userData._dmLightState = {
-                                    color: mat.color && mat.color.clone ? mat.color.clone() : null,
-                                    emissive: mat.emissive && mat.emissive.clone ? mat.emissive.clone() : null,
-                                    emissiveIntensity: mat.emissiveIntensity
-                                };
+                        if (item.mesh.material) {
+                            item.mesh.material.emissiveIntensity = on ? (item.baseEmissive || 0) : 0;
+                            const col = on
+                                ? (item.onColor != null ? item.onColor : 0xfff8e0)
+                                : (item.offColor != null ? item.offColor : 0xb8b8b8);
+                            item.mesh.material.color.setHex(col);
+                            // выкл. полоса — нейтрально-серая, без жёлтого emissive
+                            if (item.mesh.material.emissive) {
+                                if (on) {
+                                    if (item.onColor != null) item.mesh.material.emissive.setHex(item.onColor);
+                                } else {
+                                    item.mesh.material.emissive.setHex(0x000000);
+                                }
                             }
-                            const saved = mat.userData._dmLightState;
-                            if (mat.emissiveIntensity !== undefined) {
-                                mat.emissiveIntensity = on
-                                    ? (saved.emissiveIntensity != null ? saved.emissiveIntensity : (item.baseEmissive || 0))
-                                    : 0;
-                            }
-                            if (mat.emissive && saved.emissive) {
-                                if (on) mat.emissive.copy(saved.emissive);
-                                else mat.emissive.setHex(0x000000);
-                            }
-                            if (!isGroupChild && mat.color && saved.color) {
-                                const col = on
-                                    ? (item.onColor != null ? item.onColor : 0xfff8e0)
-                                    : (item.offColor != null ? item.offColor : 0xb8b8b8);
-                                mat.color.setHex(col);
-                            }
-                        };
-                        if (item.mesh.traverse) {
-                            item.mesh.traverse(function (child) {
-                                if (!child || !child.isMesh || !child.material) return;
-                                const mats = Array.isArray(child.material) ? child.material : [child.material];
-                                mats.forEach(function (mat) { applyOneMaterial(mat, true); });
-                            });
-                        } else if (item.mesh.material) {
-                            const mats = Array.isArray(item.mesh.material) ? item.mesh.material : [item.mesh.material];
-                            mats.forEach(function (mat) { applyOneMaterial(mat, false); });
                         }
                     }
                 });
@@ -5649,7 +5568,7 @@ async function captureCeilingPhotoForKP() {
             // Десктоп: bloom + vignette (+ FXAA дешёвый, dithering на всех)
             // Мобилка: bloom + vignette + FXAA (MSAA выключен)
             // Очень слабые/маленькие экраны — без поста
-            const usePost = isMobile3d ? (W * H > 260000) : (W * H > 140000);
+            const usePost = (W * H > 80000) || !isMobile3d;
             post = usePost ? createPost(W, H) : null;
 
             function renderFrame() {
@@ -5716,7 +5635,7 @@ async function captureCeilingPhotoForKP() {
                 renderer.domElement.style.width = '100%';
                 renderer.domElement.style.height = '100%';
                 disposePost();
-                const usePostR = isMobile3d ? (w2 * h2 > 260000) : (w2 * h2 > 140000);
+                const usePostR = (w2 * h2 > 80000) || !isMobile3d;
                 post = usePostR ? createPost(w2, h2) : null;
                 invalidate();
             };
@@ -5770,7 +5689,7 @@ async function captureCeilingPhotoForKP() {
             let lastT = performance.now();
             // Адаптивный DPR (ТЗ P1-5)
             let _fpsAccum = 0, _fpsFrames = 0, _dprLastChange = 0;
-            const _dprMin = isMobile3d ? 0.75 : 0.85;
+            const _dprMin = isMobile3d ? 0.85 : 1.0;
             const _dprMax = isMobile3d ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
             const animate = () => {
                 _threeAnim = requestAnimationFrame(animate);
