@@ -244,6 +244,39 @@
         .field-label { font-size: 0.75rem; color: #5f6368; margin: 2px 0 3px; font-weight: 600; }
 
 
+
+        /* === Пошаговая подсказка построения комнаты === */
+        #close-btn { display:none !important; }
+        #drawing-guide {
+            position:absolute; top:10px; left:10px; right:10px; z-index:35;
+            display:none; background:rgba(255,255,255,.97); color:#1d2939;
+            border:1px solid #dce5ef; border-radius:14px; padding:11px 13px;
+            box-shadow:0 5px 18px rgba(20,40,70,.13); backdrop-filter:blur(8px);
+            pointer-events:auto;
+        }
+        #drawing-guide.visible { display:block; }
+        #drawing-guide .dg-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        #drawing-guide .dg-kicker { color:#1769bd; font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+        #drawing-guide .dg-count { color:#66758a; font-size:10px; white-space:nowrap; }
+        #drawing-guide strong { display:block; font-size:14px; margin:4px 0 3px; }
+        #drawing-guide p { margin:0; color:#596779; font-size:12px; line-height:1.4; }
+        #drawing-guide .dg-actions { display:flex; gap:7px; margin-top:9px; }
+        #drawing-guide .dg-actions button { flex:1; min-height:35px; border-radius:9px; font-size:12px; font-weight:700; }
+        #drawing-guide .dg-main { border:0; background:#1769bd; color:#fff; }
+        #drawing-guide .dg-alt { border:1px solid #d5deea; background:#f7f9fc; color:#334155; }
+        #side-help { padding:8px 10px 2px; color:#596779; font-size:11px; line-height:1.4; }
+        #side-progress { padding:2px 10px 7px; color:#1769bd; font-size:11px; font-weight:800; }
+        #side-input { font-size:16px; min-height:38px; }
+        #bottom-input-bar.active { padding:9px 10px calc(10px + env(safe-area-inset-bottom)); }
+        #bottom-input-bar.active #input-row { gap:7px; }
+        #bottom-input-bar.active .btn-next { min-height:38px; padding:7px 14px; }
+        @media (max-width:420px) {
+            #drawing-guide { top:7px; left:7px; right:7px; padding:9px 10px; }
+            #drawing-guide strong { font-size:13px; }
+            #drawing-guide p { font-size:11px; }
+            #drawing-guide .dg-actions button { font-size:11px; }
+        }
+
         /* === Dobry_Master: клиентский путь и адаптивные карточки === */
         #client-progress {
             display:flex; gap:4px; align-items:center; justify-content:space-between;
@@ -405,6 +438,18 @@
     </div>
     <div id="toast"></div>
     <div id="canvas-container">
+        <div id="drawing-guide" aria-live="polite">
+            <div class="dg-top">
+                <span class="dg-kicker" id="drawing-guide-kicker">Шаг 1 · Контур комнаты</span>
+                <span class="dg-count" id="drawing-guide-count">0 точек</span>
+            </div>
+            <strong id="drawing-guide-title">Отметьте первый угол комнаты</strong>
+            <p id="drawing-guide-text">Коснитесь экрана в месте каждого угла, двигаясь по периметру комнаты по порядку. Не нужно попадать в точный масштаб: реальные размеры введёте следующим шагом.</p>
+            <div class="dg-actions">
+                <button type="button" class="dg-alt" id="drawing-guide-undo" onclick="undoPoint()" style="display:none;">↶ Отменить точку</button>
+                <button type="button" class="dg-main" id="drawing-guide-next" onclick="closePolygon()" style="display:none;">Замкнуть контур →</button>
+            </div>
+        </div>
         <canvas id="appCanvas"></canvas>
         <div id="saved-chip"></div>
         <button id="close-btn" onclick="closePolygon()">Замкнуть фигуру</button>
@@ -446,24 +491,25 @@
     </div>
 
     <div id="bottom-input-bar" class="bottom-panel">
-        <!-- Убрана кнопка collapse-btn (крестик) -->
-        <div id="input-row" onclick="focusSideInput()">
+        <div id="side-progress">Шаг 2 · Размеры стен</div>
+        <div id="side-help">Измерьте стену рулеткой от одного угла до другого и введите длину в сантиметрах. Например: 425.</div>
+        <div id="input-row">
             <button class="btn btn-outline" id="prev-side-btn" onclick="prevSide()" style="display: none;">Назад</button>
-            <div id="side-label">A-B =</div>
-            <input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" autocomplete="off" enterkeyhint="next" id="side-input" placeholder="см">
+            <div id="side-label">A–B =</div>
+            <input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" autocomplete="off" enterkeyhint="next" id="side-input" placeholder="Например, 425 см" aria-label="Длина стены в сантиметрах">
             <button class="btn btn-next" onclick="saveSideAndNext()">Далее</button>
         </div>
     </div>
 
     <div id="diagonals-panel" class="bottom-panel">
         <button class="collapse-btn" onclick="togglePanel('diagonals-panel')">✕</button>
-        <div class="panel-title">Диагонали (необязательно)</div>
-        <div class="hint">Можно пропустить. Если введёте диагонали — форма будет точнее. Рекомендуемые отмечены.</div>
+        <div class="panel-title">Дополнительная проверка формы</div>
+        <div class="hint">Обычно этот шаг можно пропустить. Диагонали нужны только для более точного построения комнаты сложной формы. Если не уверены — продолжайте без них.</div>
         <div id="diag-list-container" class="diag-buttons-grid"></div>
         <div id="diag-selected-info" class="diag-item" style="margin-top:4px;">Выбрано: 0</div>
         <div style="display:flex; gap:4px; margin-top:6px;">
-            <button class="btn btn-outline" style="flex:1; padding:6px;" onclick="skipDiagonals()">Пропустить</button>
-            <button class="btn btn-success" style="flex:1; padding:6px;" onclick="finishDiagonals()">Далее</button>
+            <button class="btn btn-success" style="flex:1; padding:7px;" onclick="skipDiagonals()">Продолжить без диагоналей</button>
+            <button class="btn btn-outline" style="flex:1; padding:7px;" onclick="finishDiagonals()">Уточнить форму</button>
         </div>
     </div>
 
@@ -1413,7 +1459,7 @@
             if (toastTimer) clearTimeout(toastTimer);
             if (duration > 0) toastTimer = setTimeout(() => { t.style.display = 'none'; }, duration);
         }
-        showToast("Тапайте по экрану для создания углов. Замкните, нажав на 1-ю точку.", 4000);
+        showToast("Отметьте углы комнаты на чертеже. Подсказка останется сверху.", 3500);
 
         function toWorld(sx, sy) { return { x: (sx - camera.x) / camera.zoom, y: (sy - camera.y) / camera.zoom }; }
         function toScreen(wx, wy) { return { x: wx * camera.zoom + camera.x, y: wy * camera.zoom + camera.y }; }
@@ -4155,6 +4201,7 @@
         function updateUI() {
             document.getElementById('close-btn').style.display = (points.length >= 3 && state === 'DRAWING') ? 'block' : 'none';
             document.getElementById('undo-btn').style.display = (state === 'DRAWING' && points.length > 0) ? 'block' : 'none';
+            updateDrawingGuide();
             const esBtn = document.getElementById('edit-sides-btn');
             if (esBtn) esBtn.style.display = (isClosed && edges && edges.length) ? 'inline-block' : 'none';
             const tmplBtn = document.getElementById('room-template-btn');
@@ -4169,13 +4216,61 @@
             try { if (typeof window.updateClientProgress === 'function') window.updateClientProgress(); } catch (e) {}
         }
 
+        function updateDrawingGuide() {
+            const guide = document.getElementById('drawing-guide');
+            if (!guide) return;
+            const drawing = state === 'DRAWING' && !planCalibMode &&
+                !(planDrawMode === 'internal' || planDrawMode === 'door');
+            guide.classList.toggle('visible', drawing && !isClosed);
+            if (!drawing || isClosed) return;
+
+            const count = points.length;
+            const kicker = document.getElementById('drawing-guide-kicker');
+            const title = document.getElementById('drawing-guide-title');
+            const message = document.getElementById('drawing-guide-text');
+            const counter = document.getElementById('drawing-guide-count');
+            const undo = document.getElementById('drawing-guide-undo');
+            const next = document.getElementById('drawing-guide-next');
+
+            if (counter) counter.textContent = count + (count === 1 ? ' точка' : count >= 2 && count <= 4 ? ' точки' : ' точек');
+            if (undo) undo.style.display = count ? 'block' : 'none';
+            if (next) next.style.display = count >= 3 ? 'block' : 'none';
+
+            if (count === 0) {
+                if (kicker) kicker.textContent = 'Шаг 1 · Контур комнаты';
+                if (title) title.textContent = 'Отметьте первый угол комнаты';
+                if (message) message.textContent = 'Коснитесь экрана в месте каждого угла, двигаясь по периметру комнаты по порядку. Не нужно попадать в точный масштаб: реальные размеры введёте следующим шагом.';
+            } else if (count === 1) {
+                if (kicker) kicker.textContent = 'Шаг 1 · Контур комнаты';
+                if (title) title.textContent = 'Теперь отметьте следующий угол';
+                if (message) message.textContent = 'Идите по периметру в одном направлении. Ставьте точку каждый раз, когда стена поворачивает.';
+            } else if (count === 2) {
+                if (kicker) kicker.textContent = 'Шаг 1 · Контур комнаты';
+                if (title) title.textContent = 'Продолжайте отмечать углы';
+                if (message) message.textContent = 'Добавьте остальные углы комнаты. Для обычной прямоугольной комнаты достаточно четырёх точек.';
+            } else {
+                if (kicker) kicker.textContent = 'Шаг 1 · Контур почти готов';
+                if (title) title.textContent = 'Все углы отмечены? Замкните комнату';
+                if (message) message.textContent = 'Нажмите «Замкнуть контур» ниже или коснитесь первой точки на чертеже. После этого приложение попросит измерить каждую стену.';
+            }
+        }
+
         function updateInputUI() {
             const isDiag = state === 'INPUT_DIAGONALS';
             const item = isDiag ? selectedDiagonals[currentDiagonalInput] : edges[currentInputEdge];
             if (!item) return;
             document.getElementById('side-label').innerText = `${item.label} =`;
             document.getElementById('side-input').value = (item.lengthCm != null ? item.lengthCm : '');
-            document.getElementById('side-input').placeholder = 'см';
+            document.getElementById('side-input').placeholder = 'Например, 425 см';
+            const sideProgress = document.getElementById('side-progress');
+            const sideHelp = document.getElementById('side-help');
+            if (!isDiag) {
+                if (sideProgress) sideProgress.textContent = `Шаг 2 · Стена ${currentInputEdge + 1} из ${edges.length}`;
+                if (sideHelp) sideHelp.textContent = `Измерьте стену ${item.label} от угла до угла и введите длину в сантиметрах. Например: 425. После кнопки «Далее» приложение покажет следующую стену.`;
+            } else {
+                if (sideProgress) sideProgress.textContent = `Дополнительный замер · Диагональ ${currentDiagonalInput + 1} из ${selectedDiagonals.length}`;
+                if (sideHelp) sideHelp.textContent = 'Это дополнительное измерение для более точной формы. Значение укажите в сантиметрах.';
+            }
             document.getElementById('prev-side-btn').style.display = (isDiag ? currentDiagonalInput : currentInputEdge) > 0 ? 'inline-block' : 'none';
             const btn = document.querySelector('#input-row .btn-next');
             if (btn) btn.innerText = isDiag && currentDiagonalInput === selectedDiagonals.length - 1 ? 'Готово' : 'Далее';
@@ -4202,6 +4297,7 @@
             currentInputEdge++;
             if (currentInputEdge >= edges.length) {
                 document.getElementById('bottom-input-bar').classList.remove('active');
+                showToast('Все размеры стен введены. Подготавливаем форму комнаты…', 1800);
                 initDiagonals();
             } else updateInputUI();
         }
@@ -5935,7 +6031,7 @@ function getCurrentCeilingPayload() {
         }
 
         </script>
-        <script src="draw3d.js?v=20261112a"></script>
+        <script src="draw3d.js?v=20261026g"></script>
         <!-- 3D-модуль вынесен в draw3d.js (не встраивать обратно целиком) -->
         <script>
         // ---- Каталог карнизов из URL (?cornices=Имя1|Имя2) ----
